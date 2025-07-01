@@ -129,6 +129,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_embeed_run_migrations() {
+        use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+        const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+        let mut db_conn = get_db_pool().expect("Failed to get database connection");
+        db_conn
+            .run_pending_migrations(MIGRATIONS)
+            .expect("Failed to run migrations");
+        log::info!("Migrations ran successfully");
+    }
+
+    #[test]
     #[should_panic(expected = "Failed to insert mock user")]
     fn load_mock_data() {
         let mock_user = models::NewUser {

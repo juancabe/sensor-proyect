@@ -136,7 +136,7 @@ fn main() {
         panic!("HTTP connection creation failed");
     });
 
-    let base_url = "http://localhost:3000";
+    let base_url = "http://sensor-server.juancb.ftp.sh:3000";
 
     // Create HTTPS Client
     let mut httpclient = Client::wrap(httpconnection);

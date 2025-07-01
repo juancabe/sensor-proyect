@@ -23,4 +23,5 @@ once_cell = "1.21.3"
 
 [dev-dependencies]
 chrono = "0.4.41"
+diesel_migrations = "2.2.0"
 rand = "0.9.1"
