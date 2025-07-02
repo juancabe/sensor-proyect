@@ -52,13 +52,8 @@ impl<'a, 'b> ApiEndpoint<'a, 'b> for GetAht10 {
     fn parse_request_body(
         serde: &serde_json::Value,
     ) -> Result<Self::RequestBody, crate::api::BodyParseError> {
-        serde
-            .as_object()
-            .and_then(|obj| obj.get("body"))
-            .and_then(|body| serde_json::from_value(body.clone()).ok())
-            .ok_or(crate::api::BodyParseError::InvalidFormat(
-                "Invalid request body format",
-            ))
+        serde_json::from_value(serde.clone())
+            .map_err(|_| crate::api::BodyParseError::InvalidFormat("Invalid request body format"))
     }
 
     fn parse_response_body(
