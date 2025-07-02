@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "Failed to insert mock user")]
-    fn load_mock_data() {
+    fn test_load_mock_data() {
         let mock_user = models::NewUser {
             uuid: "test-user-uuid",
             username: "testuser",
