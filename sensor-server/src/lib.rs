@@ -17,6 +17,7 @@ use crate::db::test_db_pool;
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     env_logger::init();
+    log::info!("Starting sensor server...");
     test_db_pool().unwrap();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));

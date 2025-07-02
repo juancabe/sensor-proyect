@@ -1,12 +1,7 @@
 use core::str::FromStr;
 use embedded_svc::http::client::Client;
 use esp_idf_svc::{
-    hal::{
-        delay::FreeRtos,
-        i2c::{I2cConfig, I2cDriver},
-        peripherals,
-        prelude::*,
-    },
+    hal::{delay::FreeRtos, i2c::I2cDriver, peripherals},
     http::{
         client::{Configuration as HttpConfig, EspHttpConnection},
         Method,
