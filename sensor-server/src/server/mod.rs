@@ -54,6 +54,8 @@ pub async fn server(
             };
 
             let parse_result = {
+                log::info!("Parsing request body: {:?}", body);
+
                 serde_json::from_slice::<serde_json::Value>(&body)
                     .map_err(|err| format!("Failed to parse body as JSON: {}", err))
                     .and_then(|value| {
