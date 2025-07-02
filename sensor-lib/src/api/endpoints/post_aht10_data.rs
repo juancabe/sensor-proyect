@@ -18,6 +18,21 @@ pub enum PostAht10ResponseCode {
     InternalServerError,
 }
 
+impl PostAht10ResponseCode {
+    pub fn from_u16(status: u16) -> Result<Self, u16> {
+        let status = http::StatusCode::from_u16(status).map_err(|_| status)?;
+        match status {
+            http::StatusCode::OK => Ok(PostAht10ResponseCode::Ok),
+            http::StatusCode::BAD_REQUEST => Ok(PostAht10ResponseCode::BadRequest),
+            http::StatusCode::PAYLOAD_TOO_LARGE => Ok(PostAht10ResponseCode::PayloadTooLarge),
+            http::StatusCode::INTERNAL_SERVER_ERROR => {
+                Ok(PostAht10ResponseCode::InternalServerError)
+            }
+            _ => Err(status.as_u16()),
+        }
+    }
+}
+
 impl From<PostAht10ResponseCode> for http::StatusCode {
     fn from(code: PostAht10ResponseCode) -> Self {
         match code {

@@ -1,24 +1,34 @@
-use core::str::FromStr;
+use core::{panic, str::FromStr};
 use embedded_svc::http::client::Client;
 use esp_idf_svc::{
-    hal::{delay::FreeRtos, i2c::I2cDriver, peripherals},
-    http::{
-        client::{Configuration as HttpConfig, EspHttpConnection},
-        Method,
-    },
+    eventloop::System,
+    hal::{delay::FreeRtos, i2c::I2cDriver, peripherals, prelude::*},
+    http::client::{Configuration as HttpConfiguration, EspHttpConnection},
     io::Write,
     sys::{esp_get_free_heap_size, uxTaskGetStackHighWaterMark},
     wifi::{
-        AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi, PmfConfiguration,
-        ScanMethod, ScanSortMethod,
+        BlockingWifi, ClientConfiguration, Configuration, EspWifi, PmfConfiguration, ScanMethod,
+        ScanSortMethod,
     },
 };
 use sensor_lib::api::{
-    self, endpoints::post_aht10_data::PostAht10DataBody, model::aht10_data::Aht10Data, ApiEndpoint,
+    endpoints::post_aht10_data::{PostAht10, PostAht10DataBody, PostAht10ResponseCode},
+    model::aht10_data::Aht10Data,
+    ApiEndpoint,
 };
-use serde_json::Value;
 
-fn log_memory_usage(task_name: &str) {
+mod private;
+
+const BASE_URL: &'static str = "http://sensor-server.juancb.ftp.sh:3000";
+const USER_UUID: &'static str = "test-user-uuid";
+const USER_PLACE_ID: i32 = 1;
+const SENSOR_UUID: &'static str = "test-sensor-uuid";
+const READS_DELAY_MS: u32 = 1000 * 60; // 1 minute
+
+const HTTP_POST_TRIES: u32 = 10;
+const SENSOR_READ_TRIES: u32 = 10;
+
+fn _log_memory_usage(task_name: &str) {
     let free_heap = unsafe { esp_get_free_heap_size() };
     let stack_high_water_mark = unsafe { uxTaskGetStackHighWaterMark(std::ptr::null_mut()) };
     log::info!(
@@ -29,201 +39,340 @@ fn log_memory_usage(task_name: &str) {
     );
 }
 
-fn read_aht10_data(aht10: &mut adafruit_aht10::AdafruitAHT10<I2cDriver>) {
-    match aht10.read_data() {
-        Ok((humidity, temperature)) => {
-            log::info!(
-                "Temperature: {:.2} °C, Humidity: {:.2} %",
-                temperature,
-                humidity
-            );
+struct Aht10Peripherals {
+    gpio3_sda: esp_idf_svc::hal::gpio::Gpio3,
+    gpio2_scl: esp_idf_svc::hal::gpio::Gpio2,
+    i2c0: esp_idf_svc::hal::i2c::I2C0,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+enum GetAht10Error {
+    I2cError(esp_idf_sys::EspError),
+    InitializationError(adafruit_aht10::Aht10Error),
+}
+
+fn get_aht10_sensor(
+    peripherals: Aht10Peripherals,
+) -> Result<adafruit_aht10::AdafruitAHT10<I2cDriver<'static>>, GetAht10Error> {
+    let config = esp_idf_svc::hal::i2c::I2cConfig::new().baudrate(100.kHz().into());
+    let i2c = I2cDriver::new(
+        peripherals.i2c0,
+        peripherals.gpio3_sda,
+        peripherals.gpio2_scl,
+        &config,
+    )
+    .map_err(|e| GetAht10Error::I2cError(e))?;
+
+    let mut aht10 = adafruit_aht10::AdafruitAHT10::new(i2c);
+
+    aht10
+        .begin()
+        .map_err(|e| GetAht10Error::InitializationError(e))?;
+
+    Ok(aht10)
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+enum SendAht10DataError {
+    SerializationError(serde_json::Error),
+    RequestCreationError(esp_idf_svc::io::EspIOError),
+    RequestWriteError(esp_idf_svc::io::EspIOError),
+    RequestSubmissionError(esp_idf_svc::io::EspIOError),
+    UnexpectedResponseError(u16),
+}
+
+fn send_aht10_data(
+    client: &mut Client<EspHttpConnection>,
+    data: Aht10Data,
+) -> Result<PostAht10ResponseCode, SendAht10DataError> {
+    let url = format!("{}{}", BASE_URL, PostAht10::PATH);
+
+    let body = PostAht10DataBody {
+        user_uuid: USER_UUID.to_string(),
+        user_place_id: USER_PLACE_ID,
+        data,
+        added_at: None,
+    };
+
+    let request_body = match serde_json::to_string(&body) {
+        Ok(body) => body,
+        Err(e) => Err(SendAht10DataError::SerializationError(e))?,
+    };
+
+    let resp = match client.post(&url, &[("accept", "application/json")]) {
+        Ok(mut req) => {
+            if let Err(e) = req.write_all(request_body.as_bytes()) {
+                Err(SendAht10DataError::RequestWriteError(e))?
+            } else {
+                req.submit()
+            }
         }
-        Err(e) => log::error!("Failed to read data from AHT10: {:?}", e),
+        Err(e) => Err(SendAht10DataError::RequestCreationError(e))?,
+    };
+
+    let resp_status = match resp {
+        Ok(response) => response,
+        Err(e) => Err(SendAht10DataError::RequestSubmissionError(e))?,
     }
+    .status();
+
+    let r = PostAht10ResponseCode::from_u16(resp_status)
+        .map_err(|e| SendAht10DataError::UnexpectedResponseError(e))?;
+
+    Ok(r)
+}
+
+struct WifiDevices {
+    modem: esp_idf_svc::hal::modem::Modem,
+    sysloop: esp_idf_svc::eventloop::EspEventLoop<System>,
+    nvs: esp_idf_svc::nvs::EspDefaultNvsPartition,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+enum LoadWifiError {
+    WifiCreationError(esp_idf_sys::EspError),
+    WifiWrapError(esp_idf_sys::EspError),
+    ConfigurationError(esp_idf_sys::EspError),
+    StartError(esp_idf_sys::EspError),
+    ConnectError(esp_idf_sys::EspError),
+    WaitNetifUpError(esp_idf_sys::EspError),
+    NotConnected,
+}
+
+fn load_wifi_device(
+    wifi_devices: WifiDevices,
+) -> Result<BlockingWifi<EspWifi<'static>>, LoadWifiError> {
+    let wifi = match EspWifi::new(
+        wifi_devices.modem,
+        wifi_devices.sysloop.clone(),
+        Some(wifi_devices.nvs.clone()),
+    ) {
+        Ok(wifi) => wifi,
+        Err(e) => {
+            log::error!("Failed to create WiFi: {:?}", e);
+            Err(LoadWifiError::WifiCreationError(e))?
+        }
+    };
+
+    match BlockingWifi::wrap(wifi, wifi_devices.sysloop) {
+        Ok(wifi) => Ok(wifi),
+        Err(e) => {
+            log::error!("Failed to wrap WiFi: {:?}", e);
+            Err(LoadWifiError::WifiWrapError(e))
+        }
+    }
+}
+
+fn connect_wifi<'a>(
+    wifi_device: &mut BlockingWifi<EspWifi<'a>>,
+    client_config: ClientConfiguration,
+    timeout_ms: u32,
+) -> Result<(), LoadWifiError> {
+    wifi_device
+        .set_configuration(&Configuration::Client(client_config))
+        .map_err(|e| LoadWifiError::ConfigurationError(e))?;
+
+    wifi_device
+        .start()
+        .map_err(|e| LoadWifiError::StartError(e))?;
+
+    wifi_device
+        .connect()
+        .map_err(|e| LoadWifiError::ConnectError(e))?;
+
+    // Wait until the network interface is up
+    wifi_device
+        .wait_netif_up()
+        .map_err(|e| LoadWifiError::WaitNetifUpError(e))?;
+
+    const TIMES: u32 = 10;
+    let delay = timeout_ms / TIMES;
+    let mut attempts = 0;
+
+    while !wifi_device.is_connected().unwrap() {
+        attempts += 1;
+        FreeRtos::delay_ms(delay);
+        log::warn!(
+            "Wifi not connected yet, retying [{}/{}] attempts",
+            attempts,
+            TIMES
+        );
+        if attempts >= TIMES {
+            log::error!("Failed to connect to WiFi after {} attempts", TIMES);
+            Err(LoadWifiError::NotConnected)?
+        }
+    }
+
+    Ok(())
+}
+
+fn wait_wifi_stopped(
+    wifi_device: &mut BlockingWifi<EspWifi>,
+    milliseconds: u32,
+) -> Result<(), esp_idf_sys::EspError> {
+    wifi_device.disconnect()?;
+    wifi_device.stop()?;
+    log::info!("WiFi stopped successfully");
+    FreeRtos::delay_ms(milliseconds);
+    log::info!("Reconnecting to WiFi...");
+    wifi_device.start()?;
+    wifi_device.connect()?;
+    wifi_device.wait_netif_up()?;
+    log::info!("Reconnected to WiFi");
+    Ok(())
 }
 
 fn main() {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
-    log_memory_usage("Start of main");
-
-    log::info!("Hello, world!");
 
     let peripherals = peripherals::Peripherals::take().expect("Failed to take peripherals");
-    log_memory_usage("Before WiFi Initialization");
 
-    let modem = peripherals.modem;
+    let mut aht10 = get_aht10_sensor(Aht10Peripherals {
+        gpio3_sda: peripherals.pins.gpio3,
+        gpio2_scl: peripherals.pins.gpio2,
+        i2c0: peripherals.i2c0,
+    })
+    .expect("Failed to get AHT10 sensor");
+
     let sysloop = esp_idf_svc::eventloop::EspEventLoop::take().expect("Failed to take event loop");
-    log_memory_usage("After Event Loop Initialization");
 
     let nvs =
         esp_idf_svc::nvs::EspDefaultNvsPartition::take().expect("Failed to take NVS partition");
-    log_memory_usage("After NVS Partition Initialization");
 
-    let wifi =
-        EspWifi::new(modem, sysloop.clone(), Some(nvs.clone())).expect("Failed to create WiFi");
-    log_memory_usage("After WiFi Initialization");
+    let modem = peripherals.modem;
 
-    let mut wifi = BlockingWifi::wrap(wifi, sysloop).expect("Failed to wrap WiFi");
-    log_memory_usage("After Wrapping WiFi");
+    let wifi_devices = WifiDevices {
+        modem,
+        sysloop: sysloop.clone(),
+        nvs: nvs.clone(),
+    };
 
-    // let sda = peripherals.pins.gpio3;
-    // let scl = peripherals.pins.gpio2;
+    let mut wifi_device = load_wifi_device(wifi_devices).expect("Failed to load WiFi device");
 
-    // let i2c = peripherals.i2c0;
-    // let config = I2cConfig::new().baudrate(100.kHz().into());
-    // let aht10 = I2cDriver::new(i2c, sda, scl, &config).unwrap();
+    let http_client = EspHttpConnection::new(&HttpConfiguration::default())
+        .expect("Failed to create HTTP client");
+    let mut http_client = Client::wrap(http_client);
 
-    // let mut aht10: adafruit_aht10::AdafruitAHT10<_> = adafruit_aht10::AdafruitAHT10::new(aht10);
+    let mut wifi_attempts_failed: usize = 0;
 
-    // match aht10.begin() {
-    //     Ok(()) => log::info!("AHT10 initialized successfully!"),
-    //     Err(e) => log::error!("Failed to initialize AHT10: {:?}", e),
-    // }
-
-    wifi.set_configuration(&Configuration::Client(ClientConfiguration {
-        ssid: heapless::String::from_str("Pixel").unwrap(),
-        bssid: None,
-        auth_method: AuthMethod::WPA2Personal,
-        password: heapless::String::from_str("1111").unwrap(),
-        channel: None,
-        scan_method: ScanMethod::CompleteScan(ScanSortMethod::Signal),
-        pmf_cfg: PmfConfiguration::NotCapable,
-    }))
-    .unwrap();
-
-    log_memory_usage("Before WiFi Start");
-
-    match wifi.start() {
-        Ok(()) => log::info!("WiFi started successfully!"),
-        Err(e) => log::error!("Failed to start WiFi: {:?}", e),
-    }
-
-    match wifi.connect() {
-        Ok(()) => log::info!("Connected to WiFi!"),
-        Err(e) => log::error!("Failed to connect to WiFi: {:?}", e),
-    }
-
-    // Wait until the network interface is up
-    match wifi.wait_netif_up() {
-        Ok(()) => log::info!("Network interface is up!"),
-        Err(e) => log::error!("Failed to wait for network interface: {:?}", e),
-    }
-
-    // Print Out Wifi Connection Configuration
-    while !wifi.is_connected().unwrap() {
-        // Get and print connection configuration
-        let config = wifi.get_configuration().unwrap();
-        println!("Waiting for station {:?}", config);
-    }
-    log::info!("WiFi connection established!");
-
-    // HTTP Configuration
-    // Create HTTPS Connection Handle
-    let httpconnection = EspHttpConnection::new(&HttpConfig {
-        use_global_ca_store: true,
-        crt_bundle_attach: Some(esp_idf_sys::esp_crt_bundle_attach),
-        timeout: Some(core::time::Duration::from_secs(10)),
-        ..Default::default()
-    })
-    .unwrap_or_else(|e| {
-        log::error!("Failed to create HTTP connection: {:?}", e);
-        panic!("HTTP connection creation failed");
-    });
-
-    let base_url = "http://sensor-server.juancb.ftp.sh:3000";
-
-    // Create HTTPS Client
-    let mut httpclient = Client::wrap(httpconnection);
-
-    loop {
-        let request_body: PostAht10DataBody = PostAht10DataBody {
-            user_uuid: "test_user_uuid".to_string(),
-            user_place_id: 1,
-            data: Aht10Data {
-                sensor_id: "sensor_123".to_string(),
-                humidity: 12.23,
-                temperature: 23.45,
-            },
-            added_at: Some(chrono::Utc::now().timestamp()),
-        };
-
-        let request_body = match serde_json::to_string(&request_body) {
-            Ok(body) => body,
-            Err(e) => {
-                log::error!("Failed to serialize request body: {:?}", e);
-                FreeRtos::delay_ms(1000);
-                continue;
-            }
-        };
-
-        let url = format!(
-            "{}{}",
-            base_url,
-            api::endpoints::post_aht10_data::PostAht10::PATH
-        );
-
-        log::info!("-> Sending HTTP POST request to {}", url);
-
-        let resp = match httpclient.post(&url, &[("accept", "application/json")]) {
-            Ok(mut req) => {
-                if let Err(e) = req.write_all(request_body.as_bytes()) {
-                    log::error!("Failed to write request body: {:?}", e);
-                    FreeRtos::delay_ms(1000);
-                    continue;
-                } else {
-                    log::info!("Request body written successfully");
-                    req.submit()
-                }
-            }
-            Err(e) => {
-                log::error!("Failed to create HTTP POST request: {:?}", e);
-                FreeRtos::delay_ms(1000);
-                continue;
-            }
-        };
-
-        let mut resp = match resp {
-            Ok(response) => response,
-            Err(e) => {
-                log::error!("Failed to send HTTP POST request: {:?}", e);
-                FreeRtos::delay_ms(1000);
-                continue;
-            }
-        };
-
-        log::info!("<- HTTP Response Code: {:?}", resp.status());
-
-        let mut buf = [0u8; 1024];
-
-        match resp.read(&mut buf) {
-            Ok(size) => {
-                log::info!(
-                    "<- HTTP Response Body [{} bytes], {}",
-                    size,
-                    core::str::from_utf8(&buf[..size]).unwrap()
-                );
-
-                let json = serde_json::from_slice::<Value>(&buf[..size]);
-                match json {
-                    Ok(json) => {
-                        if let Some(_json) = json.get("json") {
-                            log::info!("JSON found in response");
-                        } else {
-                            log::info!("JSON not found in response");
-                            log::info!("Full JSON response: {:?}", json);
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to parse JSON response: {:?}", e);
-                    }
-                }
-            }
-            Err(e) => {
-                log::error!("Failed to read HTTP response body: {:?}", e);
-            }
+    'select_wifi: loop {
+        if wifi_attempts_failed >= private::CLIENT_WIFIS.len() * 3 {
+            log::error!(
+                "Failed to connect to WiFi after {} attempts",
+                wifi_attempts_failed
+            );
+            // TODO: Cannot connect to any WiFi
+            panic!("Cannot connect to any WiFi");
         }
 
-        FreeRtos::delay_ms(1000);
+        for wifi in private::CLIENT_WIFIS {
+            log::info!("Attempting to connect to WiFi: {}", wifi.0);
+
+            let client_config = ClientConfiguration {
+                ssid: heapless::String::from_str(wifi.0).unwrap(),
+                bssid: None,
+                auth_method: wifi.2,
+                password: heapless::String::from_str(wifi.1).unwrap(),
+                channel: None,
+                scan_method: ScanMethod::CompleteScan(ScanSortMethod::Signal),
+                pmf_cfg: PmfConfiguration::NotCapable,
+            };
+
+            match connect_wifi(
+                &mut wifi_device,
+                client_config,
+                500, // Timeout in milliseconds
+            ) {
+                Ok(()) => {
+                    wifi_attempts_failed = 0;
+                    log::info!("WiFi {} connected successfully", wifi.0);
+                    loop {
+                        let mut data: Option<Aht10Data> = None;
+
+                        // Read data from AHT10 sensor
+                        for _ in 0..SENSOR_READ_TRIES {
+                            match aht10.read_data() {
+                                Ok((humidity, temperature)) => {
+                                    if temperature < -41.0 {
+                                        log::warn!("Temperature reading is below -41.0 °C, skipping this reading");
+                                        continue;
+                                    }
+
+                                    data = Some(Aht10Data {
+                                        sensor_id: SENSOR_UUID.to_string(),
+                                        humidity,
+                                        temperature,
+                                    });
+
+                                    log::info!("AHT10 data: {:?}", data);
+
+                                    break;
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to read data from AHT10: {:?}", e);
+                                }
+                            };
+                        }
+
+                        // Send data to server
+                        match data {
+                            Some(data) => {
+                                let mut data_sent = false;
+                                for i in 0..HTTP_POST_TRIES {
+                                    match send_aht10_data(&mut http_client, data.clone()) {
+                                        Ok(response_code) => {
+                                            log::info!(
+                                                "Data sent successfully, response code: {:?}",
+                                                response_code
+                                            );
+                                            data_sent = true;
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "Failed to send AHT10 data [{}/{}]: {:?}",
+                                                i,
+                                                HTTP_POST_TRIES,
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+
+                                if !data_sent {
+                                    log::error!(
+                                        "Failed to send AHT10 data after {} attempts",
+                                        HTTP_POST_TRIES
+                                    );
+                                    continue 'select_wifi;
+                                }
+                            }
+                            None => {
+                                log::warn!("No AHT10 data available");
+                                // TODO: Send `sensor down` to server
+                                continue 'select_wifi;
+                            }
+                        }
+
+                        // Wait for a while before the next reading
+                        match wait_wifi_stopped(&mut wifi_device, READS_DELAY_MS) {
+                            Ok(()) => (),
+                            Err(e) => {
+                                log::error!("WiFi related error on wait_wifi_stopped: {:?}\nGoing back to select_wifi", e);
+                                continue 'select_wifi;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    wifi_attempts_failed += 1;
+                    log::warn!("Failed to connect WiFi {}: {:?}", wifi.0, e);
+                }
+            }
+        }
     }
 }
