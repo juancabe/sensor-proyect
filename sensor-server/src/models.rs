@@ -11,7 +11,7 @@ pub struct Aht10Data {
     pub added_at: i64,
 }
 
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = crate::schema::aht10data)]
 pub struct NewAht10Data<'a> {
     pub user_uuid: &'a str,

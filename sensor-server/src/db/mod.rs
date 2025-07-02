@@ -115,6 +115,8 @@ pub fn query_aht10_data(
 pub fn save_new_aht10_data(data: models::NewAht10Data<'_>) -> Result<(), Error> {
     use crate::schema::aht10data;
 
+    log::info!("Saving new AHT10 data: {:?}", data);
+
     let mut db_conn: r2d2::PooledConnection<ConnectionManager<SqliteConnection>> = get_db_pool()?;
 
     diesel::insert_into(aht10data::table)
