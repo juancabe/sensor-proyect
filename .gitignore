@@ -2,3 +2,4 @@
 .env.local
 .env
 test_db.*
+private.rs
