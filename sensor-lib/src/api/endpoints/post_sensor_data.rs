@@ -1,53 +1,53 @@
-use crate::api::{ApiEndpoint, model::aht10_data::Aht10Data};
+use crate::api::{ApiEndpoint, model::any_sensor_data::AnySensorData};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct PostAht10DataBody {
+pub struct PostSensorDataBody {
     pub user_uuid: String,
     pub user_place_id: i32,
-    pub data: Aht10Data,
+    pub data: AnySensorData,
     pub added_at: Option<i64>,
 }
-pub struct PostAht10 {}
+pub struct PostSensorData {}
 
 #[derive(Debug, Clone, Copy)]
-pub enum PostAht10ResponseCode {
+pub enum PostSensorResponseCode {
     Ok,
     BadRequest,
     PayloadTooLarge,
     InternalServerError,
 }
 
-impl PostAht10ResponseCode {
+impl PostSensorResponseCode {
     pub fn from_u16(status: u16) -> Result<Self, u16> {
         let status = http::StatusCode::from_u16(status).map_err(|_| status)?;
         match status {
-            http::StatusCode::OK => Ok(PostAht10ResponseCode::Ok),
-            http::StatusCode::BAD_REQUEST => Ok(PostAht10ResponseCode::BadRequest),
-            http::StatusCode::PAYLOAD_TOO_LARGE => Ok(PostAht10ResponseCode::PayloadTooLarge),
+            http::StatusCode::OK => Ok(PostSensorResponseCode::Ok),
+            http::StatusCode::BAD_REQUEST => Ok(PostSensorResponseCode::BadRequest),
+            http::StatusCode::PAYLOAD_TOO_LARGE => Ok(PostSensorResponseCode::PayloadTooLarge),
             http::StatusCode::INTERNAL_SERVER_ERROR => {
-                Ok(PostAht10ResponseCode::InternalServerError)
+                Ok(PostSensorResponseCode::InternalServerError)
             }
             _ => Err(status.as_u16()),
         }
     }
 }
 
-impl From<PostAht10ResponseCode> for http::StatusCode {
-    fn from(code: PostAht10ResponseCode) -> Self {
+impl From<PostSensorResponseCode> for http::StatusCode {
+    fn from(code: PostSensorResponseCode) -> Self {
         match code {
-            PostAht10ResponseCode::Ok => http::StatusCode::OK,
-            PostAht10ResponseCode::BadRequest => http::StatusCode::BAD_REQUEST,
-            PostAht10ResponseCode::PayloadTooLarge => http::StatusCode::PAYLOAD_TOO_LARGE,
-            PostAht10ResponseCode::InternalServerError => http::StatusCode::INTERNAL_SERVER_ERROR,
+            PostSensorResponseCode::Ok => http::StatusCode::OK,
+            PostSensorResponseCode::BadRequest => http::StatusCode::BAD_REQUEST,
+            PostSensorResponseCode::PayloadTooLarge => http::StatusCode::PAYLOAD_TOO_LARGE,
+            PostSensorResponseCode::InternalServerError => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
 
-impl<'a, 'b> ApiEndpoint<'a, 'b> for PostAht10 {
-    type RequestBody = PostAht10DataBody;
+impl<'a, 'b> ApiEndpoint<'a, 'b> for PostSensorData {
+    type RequestBody = PostSensorDataBody;
     type ResponseBody = ();
-    type ResponseCode = PostAht10ResponseCode;
+    type ResponseCode = PostSensorResponseCode;
 
     const PATH: &'static str = "/api/v0/post_aht10_data";
     const METHOD: http::Method = http::Method::POST;

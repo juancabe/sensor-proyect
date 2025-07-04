@@ -7,6 +7,6 @@ mod tests {
 
     #[test]
     fn it_exists() {
-        let _ = api::endpoints::post_aht10_data::PostAht10 {};
+        let _ = api::endpoints::post_sensor_data::PostSensorData {};
     }
 }

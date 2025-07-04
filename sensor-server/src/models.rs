@@ -20,6 +20,26 @@ pub struct NewAht10Data<'a> {
     pub added_at: i64, // UNIX timestamp in seconds
 }
 
+// #[derive(Queryable, Selectable, Clone)]
+// #[diesel(table_name = crate::schema::scd4xdata)]
+// #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+// pub struct Scd4xData {
+//     pub data_id: i32,
+//     pub user_uuid: String,
+//     pub user_place_id: i32,
+//     pub serialized_data: String,
+//     pub added_at: i64,
+// }
+
+// #[derive(Insertable, Clone, Debug)]
+// #[diesel(table_name = crate::schema::scd4xdata)]
+// pub struct NewScd4xData<'a> {
+//     pub user_uuid: &'a str,
+//     pub user_place_id: i32,
+//     pub serialized_data: &'a str,
+//     pub added_at: i64, // UNIX timestamp in seconds
+// }
+
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = crate::schema::user_places)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]

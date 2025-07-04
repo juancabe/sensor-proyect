@@ -4,7 +4,9 @@ use hyper::header::HeaderValue;
 use hyper::{Method, Request, Response, StatusCode};
 use sensor_lib::api::ApiEndpoint;
 use sensor_lib::api::endpoints::get_aht10_data::GetAht10;
-use sensor_lib::api::endpoints::post_aht10_data::{PostAht10, PostAht10ResponseCode};
+use sensor_lib::api::endpoints::post_sensor_data::{
+    PostSensorData, PostSensorDataBody, PostSensorResponseCode,
+};
 
 use crate::db::*;
 use crate::{helper::*, models};
@@ -34,15 +36,15 @@ pub async fn server(
         }
 
         // For post_aht10_data
-        (&PostAht10::METHOD, PostAht10::PATH) => {
-            let max_size = <PostAht10 as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
+        (&PostSensorData::METHOD, PostSensorData::PATH) => {
+            let max_size = <PostSensorData as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
             // Extract the body from the request
             let body = match extract_body_as_bytes(req, max_size).await {
                 Ok(bytes) => bytes,
                 Err(ExtractError::PayloadTooLarge) => {
                     log::warn!("Request body too large");
                     let mut response = Response::new(empty());
-                    *response.status_mut() = PostAht10ResponseCode::PayloadTooLarge.into();
+                    *response.status_mut() = PostSensorResponseCode::PayloadTooLarge.into();
                     return Ok(response);
                 }
                 Err(ExtractError::ErrorReceiving) => {
@@ -59,7 +61,7 @@ pub async fn server(
                 serde_json::from_slice::<serde_json::Value>(&body)
                     .map_err(|err| format!("Failed to parse body as JSON: {}", err))
                     .and_then(|value| {
-                        PostAht10::parse_request_body(&value)
+                        PostSensorData::parse_request_body(&value)
                             .map_err(|err| format!("Failed to parse request body: {:?}", err))
                     })
                     .and_then(|post_body| {
@@ -74,7 +76,7 @@ pub async fn server(
                 Err(err) => {
                     log::warn!("PARSING: {}", err);
                     let mut response = Response::new(empty());
-                    *response.status_mut() = PostAht10ResponseCode::BadRequest.into();
+                    *response.status_mut() = PostSensorResponseCode::BadRequest.into();
                     return Ok(response);
                 }
             };
