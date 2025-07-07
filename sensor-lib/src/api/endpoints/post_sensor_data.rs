@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PostSensorDataBody {
     pub user_uuid: String,
-    pub user_place_id: i32,
+    pub sensor_api_id: String,
     pub data: AnySensorData,
-    pub added_at: Option<i64>,
+    pub added_at: Option<i32>,
 }
 pub struct PostSensorData {}
 
@@ -14,6 +14,7 @@ pub struct PostSensorData {}
 pub enum PostSensorResponseCode {
     Ok,
     BadRequest,
+    Unauthorized,
     PayloadTooLarge,
     InternalServerError,
 }
@@ -24,6 +25,7 @@ impl PostSensorResponseCode {
         match status {
             http::StatusCode::OK => Ok(PostSensorResponseCode::Ok),
             http::StatusCode::BAD_REQUEST => Ok(PostSensorResponseCode::BadRequest),
+            http::StatusCode::UNAUTHORIZED => Ok(PostSensorResponseCode::Unauthorized),
             http::StatusCode::PAYLOAD_TOO_LARGE => Ok(PostSensorResponseCode::PayloadTooLarge),
             http::StatusCode::INTERNAL_SERVER_ERROR => {
                 Ok(PostSensorResponseCode::InternalServerError)
@@ -38,6 +40,7 @@ impl From<PostSensorResponseCode> for http::StatusCode {
         match code {
             PostSensorResponseCode::Ok => http::StatusCode::OK,
             PostSensorResponseCode::BadRequest => http::StatusCode::BAD_REQUEST,
+            PostSensorResponseCode::Unauthorized => http::StatusCode::UNAUTHORIZED,
             PostSensorResponseCode::PayloadTooLarge => http::StatusCode::PAYLOAD_TOO_LARGE,
             PostSensorResponseCode::InternalServerError => http::StatusCode::INTERNAL_SERVER_ERROR,
         }

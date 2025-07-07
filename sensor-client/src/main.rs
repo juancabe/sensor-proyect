@@ -2,7 +2,7 @@ use core::{panic, str::FromStr};
 use embedded_svc::http::client::Client;
 use esp32_nimble::{
     enums::{PrimPhy, SecPhy},
-    BLEAdvertisementData, BLEDevice,
+    uuid128, BLEAdvertisementData, BLEDevice, NimbleProperties,
 };
 use esp_idf_svc::{
     eventloop::System,
@@ -20,6 +20,7 @@ use esp_idf_svc::{
         ScanSortMethod,
     },
 };
+use esp_idf_sys::nvs_flash_init;
 use sensor_lib::api::{
     endpoints::post_sensor_data::{PostSensorData, PostSensorDataBody, PostSensorResponseCode},
     model::{
@@ -27,9 +28,14 @@ use sensor_lib::api::{
     },
     ApiEndpoint,
 };
+use std::ffi::CString;
 
 use scd4x::Scd4x;
 
+use crate::ble_protocol::SENSOR_CONFIG;
+
+mod ble_protocol;
+mod persistence;
 mod private;
 
 const BASE_URL: &'static str = "http://sensor-server.juancb.ftp.sh:3000";
@@ -114,7 +120,7 @@ fn send_sensor_data(
 
     let body = PostSensorDataBody {
         user_uuid: USER_UUID.to_string(),
-        user_place_id: USER_PLACE_ID,
+        sensor_api_id: SENSOR_UUID.to_string(),
         data,
         added_at: None,
     };
@@ -288,6 +294,82 @@ fn co2_loop(peripherals: peripherals::Peripherals) {
     }
 }
 
+fn ble_advertisement_loop() {
+    let ble_device = BLEDevice::take();
+    let ble_advertiser = ble_device.get_advertising();
+    let mut ad_data = BLEAdvertisementData::new();
+    ad_data.name("esp32-sensor");
+
+    ble_advertiser.lock().set_data(&mut ad_data);
+    ble_advertiser.lock().start();
+
+    log::info!("Advertisement started!");
+    loop {
+        FreeRtos::delay_ms(100);
+    }
+}
+
+fn configure_esp_ble_loop(ble_device: &BLEDevice) {
+    use ble_protocol;
+    let p = &ble_protocol::SENSOR_CONFIG;
+
+    let ble_advertiser = ble_device.get_advertising();
+    let server = ble_device.get_server();
+    let svc = server.create_service(*p.service_uuid);
+
+    let mut chars = Vec::new();
+    for char in p.characteristics.iter() {
+        let e = svc
+            .lock()
+            .create_characteristic(*char.uuid, char.get_nimble_properties());
+
+        e.lock().on_write(|args| {
+            let write_fn = char
+                .write
+                .expect("Characteristic write function is not set");
+
+            log::info!(
+                "Characteristic {} written: {}",
+                char.uuid,
+                String::from_utf8_lossy(args.current_data())
+            );
+
+            let data = args.recv_data();
+            if let Some(zstr) = write_fn(data) {
+                log::info!("Received ZStr20: {:?}", zstr);
+            } else {
+                log::error!("Failed to parse ZStr20 from data: {:?}", data);
+            }
+        });
+        chars.push(e);
+    }
+
+    ble_advertiser
+        .lock()
+        .set_data(
+            BLEAdvertisementData::new()
+                .name("esp32-sensor")
+                .add_service_uuid(*p.service_uuid),
+        )
+        .unwrap();
+
+    ble_advertiser.lock().start().unwrap();
+
+    log::info!("BLE advertising started");
+    log::info!("BLE service created with UUID: {}", *p.service_uuid);
+
+    loop {
+        // Wait for BLE connections
+        FreeRtos::delay_ms(1000);
+
+        // Check if the service is still running
+        if !ble_advertiser.lock().is_advertising() {
+            log::warn!("BLE advertising stopped, restarting...");
+            ble_advertiser.lock().start().unwrap();
+        }
+    }
+}
+
 fn main() {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
@@ -308,19 +390,7 @@ fn main() {
     // });
 
     let ble_device = BLEDevice::take();
-    let ble_advertiser = ble_device.get_advertising();
-    let mut ad_data = BLEAdvertisementData::new();
-    ad_data.name("esp32-sensor");
-
-    ble_advertiser.lock().set_data(&mut ad_data);
-    ble_advertiser.lock().start();
-
-    log::info!("Advertisement started!");
-    loop {
-        FreeRtos::delay_ms(100);
-    }
-
-    panic!("SCD41 sensor test completed, exiting...");
+    configure_esp_ble_loop(&ble_device);
 
     // let sysloop = esp_idf_svc::eventloop::EspEventLoop::take().expect("Failed to take event loop");
 

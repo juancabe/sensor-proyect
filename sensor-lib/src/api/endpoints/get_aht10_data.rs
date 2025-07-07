@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct GetAht10RequestBody {
     pub user_uuid: String,
-    pub user_place_id: i32,
-    pub added_at_upper: Option<i64>,
-    pub added_at_lower: Option<i64>,
+    pub sensor_api_id: String,
+    pub added_at_upper: Option<i32>,
+    pub added_at_lower: Option<i32>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

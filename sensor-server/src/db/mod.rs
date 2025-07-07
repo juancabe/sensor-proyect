@@ -1,4 +1,5 @@
 use diesel::connection::SimpleConnection;
+use diesel::dsl::count_star;
 use diesel::prelude::*;
 use diesel::r2d2::{self, ConnectionManager};
 use dotenvy::dotenv;
@@ -6,6 +7,7 @@ use dotenvy::dotenv;
 use once_cell::sync::Lazy;
 use sensor_lib::api;
 use sensor_lib::api::endpoints::get_aht10_data::GetAht10RequestBody;
+use sensor_lib::api::model::sensor_kind::SensorKind;
 
 use crate::models;
 
@@ -18,6 +20,7 @@ pub enum Error {
     DataBaseError(diesel::result::Error),
     DataBaseConnectionError,
     SerializationError(serde_json::Error),
+    RegexNotMatched,
 }
 
 impl From<diesel::result::Error> for Error {
@@ -73,22 +76,33 @@ pub fn test_db_pool() -> Result<(), ()> {
 pub fn query_aht10_data(
     query: GetAht10RequestBody,
 ) -> Result<(Vec<api::model::aht10_data::Aht10Data>, FailedDeserialize), Error> {
-    use crate::schema::aht10data::dsl::*;
+    use crate::schema::{
+        aht10data::dsl as aht10data, aht10data::dsl::aht10data as aht10data_table,
+    };
+    use crate::schema::{
+        user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
+    };
+    use crate::schema::{
+        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
 
     let mut db_conn = get_db_pool()?;
 
     let max_date = query.added_at_upper;
     let min_date = query.added_at_lower;
-    let u_uuid = &query.user_uuid;
-    let u_place_id = query.user_place_id;
+    let sensor_ = &query.sensor_api_id;
+    let user = &query.user_uuid;
 
-    let mut failed_deserialize = 0;
+    let mut failed_deserialize: usize = 0;
 
-    let vec = aht10data
-        .filter(user_uuid.eq(u_uuid))
-        .filter(user_place_id.eq(u_place_id))
-        .filter(added_at.le(max_date.unwrap_or(i64::MAX)))
-        .filter(added_at.ge(min_date.unwrap_or(0)))
+    let vec = aht10data_table
+        .filter(aht10data::sensor.eq(sensor_))
+        .inner_join(user_sensors_table)
+        .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
+        .filter(user_places::user.eq(user))
+        .filter(aht10data::added_at.le(max_date.unwrap_or(i32::MAX)))
+        .filter(aht10data::added_at.ge(min_date.unwrap_or(0)))
+        .select(models::Aht10Data::as_select())
         .load::<models::Aht10Data>(&mut db_conn)?
         .into_iter()
         .map(|data| {
@@ -112,6 +126,139 @@ pub fn query_aht10_data(
     Ok((vec, failed_deserialize))
 }
 
+pub fn query_scd4x_data(
+    query: GetAht10RequestBody,
+) -> Result<(Vec<api::model::scd4x_data::Scd4xData>, FailedDeserialize), Error> {
+    use crate::schema::{
+        scd4xdata::dsl as scd4xdata, scd4xdata::dsl::scd4xdata as scd4xdata_table,
+    };
+    use crate::schema::{
+        user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
+    };
+    use crate::schema::{
+        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
+
+    let mut db_conn = get_db_pool()?;
+
+    let max_date = query.added_at_upper;
+    let min_date = query.added_at_lower;
+    let sensor_ = &query.sensor_api_id;
+    let user = &query.user_uuid;
+
+    let mut failed_deserialize: usize = 0;
+
+    let vec = scd4xdata_table
+        .filter(scd4xdata::sensor.eq(sensor_))
+        .inner_join(user_sensors_table)
+        .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
+        .filter(user_places::user.eq(user))
+        .filter(scd4xdata::added_at.le(max_date.unwrap_or(i32::MAX)))
+        .filter(scd4xdata::added_at.ge(min_date.unwrap_or(0)))
+        .select(models::Scd4xData::as_select())
+        .load::<models::Scd4xData>(&mut db_conn)?
+        .into_iter()
+        .map(|data| {
+            let deserialized =
+                serde_json::from_str::<api::model::scd4x_data::Scd4xData>(&data.serialized_data);
+
+            match deserialized {
+                Ok(value) => Some(value),
+                Err(err) => {
+                    failed_deserialize += 1;
+                    log::error!(
+                        "INCONSISTENCY -> Failed to deserialize previously serialized SCD4X data: {}",
+                        err
+                    );
+                    None
+                }
+            }
+        })
+        .filter_map(|x| x)
+        .collect();
+
+    Ok((vec, failed_deserialize))
+}
+
+pub fn get_user_from_sensor(sensor_api_id: &str) -> Result<String, crate::db::Error> {
+    // use crate::schema::user_places::dsl::*;
+    // use crate::schema::user_sensors::dsl::*;
+
+    use crate::schema::{
+        user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
+    };
+    use crate::schema::{
+        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
+
+    let mut db_conn = get_db_pool()?;
+
+    let user_id_result = user_sensors_table
+        .inner_join(user_places_table)
+        .filter(user_sensors::api_id.eq(sensor_api_id))
+        .select(user_places::user)
+        .first::<String>(&mut db_conn);
+
+    match user_id_result {
+        Ok(uid) => Ok(uid),
+        Err(err) => {
+            log::warn!(
+                "Failed to find user for sensor with API ID {}: {:?}",
+                sensor_api_id,
+                err
+            );
+            Err(crate::db::Error::DataBaseError(err))
+        }
+    }
+}
+
+pub fn user_uuid_matches_sensor_api_id(user_uuid: &str, sensor_api_id: &str) -> bool {
+    match get_user_from_sensor(sensor_api_id) {
+        Ok(uid) => uid == user_uuid,
+        Err(err) => {
+            log::error!("Error checking user UUID against sensor API ID: {:?}", err);
+            false
+        }
+    }
+}
+
+pub fn user_uuid_matches_place_id(
+    user_uuid: &str,
+    user_place_id_: i32,
+) -> Result<bool, crate::db::Error> {
+    // use crate::schema::user_places::dsl::*;
+    use crate::schema::{
+        user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
+    };
+
+    let mut db_conn = get_db_pool()?;
+
+    let count = user_places_table
+        .filter(user_places::user.eq(user_uuid))
+        .filter(user_places::id.eq(user_place_id_))
+        .select(count_star())
+        .first::<i64>(&mut db_conn)?;
+
+    Ok(count > 0)
+}
+
+pub fn get_sensor_kind_from_id(sensor_api_id: &str) -> Result<SensorKind, crate::db::Error> {
+    // use crate::schema::user_sensors::dsl::*;
+    use crate::schema::{
+        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
+
+    let mut db_conn = get_db_pool()?;
+
+    let kind = user_sensors_table
+        .filter(user_sensors::api_id.eq(sensor_api_id))
+        .select(user_sensors::kind)
+        .first::<i32>(&mut db_conn)?;
+
+    Ok(SensorKind::from_u8(kind as u8)
+        .ok_or_else(|| crate::db::Error::DataBaseError(diesel::result::Error::NotFound))?)
+}
+
 pub fn save_new_aht10_data(data: models::NewAht10Data<'_>) -> Result<(), Error> {
     use crate::schema::aht10data;
 
@@ -125,10 +272,265 @@ pub fn save_new_aht10_data(data: models::NewAht10Data<'_>) -> Result<(), Error> 
     Ok(())
 }
 
+pub fn save_new_scd4x_data(data: models::NewScd4xData<'_>) -> Result<(), Error> {
+    use crate::schema::scd4xdata;
+
+    log::info!("Saving new SCD4X data: {:?}", data);
+
+    let mut db_conn: r2d2::PooledConnection<ConnectionManager<SqliteConnection>> = get_db_pool()?;
+
+    diesel::insert_into(scd4xdata::table)
+        .values(data)
+        .execute(&mut db_conn)?;
+    Ok(())
+}
+
+pub fn generate_sensor_id(
+    user_uuid: &str,
+    sensor_kind: &SensorKind,
+    user_place_id: i32,
+    ble_mac: &str,
+) -> Result<[u8; 20], Error> {
+    const BLE_MAC_EXAMPLE: &str = "00:11:22:33:44:55";
+    const MAC_UPPERCASE_COLON_REGEX: &str = r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$";
+    let ble_mac = ble_mac.to_uppercase();
+
+    // Check MAC format
+    if ble_mac.len() != BLE_MAC_EXAMPLE.len()
+        || !regex::Regex::new(MAC_UPPERCASE_COLON_REGEX)
+            .unwrap()
+            .is_match(&ble_mac)
+    {
+        log::error!("Invalid BLE MAC address format: {}", ble_mac);
+        return Err(Error::RegexNotMatched);
+    }
+
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(user_uuid.as_bytes());
+    hasher.update(sensor_kind.as_str().as_bytes());
+    hasher.update(user_place_id.to_string().as_bytes());
+    hasher.update(ble_mac.as_bytes());
+    let hash = hasher.finalize();
+    let mut sensor_id = [0u8; 20];
+    sensor_id.copy_from_slice(&hash[..20]);
+    Ok(sensor_id)
+}
+
+pub fn new_sensor(
+    user_uuid: &str,
+    sensor_kind: SensorKind,
+    user_place_id_: i32,
+    ble_mac: &str,
+) -> Result<String, Error> {
+    use crate::schema::user_sensors;
+
+    if !user_uuid_matches_place_id(user_uuid, user_place_id_)? {
+        return Err(Error::DataBaseError(diesel::result::Error::NotFound));
+    }
+
+    let mut db_conn = get_db_pool()?;
+
+    let user_sensor_api_id = generate_sensor_id(user_uuid, &sensor_kind, user_place_id_, ble_mac);
+    let user_sensor_api_id = hex::encode(user_sensor_api_id?);
+
+    let new_sensor = models::NewUserSensor {
+        api_id: &user_sensor_api_id,
+        place: user_place_id_,
+        kind: sensor_kind as i32,
+        last_measurement: 0,
+        ble_mac_address: ble_mac,
+    };
+
+    diesel::insert_into(user_sensors::table)
+        .values(new_sensor)
+        .execute(&mut db_conn)?;
+
+    Ok(user_sensor_api_id)
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn test_generate_sensor_id() {
+        let user_uuid = "test-uuid-1234";
+        let sensor_kind = SensorKind::Aht10;
+        let user_place_id = 1; // Assuming this is a valid place ID for the test user
+        let ble_macs_ok = [
+            "00:11:22:33:44:55",
+            "AA:BB:CC:DD:EE:FF",
+            "12:34:56:78:9A:BC",
+        ];
+        let ble_macs_invalid = [
+            "00:11:22:33:44",       // Too short
+            "00:11:22:33:44:55:66", // Too long
+            "00-11-22-33-44-55",    // Wrong format
+            "00:11:22:33:44:G1",    // Invalid hex character
+        ];
+
+        for ble_mac in ble_macs_ok {
+            let sensor_id = generate_sensor_id(user_uuid, &sensor_kind, user_place_id, ble_mac)
+                .expect("Failed to generate sensor ID");
+            assert_eq!(
+                sensor_id.len(),
+                20,
+                "Sensor ID should be 20 bytes long, got {} for {:?}",
+                sensor_id.len(),
+                sensor_id
+            );
+        }
+
+        for ble_mac in ble_macs_invalid {
+            let result = generate_sensor_id(user_uuid, &sensor_kind, user_place_id, ble_mac);
+            assert!(
+                result.is_err(),
+                "Expected error for invalid BLE MAC address: {}",
+                ble_mac
+            );
+            if let Err(Error::RegexNotMatched) = result {
+                // Expected error for invalid BLE MAC address
+            } else {
+                panic!("Expected a RegexNotMatched error, but got: {:?}", result);
+            }
+        }
+    }
+
+    #[test]
+    fn test_new_sensor_then_delete() {
+        let user_uuid = "test-uuid-1234";
+        let sensor_kind = SensorKind::Aht10;
+        let user_place_id = 1; // Assuming this is a valid place ID for the test user
+        let ble_mac = "00:11:22:33:44:55";
+
+        let result = new_sensor(user_uuid, sensor_kind, user_place_id, ble_mac);
+        assert!(result.is_ok(), "Failed to create new sensor");
+
+        let sensor_api_id = result.unwrap();
+        assert!(
+            !sensor_api_id.is_empty(),
+            "Sensor API ID should not be empty"
+        );
+
+        let errored_result = new_sensor(user_uuid, sensor_kind, user_place_id, ble_mac);
+        assert!(
+            errored_result.is_err(),
+            "Expected error when creating sensor with existing API ID"
+        );
+
+        let errored_result =
+            new_sensor("nonexistent-user-uuid", sensor_kind, user_place_id, ble_mac);
+        assert!(
+            errored_result.is_err(),
+            "Expected error when creating sensor for nonexistent user"
+        );
+
+        let errored_result = new_sensor(
+            user_uuid,
+            sensor_kind, // Assuming this is an invalid sensor kind
+            123,         // Assuming this is an invalid place ID
+            ble_mac,
+        );
+        assert!(
+            errored_result.is_err(),
+            "Expected error when creating sensor with invalid place ID"
+        );
+
+        // Clean up by deleting the sensor
+        let mut db_conn = get_db_pool().expect("Failed to get database connection");
+
+        use crate::schema::{
+            user_sensors::dsl as user_sensors,
+            user_sensors::dsl::user_sensors as user_sensors_table,
+        };
+
+        diesel::delete(user_sensors_table.filter(user_sensors::api_id.eq(&sensor_api_id)))
+            .execute(&mut db_conn)
+            .expect("Failed to delete sensor");
+    }
+
+    #[test]
+    fn test_user_uuid_matches_sensor_api_id() {
+        let user_uuid = "test-uuid-1234";
+        let sensor_api_id = "sensor-aht10-home";
+        let result = user_uuid_matches_sensor_api_id(user_uuid, sensor_api_id);
+        assert!(
+            result,
+            "Expected user UUID to match sensor API ID, but it did not"
+        );
+    }
+
+    #[test]
+    fn test_user_uuid_matches_sensor_api_id_nonexistent() {
+        let user_uuid = "test-uuid-1234";
+        let sensor_api_id = "nonexistent-sensor";
+        let result = user_uuid_matches_sensor_api_id(user_uuid, sensor_api_id);
+        assert!(
+            !result,
+            "Expected user UUID to not match nonexistent sensor API ID, but it did"
+        );
+    }
+
+    #[test]
+    fn test_user_uuid_matches_place_id() {
+        let user_uuid = "test-uuid-1234";
+        let user_place_id = 1; // Assuming this is a valid place ID for the test user
+        let result = user_uuid_matches_place_id(user_uuid, user_place_id);
+        assert!(
+            result.is_ok(),
+            "Failed to check if user UUID matches place ID: {:?}",
+            result.err()
+        );
+        assert!(
+            result.unwrap(),
+            "Expected user UUID to match place ID, but it did not"
+        );
+    }
+
+    #[test]
+    fn test_user_uuid_matches_place_id_nonexistent() {
+        let user_uuid = "test-uuid-1234";
+        let user_place_id = 999; // Assuming this is an invalid place ID
+        let result = user_uuid_matches_place_id(user_uuid, user_place_id).expect("no error");
+        assert!(
+            !result,
+            "Expected user UUID to not match nonexistent place ID, but it did"
+        );
+    }
+
+    #[test]
+    fn test_get_user_from_sensor() {
+        let sensor_api_id = "sensor-aht10-home";
+        let result = get_user_from_sensor(sensor_api_id);
+        assert!(
+            result.is_ok(),
+            "Failed to get user from sensor: {:?}",
+            result.err()
+        );
+        let user_uuid = result.unwrap();
+        assert!(!user_uuid.is_empty(), "User UUID should not be empty");
+        assert!(
+            user_uuid.eq("test-uuid-1234"),
+            "Expected user UUID to match test-uuid-1234"
+        );
+    }
+
+    #[test]
+    fn test_get_user_from_sensor_nonexistent() {
+        let sensor_api_id = "nonexistent-sensor";
+        let result = get_user_from_sensor(sensor_api_id);
+        assert!(
+            result.is_err(),
+            "Expected error when getting user from nonexistent sensor"
+        );
+        if let Err(crate::db::Error::DataBaseError(diesel::result::Error::NotFound)) = result {
+            // Expected error for nonexistent sensor
+        } else {
+            assert!(false, "Expected a NotFound error, but got: {:?}", result);
+        }
+    }
 
     #[test]
     fn test_embeed_run_migrations() {
@@ -142,78 +544,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Failed to insert mock user")]
-    fn test_load_mock_data() {
-        let mock_user = models::NewUser {
-            uuid: "test-user-uuid",
-            username: "testuser",
-            hashed_password: "hashedpassword",
-            email: "testuser@example.com",
-            created_at: 1633036800, // Example timestamp
-            updated_at: 1633036800, // Example timestamp
-        };
-
-        let mock_user_place = models::NewUserPlace {
-            user_id: mock_user.uuid,
-            place_name: "Test Place",
-            place_description: Some("A test place for unit tests"),
-            created_at: 1633036800, // Example timestamp
-            updated_at: 1633036800, // Example timestamp
-        };
-
-        const DATA_COUNT: usize = 100;
-        let mut serialized_data = api::model::aht10_data::Aht10Data {
-            temperature: 22.5,
-            humidity: 45.0,
-            sensor_id: "test-sensor-id".to_string(),
-        };
-
-        let mut model_data = models::NewAht10Data {
-            user_uuid: &mock_user.uuid,
-            user_place_id: 1,
-            serialized_data: &serde_json::to_string(&serialized_data).unwrap(),
-            added_at: 1633036800, // Example timestamp
-        };
-
-        use rand::Rng;
-
-        let mut db_conn = get_db_pool().expect("Failed to get database connection");
-
-        // Insert mock user
-        diesel::insert_into(crate::schema::users::table)
-            .values(&mock_user)
-            .execute(&mut db_conn)
-            .expect("Failed to insert mock user");
-
-        // Insert mock user place
-        diesel::insert_into(crate::schema::user_places::table)
-            .values(&mock_user_place)
-            .execute(&mut db_conn)
-            .expect("Failed to insert mock user place");
-
-        let mut serialized_vec = Vec::with_capacity(DATA_COUNT);
-
-        for _ in 0..DATA_COUNT {
-            let serialized = serde_json::to_string(&serialized_data).unwrap();
-            serialized_vec.push(serialized);
-        }
-
-        for i in 0..DATA_COUNT {
-            let serialized_ref = &serialized_vec[i];
-
-            serialized_data.temperature += rand::rng().random_range(-1.0..1.0);
-            serialized_data.humidity += rand::rng().random_range(-1.0..1.0);
-            model_data.serialized_data = serialized_ref;
-            model_data.added_at = 1633036800 + (i as i64 * 60); // Increment timestamp by 60 seconds
-
-            diesel::insert_into(crate::schema::aht10data::table)
-                .values(&model_data)
-                .execute(&mut db_conn)
-                .expect("Failed to insert mock AHT10 data");
-        }
-    }
-
-    #[test]
     fn test_test_db_pool() {
         let result = test_db_pool();
         assert!(
@@ -224,11 +554,10 @@ mod tests {
 
     #[test]
     fn test_insert_aht10data_then_delete() {
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now().timestamp() as i32;
 
         let new_data = models::NewAht10Data {
-            user_uuid: "test-user-uuid",
-            user_place_id: 1,
+            sensor: "sensor-aht10-home".into(),
             serialized_data: "{\"temperature\": 22.5, \"humidity\": 45.0}",
             added_at: now, // Example timestamp
         };
@@ -251,10 +580,9 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_aht10data_unexistent_user() {
+    fn test_insert_aht10data_unexistent_sensor() {
         let new_data = models::NewAht10Data {
-            user_uuid: "nonexistent",
-            user_place_id: 1,
+            sensor: "sensor-aht10-homee".into(),
             serialized_data: "{\"temperature\": 22.5, \"humidity\": 45.0}",
             added_at: 1633036800, // Example timestamp
         };
@@ -277,16 +605,38 @@ mod tests {
     #[test]
     fn test_query_aht10_data() {
         let query = GetAht10RequestBody {
-            user_uuid: "test-user-uuid".to_string(),
-            user_place_id: 1,
+            sensor_api_id: "sensor-aht10-home".into(),
+            user_uuid: "test-uuid-1234".into(),
             added_at_upper: None,
             added_at_lower: None,
         };
 
         let result = query_aht10_data(query).expect("Failed to query AHT10 data for existing user");
+        assert_eq!(
+            result.1, 0,
+            "Expected no deserialization errors, found {}",
+            result.1
+        );
         assert!(
-            result.0.len() == 100,
-            "Expected 100 records, found {}",
+            result.0.len() == 10,
+            "Expected 10 records, found {}",
+            result.0.len()
+        );
+    }
+
+    #[test]
+    fn test_query_aht10_data_nonexistent_user() {
+        let query = GetAht10RequestBody {
+            sensor_api_id: "sensor-aht10-home".into(),
+            user_uuid: "nonexistent-user-uuid".into(),
+            added_at_upper: None,
+            added_at_lower: None,
+        };
+        let result =
+            query_aht10_data(query).expect("Failed to query AHT10 data for nonexistent user");
+        assert!(
+            result.0.is_empty(),
+            "Expected no records for nonexistent user, found {}",
             result.0.len()
         );
         assert_eq!(
@@ -297,15 +647,91 @@ mod tests {
     }
 
     #[test]
-    fn test_query_aht10_data_nonexistent_user() {
+    fn test_insert_scd4xdata_then_delete() {
+        let now = chrono::Utc::now().timestamp() as i32;
+
+        let new_data = models::NewScd4xData {
+            sensor: "sensor-scd4x-office".into(),
+            serialized_data: "{\"co2\": 420, \"temperature\": 21.5, \"humidity\": 40.2}",
+            added_at: now, // Example timestamp
+        };
+
+        let result = save_new_scd4x_data(new_data);
+        assert!(result.is_ok(), "Failed to insert SCD4X data");
+
+        let mut db_conn = get_db_pool().expect("Failed to get database connection");
+
+        use crate::schema::scd4xdata::dsl::*;
+        let count = diesel::delete(scd4xdata.filter(added_at.eq(now)))
+            .execute(&mut db_conn)
+            .expect("Failed to delete SCD4X data");
+
+        assert_eq!(
+            count, 1,
+            "Expected to delete 1 record, but deleted {}",
+            count
+        );
+    }
+
+    #[test]
+    fn test_insert_scd4xdata_unexistent_sensor() {
+        let new_data = models::NewScd4xData {
+            sensor: "sensor-scd4x-officee".into(),
+            serialized_data: "{\"co2\": 420, \"temperature\": 21.5, \"humidity\": 40.2}",
+            added_at: 1633036800, // Example timestamp
+        };
+
+        let result = save_new_scd4x_data(new_data);
+        assert!(
+            result.is_err(),
+            "Expected error when inserting data for a nonexistent user"
+        );
+        if let Err(crate::db::Error::DataBaseError(diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::ForeignKeyViolation,
+            _,
+        ))) = result
+        {
+            // Expected error for inserting data for a nonexistent user
+        } else {
+            panic!(
+                "Expected a ForeignKeyViolation error, but got: {:?}",
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_query_scd4x_data() {
         let query = GetAht10RequestBody {
-            user_uuid: "nonexistent".to_string(),
-            user_place_id: 1,
+            sensor_api_id: "sensor-scd4x-office".into(),
+            user_uuid: "test-uuid-1234".into(),
+            added_at_upper: None,
+            added_at_lower: None,
+        };
+
+        let result = query_scd4x_data(query).expect("Failed to query SCD4X data for existing user");
+        assert_eq!(
+            result.1, 0,
+            "Expected no deserialization errors, found {}",
+            result.1
+        );
+        assert!(
+            result.0.len() == 10,
+            "Expected 10 records, found {}",
+            result.0.len()
+        );
+    }
+
+    #[test]
+    fn test_query_scd4x_data_nonexistent_user() {
+        let query = GetAht10RequestBody {
+            sensor_api_id: "sensor-scd4x-office".into(),
+            user_uuid: "nonexistent-user-uuid".into(),
             added_at_upper: None,
             added_at_lower: None,
         };
         let result =
-            query_aht10_data(query).expect("Failed to query AHT10 data for nonexistent user");
+            query_aht10_data(query).expect("Failed to query SCD4X data for nonexistent user");
         assert!(
             result.0.is_empty(),
             "Expected no records for nonexistent user, found {}",
