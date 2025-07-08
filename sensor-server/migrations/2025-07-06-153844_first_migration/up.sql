@@ -1,14 +1,13 @@
 -- Your SQL goes here
 CREATE TABLE users (
-    uuid TEXT NOT NULL PRIMARY KEY,
-    username TEXT NOT NULL,
+    username TEXT NOT NULL PRIMARY KEY,
+    uuid TEXT NOT NULL,
     hashed_password TEXT NOT NULL,
     email TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    UNIQUE (username),
-    UNIQUE (email),
-    UNIQUE (uuid)
+    UNIQUE (uuid),
+    UNIQUE (email)
 ) STRICT;
 
 CREATE TABLE user_places (
@@ -18,7 +17,7 @@ CREATE TABLE user_places (
     description TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    FOREIGN KEY (user) REFERENCES users(uuid) ON DELETE CASCADE ON UPDATE CASCADE
+    FOREIGN KEY (user) REFERENCES users(username) ON DELETE CASCADE ON UPDATE CASCADE
 ) STRICT;
 
 CREATE TABLE sensor_kinds (
@@ -58,10 +57,10 @@ INSERT INTO sensor_kinds (name, description) VALUES
 ('scd4x', 'CO2, temperature, and humidity sensor');
 
 
-INSERT INTO users (uuid, username, hashed_password, email, created_at, updated_at)
+INSERT INTO users (username, uuid, hashed_password, email, created_at, updated_at)
 VALUES (
-    'test-uuid-1234',
     'testuser',
+    '693a3bd4-5f16-4de8-9fb1-31b26edf6ba9',
     'hashedpassword123',
     'testuser@example.com',
     strftime('%s','now'),
@@ -70,8 +69,8 @@ VALUES (
 
 INSERT INTO user_places (user, name, description, created_at, updated_at)
 VALUES
-('test-uuid-1234', 'Home', 'Primary residence', strftime('%s','now'), strftime('%s','now')),
-('test-uuid-1234', 'Office', 'Workplace location', strftime('%s','now'), strftime('%s','now'));
+('testuser', 'Home', 'Primary residence', strftime('%s','now'), strftime('%s','now')),
+('testuser', 'Office', 'Workplace location', strftime('%s','now'), strftime('%s','now'));
 
 INSERT INTO user_sensors (api_id, place, kind, last_measurement, ble_mac_address)
 VALUES

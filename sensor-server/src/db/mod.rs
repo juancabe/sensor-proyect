@@ -85,13 +85,14 @@ pub fn query_aht10_data(
     use crate::schema::{
         user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
     };
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
 
     let mut db_conn = get_db_pool()?;
 
     let max_date = query.added_at_upper;
     let min_date = query.added_at_lower;
     let sensor_ = &query.sensor_api_id;
-    let user = &query.user_uuid;
+    let user_uuid = &query.user_uuid;
 
     let mut failed_deserialize: usize = 0;
 
@@ -99,7 +100,8 @@ pub fn query_aht10_data(
         .filter(aht10data::sensor.eq(sensor_))
         .inner_join(user_sensors_table)
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
-        .filter(user_places::user.eq(user))
+        .inner_join(users_table.on(users::username.eq(user_places::user)))
+        .filter(users::uuid.eq(user_uuid))
         .filter(aht10data::added_at.le(max_date.unwrap_or(i32::MAX)))
         .filter(aht10data::added_at.ge(min_date.unwrap_or(0)))
         .select(models::Aht10Data::as_select())
@@ -138,13 +140,14 @@ pub fn query_scd4x_data(
     use crate::schema::{
         user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
     };
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
 
     let mut db_conn = get_db_pool()?;
 
     let max_date = query.added_at_upper;
     let min_date = query.added_at_lower;
     let sensor_ = &query.sensor_api_id;
-    let user = &query.user_uuid;
+    let user_uuid = &query.user_uuid;
 
     let mut failed_deserialize: usize = 0;
 
@@ -152,7 +155,8 @@ pub fn query_scd4x_data(
         .filter(scd4xdata::sensor.eq(sensor_))
         .inner_join(user_sensors_table)
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
-        .filter(user_places::user.eq(user))
+        .inner_join(users_table.on(users::username.eq(user_places::user)))
+        .filter(users::uuid.eq(user_uuid))
         .filter(scd4xdata::added_at.le(max_date.unwrap_or(i32::MAX)))
         .filter(scd4xdata::added_at.ge(min_date.unwrap_or(0)))
         .select(models::Scd4xData::as_select())
@@ -212,29 +216,45 @@ pub fn get_user_from_sensor(sensor_api_id: &str) -> Result<String, crate::db::Er
     }
 }
 
-pub fn user_uuid_matches_sensor_api_id(user_uuid: &str, sensor_api_id: &str) -> bool {
-    match get_user_from_sensor(sensor_api_id) {
-        Ok(uid) => uid == user_uuid,
-        Err(err) => {
-            log::error!("Error checking user UUID against sensor API ID: {:?}", err);
-            false
-        }
-    }
+pub fn user_uuid_matches_sensor_api_id(
+    user_uuid: &str,
+    sensor_api_id: &str,
+) -> Result<bool, Error> {
+    use crate::schema::{
+        user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
+    };
+    use crate::schema::{
+        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
+
+    let mut db_conn = get_db_pool()?;
+
+    let count = user_sensors_table
+        .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
+        .inner_join(users_table.on(users::username.eq(user_places::user)))
+        .filter(users::uuid.eq(user_uuid))
+        .filter(user_sensors::api_id.eq(sensor_api_id))
+        .select(count_star())
+        .first::<i64>(&mut db_conn)?;
+
+    Ok(count > 0)
 }
 
 pub fn user_uuid_matches_place_id(
     user_uuid: &str,
     user_place_id_: i32,
 ) -> Result<bool, crate::db::Error> {
-    // use crate::schema::user_places::dsl::*;
     use crate::schema::{
         user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
     };
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
 
     let mut db_conn = get_db_pool()?;
 
     let count = user_places_table
-        .filter(user_places::user.eq(user_uuid))
+        .inner_join(users_table.on(users::username.eq(user_places::user)))
+        .filter(users::uuid.eq(user_uuid))
         .filter(user_places::id.eq(user_place_id_))
         .select(count_star())
         .first::<i64>(&mut db_conn)?;
@@ -349,14 +369,71 @@ pub fn new_sensor(
     Ok(user_sensor_api_id)
 }
 
+pub fn get_login(username: &str, hashed_password: &str) -> Result<String, Error> {
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
+    let mut db_conn = get_db_pool()?;
+    let user = users_table
+        .filter(users::username.eq(username))
+        .filter(users::hashed_password.eq(hashed_password))
+        .select(users::uuid)
+        .first::<String>(&mut db_conn)
+        .map_err(|_| Error::DataBaseError(diesel::result::Error::NotFound))?;
+    Ok(user)
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
 
     #[test]
+    fn test_get_login() {
+        let username = "testuser";
+        let hashed_password = "hashedpassword123"; // Replace with actual hashed password
+
+        let result = get_login(username, hashed_password);
+        assert!(result.is_ok(), "Failed to get login: {:?}", result.err());
+        let user_uuid = result.unwrap();
+        assert!(!user_uuid.is_empty(), "User UUID should not be empty");
+    }
+
+    #[test]
+    fn test_get_login_nonexistent() {
+        let username = "nonexistentuser";
+        let hashed_password = "hashedpassword123"; // Replace with actual hashed password
+
+        let result = get_login(username, hashed_password);
+        assert!(
+            result.is_err(),
+            "Expected error when getting login for nonexistent user"
+        );
+        if let Err(crate::db::Error::DataBaseError(diesel::result::Error::NotFound)) = result {
+            // Expected error for nonexistent user
+        } else {
+            panic!("Expected a NotFound error, but got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_get_login_incorrect_password() {
+        let username = "testuser";
+        let hashed_password = "wronghashedpassword"; // Replace with actual hashed password
+
+        let result = get_login(username, hashed_password);
+        assert!(
+            result.is_err(),
+            "Expected error when getting login with incorrect password"
+        );
+        if let Err(crate::db::Error::DataBaseError(diesel::result::Error::NotFound)) = result {
+            // Expected error for incorrect password
+        } else {
+            panic!("Expected a NotFound error, but got: {:?}", result);
+        }
+    }
+
+    #[test]
     fn test_generate_sensor_id() {
-        let user_uuid = "test-uuid-1234";
+        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
         let sensor_kind = SensorKind::Aht10;
         let user_place_id = 1; // Assuming this is a valid place ID for the test user
         let ble_macs_ok = [
@@ -400,7 +477,7 @@ mod tests {
 
     #[test]
     fn test_new_sensor_then_delete() {
-        let user_uuid = "test-uuid-1234";
+        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
         let sensor_kind = SensorKind::Aht10;
         let user_place_id = 1; // Assuming this is a valid place ID for the test user
         let ble_mac = "00:11:22:33:44:55";
@@ -453,9 +530,10 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_sensor_api_id() {
-        let user_uuid = "test-uuid-1234";
+        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
         let sensor_api_id = "sensor-aht10-home";
-        let result = user_uuid_matches_sensor_api_id(user_uuid, sensor_api_id);
+        let result = user_uuid_matches_sensor_api_id(user_uuid, sensor_api_id)
+            .expect("Failed to check if user UUID matches sensor API ID");
         assert!(
             result,
             "Expected user UUID to match sensor API ID, but it did not"
@@ -464,9 +542,10 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_sensor_api_id_nonexistent() {
-        let user_uuid = "test-uuid-1234";
+        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
         let sensor_api_id = "nonexistent-sensor";
-        let result = user_uuid_matches_sensor_api_id(user_uuid, sensor_api_id);
+        let result = user_uuid_matches_sensor_api_id(user_uuid, sensor_api_id)
+            .expect("Failed to check if user UUID matches nonexistent sensor API ID");
         assert!(
             !result,
             "Expected user UUID to not match nonexistent sensor API ID, but it did"
@@ -475,7 +554,7 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_place_id() {
-        let user_uuid = "test-uuid-1234";
+        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
         let user_place_id = 1; // Assuming this is a valid place ID for the test user
         let result = user_uuid_matches_place_id(user_uuid, user_place_id);
         assert!(
@@ -491,7 +570,7 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_place_id_nonexistent() {
-        let user_uuid = "test-uuid-1234";
+        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
         let user_place_id = 999; // Assuming this is an invalid place ID
         let result = user_uuid_matches_place_id(user_uuid, user_place_id).expect("no error");
         assert!(
@@ -509,11 +588,11 @@ mod tests {
             "Failed to get user from sensor: {:?}",
             result.err()
         );
-        let user_uuid = result.unwrap();
-        assert!(!user_uuid.is_empty(), "User UUID should not be empty");
+        let username = result.unwrap();
+        assert!(!username.is_empty(), "username should not be empty");
         assert!(
-            user_uuid.eq("test-uuid-1234"),
-            "Expected user UUID to match test-uuid-1234"
+            username.eq("testuser"),
+            "Expected username to match testuser"
         );
     }
 
@@ -606,7 +685,7 @@ mod tests {
     fn test_query_aht10_data() {
         let query = GetAht10RequestBody {
             sensor_api_id: "sensor-aht10-home".into(),
-            user_uuid: "test-uuid-1234".into(),
+            user_uuid: "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9".into(),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -704,7 +783,7 @@ mod tests {
     fn test_query_scd4x_data() {
         let query = GetAht10RequestBody {
             sensor_api_id: "sensor-scd4x-office".into(),
-            user_uuid: "test-uuid-1234".into(),
+            user_uuid: "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9".into(),
             added_at_upper: None,
             added_at_lower: None,
         };

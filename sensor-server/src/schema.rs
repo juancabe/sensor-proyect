@@ -48,9 +48,9 @@ diesel::table! {
 }
 
 diesel::table! {
-    users (uuid) {
-        uuid -> Text,
+    users (username) {
         username -> Text,
+        uuid -> Text,
         hashed_password -> Text,
         email -> Text,
         created_at -> Integer,

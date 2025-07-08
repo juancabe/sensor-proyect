@@ -4,11 +4,12 @@ use hyper::header::HeaderValue;
 use hyper::{Method, Request, Response, StatusCode};
 use sensor_lib::api::ApiEndpoint;
 use sensor_lib::api::endpoints::get_aht10_data::GetAht10;
+use sensor_lib::api::endpoints::get_login::GetLogin;
 use sensor_lib::api::endpoints::post_sensor::{PostSensor, PostSensorResponseBody};
 use sensor_lib::api::endpoints::post_sensor_data::{PostSensorData, PostSensorResponseCode};
 use sensor_lib::api::model::sensor_kind::SensorKind;
 
-use crate::db::*;
+use crate::db;
 use crate::{helper::*, models};
 
 pub async fn server(
@@ -81,7 +82,11 @@ pub async fn server(
                 }
             };
 
-            if !user_uuid_matches_sensor_api_id(&parsed_body.user_uuid, &parsed_body.sensor_api_id)
+            if !db::user_uuid_matches_sensor_api_id(
+                &parsed_body.user_uuid,
+                &parsed_body.sensor_api_id,
+            )
+            .is_ok_and(|r| r)
             {
                 log::warn!(
                     "User UUID does not match sensor API ID: {} != {}",
@@ -93,7 +98,7 @@ pub async fn server(
                 return Ok(response);
             }
 
-            let e = match get_sensor_kind_from_id(&parsed_body.sensor_api_id) {
+            let e = match db::get_sensor_kind_from_id(&parsed_body.sensor_api_id) {
                 Ok(kind) => match kind {
                     SensorKind::Aht10 => {
                         let data = models::NewAht10Data {
@@ -107,7 +112,7 @@ pub async fn server(
                                     .as_secs() as i32
                             }),
                         };
-                        save_new_aht10_data(data)
+                        db::save_new_aht10_data(data)
                     }
                     SensorKind::Scd4x => {
                         let data = models::NewScd4xData {
@@ -121,7 +126,7 @@ pub async fn server(
                                     .as_secs() as i32
                             }),
                         };
-                        save_new_scd4x_data(data)
+                        db::save_new_scd4x_data(data)
                     }
                 },
                 Err(err) => {
@@ -176,7 +181,7 @@ pub async fn server(
                     }
                 };
 
-            let query_result = query_aht10_data(body);
+            let query_result = db::query_aht10_data(body);
 
             let query_string = match query_result {
                 Ok(data) => serde_json::to_string(&data),
@@ -243,7 +248,7 @@ pub async fn server(
             let sensor_kind = body.sensor_kind;
             let ble_mac_address = &body.sensor_mac;
 
-            match new_sensor(user_uuid, sensor_kind, user_place_id_, ble_mac_address) {
+            match db::new_sensor(user_uuid, sensor_kind, user_place_id_, ble_mac_address) {
                 Ok(user_sensor_api_id) => {
                     log::info!("New sensor created with API ID: {}", user_sensor_api_id);
                     let response_body = PostSensorResponseBody {
@@ -266,7 +271,57 @@ pub async fn server(
                 }
             }
         }
+        (&GetLogin::METHOD, GetLogin::PATH) => {
+            // Handle the login request
+            let max_size = <GetLogin as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
 
+            let body =
+                match extract_body_and_parse(req, max_size, Some(GetLogin::parse_request_body))
+                    .await
+                {
+                    Ok(bytes) => bytes,
+                    Err(ExtractError::PayloadTooLarge) => {
+                        log::warn!("Request body too large");
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
+                        return Ok(response);
+                    }
+                    Err(ExtractError::ErrorReceiving) => {
+                        log::error!("Error receiving request body");
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                        return Ok(response);
+                    }
+                    Err(ExtractError::ParseErrorAsValue(err)) => {
+                        log::warn!("Failed to parse body as JSON: {}", err);
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = StatusCode::BAD_REQUEST;
+                        return Ok(response);
+                    }
+                    Err(ExtractError::ParseErrorAsType) => {
+                        log::warn!("Failed to parse request body as type");
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = StatusCode::BAD_REQUEST;
+                        return Ok(response);
+                    }
+                };
+
+            match db::get_login(&body.username, &body.hashed_password) {
+                Ok(token) => {
+                    let mut response = Response::new(full(token));
+                    response
+                        .headers_mut()
+                        .append("content-type", HeaderValue::from_static("application/json"));
+                    return Ok(response);
+                }
+                Err(err) => {
+                    log::error!("Error during login: {:?}", err);
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = StatusCode::UNAUTHORIZED;
+                    return Ok(response);
+                }
+            }
+        }
         // Return 404 Not Found for other routes.
         _ => {
             let mut not_found = Response::new(empty());
