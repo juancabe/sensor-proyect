@@ -20,7 +20,7 @@ use esp_idf_svc::{
         ScanSortMethod,
     },
 };
-use esp_idf_sys::nvs_flash_init;
+use esp_idf_sys::{esp_mac_type_t, esp_read_mac, nvs_flash_init};
 use sensor_lib::api::{
     endpoints::post_sensor_data::{PostSensorData, PostSensorDataBody, PostSensorResponseCode},
     model::{
@@ -28,11 +28,8 @@ use sensor_lib::api::{
     },
     ApiEndpoint,
 };
-use std::ffi::CString;
 
 use scd4x::Scd4x;
-
-use crate::ble_protocol::SENSOR_CONFIG;
 
 mod ble_protocol;
 mod persistence;
@@ -309,28 +306,59 @@ fn ble_advertisement_loop() {
     }
 }
 
+fn get_device_mac() -> Result<[u8; 6], esp_idf_sys::EspError> {
+    let mut mac: [u8; 6] = [0; 6];
+
+    // Read the MAC address
+    unsafe {
+        esp_read_mac(mac.as_mut_ptr(), esp_idf_sys::esp_mac_type_t_ESP_MAC_BT);
+    }
+
+    Ok(mac)
+}
+
+fn return_sensor_uuid(_: ()) -> [u8; 20] {
+    let mut buf = [0u8; 20];
+    let mac = get_device_mac();
+    match mac {
+        Ok(mac) => {
+            // TODO: Better UUID including sensor serial
+            // Convert MAC address to a 20-byte UUID
+            buf[0..6].copy_from_slice(&mac);
+            buf[6..20].fill(0); // Fill the rest with zeros
+            buf
+        }
+        Err(e) => {
+            log::error!("Failed to get device MAC address: {:?}", e);
+            panic!("Failed to get device MAC address");
+        }
+    }
+}
+
 fn configure_esp_ble_loop(ble_device: &BLEDevice) {
     use ble_protocol;
-    let p = &ble_protocol::SENSOR_CONFIG;
+    let p = ble_protocol::BleProtocol::new(return_sensor_uuid);
 
     let ble_advertiser = ble_device.get_advertising();
     let server = ble_device.get_server();
     let svc = server.create_service(*p.service_uuid);
 
-    let mut chars = Vec::new();
-    for char in p.characteristics.iter() {
-        let e = svc
-            .lock()
-            .create_characteristic(*char.uuid, char.get_nimble_properties());
+    let (sensor_api_id_char, api_account_id_char, sensor_uuid_char) = p.characteristics;
 
-        e.lock().on_write(|args| {
-            let write_fn = char
+    svc.lock()
+        .create_characteristic(
+            *sensor_api_id_char.uuid,
+            sensor_api_id_char.get_nimble_properties(),
+        )
+        .lock()
+        .on_write(move |args| {
+            let write_fn = sensor_api_id_char
                 .write
                 .expect("Characteristic write function is not set");
 
             log::info!(
                 "Characteristic {} written: {}",
-                char.uuid,
+                sensor_api_id_char.uuid,
                 String::from_utf8_lossy(args.current_data())
             );
 
@@ -341,8 +369,44 @@ fn configure_esp_ble_loop(ble_device: &BLEDevice) {
                 log::error!("Failed to parse ZStr20 from data: {:?}", data);
             }
         });
-        chars.push(e);
-    }
+
+    svc.lock()
+        .create_characteristic(
+            *api_account_id_char.uuid,
+            sensor_api_id_char.get_nimble_properties(),
+        )
+        .lock()
+        .on_write(move |args| {
+            let write_fn = api_account_id_char
+                .write
+                .expect("Characteristic write function is not set");
+
+            log::info!(
+                "Characteristic {} written: {}",
+                sensor_api_id_char.uuid,
+                String::from_utf8_lossy(args.current_data())
+            );
+
+            let data = args.recv_data();
+            if let Some(zstr) = write_fn(data) {
+                log::info!("Received ZStr20: {:?}", zstr);
+            } else {
+                log::error!("Failed to parse ZStr20 from data: {:?}", data);
+            }
+        });
+
+    let val = sensor_uuid_char.read.expect("Read function not set")(());
+    let val_print = sensor_uuid_char.read.expect("Read function not set")(());
+    svc.lock()
+        .create_characteristic(
+            *sensor_uuid_char.uuid,
+            sensor_uuid_char.get_nimble_properties(),
+        )
+        .lock()
+        .on_read(move |_args, _args2| {
+            log::info!("UUID characteristic read, value: {:?}", val_print)
+        })
+        .set_value(&val);
 
     ble_advertiser
         .lock()

@@ -43,14 +43,14 @@ diesel::table! {
         place -> Integer,
         kind -> Integer,
         last_measurement -> Integer,
-        ble_mac_address -> Text,
+        device_id -> Text,
     }
 }
 
 diesel::table! {
     users (username) {
         username -> Text,
-        uuid -> Text,
+        api_id -> Text,
         hashed_password -> Text,
         email -> Text,
         created_at -> Integer,

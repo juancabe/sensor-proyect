@@ -16,6 +16,7 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useFocusEffect } from 'expo-router';
 import { ThemedList } from '@/components/ThemedList';
 import { Device } from 'react-native-ble-plx';
+import { SessionKeys, useSession } from '@/hooks/useSession';
 
 export default function TabTwoScreen() {
   useFocusEffect(
@@ -23,6 +24,8 @@ export default function TabTwoScreen() {
       startSearch();
     }, [])
   );
+
+  const { sessionData, setItem } = useSession();
 
   const {
     allDevices,
@@ -86,13 +89,21 @@ export default function TabTwoScreen() {
             </ThemedText>
             <Button
               title="Connect"
+              disabled={!sessionData[SessionKeys.API_USER_ID]}
               onPress={() => {
                 console.log('Connecting...');
                 connectToDeviceAndConfigure(
                   device as Device,
-                  '1'.repeat(40),
-                  '2'.repeat(40)
-                );
+                  sessionData[SessionKeys.API_USER_ID]!,
+                  sensorApiIdFetch
+                ).then((connected) => {
+                  if (connected) {
+                    console.log('Connected to device:', device);
+                    setItem(SessionKeys.API_SENSOR_ID, (device as Device).id);
+                  } else {
+                    console.log('Failed to connect to device:', device);
+                  }
+                });
               }}
             />
           </ThemedView>
@@ -104,6 +115,35 @@ export default function TabTwoScreen() {
       <ThemedView style={styles.titleContainer}></ThemedView>
     </ParallaxScrollView>
   );
+}
+
+async function sensorApiIdFetch(
+  accountIdHEX: string,
+  user_place_id: number,
+  ble_mac: string,
+  sensor_kind: string
+): Promise<string> {
+  const api_path = 'http://sensor-server.juancb.ftp.sh:3000/api/v0/post_sensor';
+  const user_uuid = accountIdHEX;
+
+  const response = await fetch(api_path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      user_uuid,
+      user_place_id,
+      sensor_mac: ble_mac,
+      sensor_kind,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch sensor API ID: ' + response.statusText);
+  }
+  const data = await response.json();
+  return data.sensor_api_id;
 }
 
 const styles = StyleSheet.create({

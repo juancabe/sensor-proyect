@@ -6,7 +6,7 @@ use dotenvy::dotenv;
 
 use once_cell::sync::Lazy;
 use sensor_lib::api;
-use sensor_lib::api::endpoints::get_aht10_data::GetAht10RequestBody;
+use sensor_lib::api::endpoints::get_sensor_data::GetSensorRequestBody;
 use sensor_lib::api::model::sensor_kind::SensorKind;
 
 use crate::models;
@@ -20,7 +20,7 @@ pub enum Error {
     DataBaseError(diesel::result::Error),
     DataBaseConnectionError,
     SerializationError(serde_json::Error),
-    RegexNotMatched,
+    DeviceIdInvalid,
 }
 
 impl From<diesel::result::Error> for Error {
@@ -74,7 +74,7 @@ pub fn test_db_pool() -> Result<(), ()> {
 }
 
 pub fn query_aht10_data(
-    query: GetAht10RequestBody,
+    query: GetSensorRequestBody,
 ) -> Result<(Vec<api::model::aht10_data::Aht10Data>, FailedDeserialize), Error> {
     use crate::schema::{
         aht10data::dsl as aht10data, aht10data::dsl::aht10data as aht10data_table,
@@ -92,7 +92,7 @@ pub fn query_aht10_data(
     let max_date = query.added_at_upper;
     let min_date = query.added_at_lower;
     let sensor_ = &query.sensor_api_id;
-    let user_uuid = &query.user_uuid;
+    let api_id = &query.user_api_id;
 
     let mut failed_deserialize: usize = 0;
 
@@ -101,7 +101,7 @@ pub fn query_aht10_data(
         .inner_join(user_sensors_table)
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::uuid.eq(user_uuid))
+        .filter(users::api_id.eq(api_id))
         .filter(aht10data::added_at.le(max_date.unwrap_or(i32::MAX)))
         .filter(aht10data::added_at.ge(min_date.unwrap_or(0)))
         .select(models::Aht10Data::as_select())
@@ -129,7 +129,7 @@ pub fn query_aht10_data(
 }
 
 pub fn query_scd4x_data(
-    query: GetAht10RequestBody,
+    query: GetSensorRequestBody,
 ) -> Result<(Vec<api::model::scd4x_data::Scd4xData>, FailedDeserialize), Error> {
     use crate::schema::{
         scd4xdata::dsl as scd4xdata, scd4xdata::dsl::scd4xdata as scd4xdata_table,
@@ -147,7 +147,7 @@ pub fn query_scd4x_data(
     let max_date = query.added_at_upper;
     let min_date = query.added_at_lower;
     let sensor_ = &query.sensor_api_id;
-    let user_uuid = &query.user_uuid;
+    let api_id = &query.user_api_id;
 
     let mut failed_deserialize: usize = 0;
 
@@ -156,7 +156,7 @@ pub fn query_scd4x_data(
         .inner_join(user_sensors_table)
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::uuid.eq(user_uuid))
+        .filter(users::api_id.eq(api_id))
         .filter(scd4xdata::added_at.le(max_date.unwrap_or(i32::MAX)))
         .filter(scd4xdata::added_at.ge(min_date.unwrap_or(0)))
         .select(models::Scd4xData::as_select())
@@ -216,8 +216,8 @@ pub fn get_user_from_sensor(sensor_api_id: &str) -> Result<String, crate::db::Er
     }
 }
 
-pub fn user_uuid_matches_sensor_api_id(
-    user_uuid: &str,
+pub fn user_api_id_matches_sensor_api_id(
+    user_api_id: &str,
     sensor_api_id: &str,
 ) -> Result<bool, Error> {
     use crate::schema::{
@@ -233,7 +233,7 @@ pub fn user_uuid_matches_sensor_api_id(
     let count = user_sensors_table
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::uuid.eq(user_uuid))
+        .filter(users::api_id.eq(user_api_id))
         .filter(user_sensors::api_id.eq(sensor_api_id))
         .select(count_star())
         .first::<i64>(&mut db_conn)?;
@@ -241,8 +241,8 @@ pub fn user_uuid_matches_sensor_api_id(
     Ok(count > 0)
 }
 
-pub fn user_uuid_matches_place_id(
-    user_uuid: &str,
+pub fn user_api_id_matches_place_id(
+    user_api_id: &str,
     user_place_id_: i32,
 ) -> Result<bool, crate::db::Error> {
     use crate::schema::{
@@ -254,7 +254,7 @@ pub fn user_uuid_matches_place_id(
 
     let count = user_places_table
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::uuid.eq(user_uuid))
+        .filter(users::api_id.eq(user_api_id))
         .filter(user_places::id.eq(user_place_id_))
         .select(count_star())
         .first::<i64>(&mut db_conn)?;
@@ -305,24 +305,22 @@ pub fn save_new_scd4x_data(data: models::NewScd4xData<'_>) -> Result<(), Error> 
     Ok(())
 }
 
-pub fn generate_sensor_id(
+pub fn generate_sensor_api_id(
     user_uuid: &str,
     sensor_kind: &SensorKind,
     user_place_id: i32,
-    ble_mac: &str,
+    device_id: &str,
 ) -> Result<[u8; 20], Error> {
-    const BLE_MAC_EXAMPLE: &str = "00:11:22:33:44:55";
-    const MAC_UPPERCASE_COLON_REGEX: &str = r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$";
-    let ble_mac = ble_mac.to_uppercase();
+    let device_id = device_id.to_uppercase();
 
-    // Check MAC format
-    if ble_mac.len() != BLE_MAC_EXAMPLE.len()
-        || !regex::Regex::new(MAC_UPPERCASE_COLON_REGEX)
-            .unwrap()
-            .is_match(&ble_mac)
+    // Check device_id format
+    if device_id.len() != 40
+        || device_id
+            .chars()
+            .into_iter()
+            .any(|c| !c.is_ascii_hexdigit())
     {
-        log::error!("Invalid BLE MAC address format: {}", ble_mac);
-        return Err(Error::RegexNotMatched);
+        return Err(Error::DeviceIdInvalid);
     }
 
     use sha2::{Digest, Sha256};
@@ -330,7 +328,7 @@ pub fn generate_sensor_id(
     hasher.update(user_uuid.as_bytes());
     hasher.update(sensor_kind.as_str().as_bytes());
     hasher.update(user_place_id.to_string().as_bytes());
-    hasher.update(ble_mac.as_bytes());
+    hasher.update(device_id.as_bytes());
     let hash = hasher.finalize();
     let mut sensor_id = [0u8; 20];
     sensor_id.copy_from_slice(&hash[..20]);
@@ -338,20 +336,21 @@ pub fn generate_sensor_id(
 }
 
 pub fn new_sensor(
-    user_uuid: &str,
+    user_api_id: &str,
     sensor_kind: SensorKind,
     user_place_id_: i32,
-    ble_mac: &str,
+    device_id: &str,
 ) -> Result<String, Error> {
     use crate::schema::user_sensors;
 
-    if !user_uuid_matches_place_id(user_uuid, user_place_id_)? {
+    if !user_api_id_matches_place_id(user_api_id, user_place_id_)? {
         return Err(Error::DataBaseError(diesel::result::Error::NotFound));
     }
 
     let mut db_conn = get_db_pool()?;
 
-    let user_sensor_api_id = generate_sensor_id(user_uuid, &sensor_kind, user_place_id_, ble_mac);
+    let user_sensor_api_id =
+        generate_sensor_api_id(user_api_id, &sensor_kind, user_place_id_, device_id);
     let user_sensor_api_id = hex::encode(user_sensor_api_id?);
 
     let new_sensor = models::NewUserSensor {
@@ -359,7 +358,7 @@ pub fn new_sensor(
         place: user_place_id_,
         kind: sensor_kind as i32,
         last_measurement: 0,
-        ble_mac_address: ble_mac,
+        device_id,
     };
 
     diesel::insert_into(user_sensors::table)
@@ -375,7 +374,7 @@ pub fn get_login(username: &str, hashed_password: &str) -> Result<String, Error>
     let user = users_table
         .filter(users::username.eq(username))
         .filter(users::hashed_password.eq(hashed_password))
-        .select(users::uuid)
+        .select(users::api_id)
         .first::<String>(&mut db_conn)
         .map_err(|_| Error::DataBaseError(diesel::result::Error::NotFound))?;
     Ok(user)
@@ -433,56 +432,57 @@ mod tests {
 
     #[test]
     fn test_generate_sensor_id() {
-        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
+        let user_uuid = "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         let sensor_kind = SensorKind::Aht10;
         let user_place_id = 1; // Assuming this is a valid place ID for the test user
-        let ble_macs_ok = [
-            "00:11:22:33:44:55",
-            "AA:BB:CC:DD:EE:FF",
-            "12:34:56:78:9A:BC",
+        let device_ids_ok = [
+            "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAB",
+            "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAC",
+            "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAD",
         ];
-        let ble_macs_invalid = [
-            "00:11:22:33:44",       // Too short
-            "00:11:22:33:44:55:66", // Too long
-            "00-11-22-33-44-55",    // Wrong format
-            "00:11:22:33:44:G1",    // Invalid hex character
+        let device_ids_invalid = [
+            "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAABhola", // Too long invalid
+            "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAhola",     // Invalid chars
+            "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAA",         // Too short
+            "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAABAAAA", // Too long valid
         ];
 
-        for ble_mac in ble_macs_ok {
-            let sensor_id = generate_sensor_id(user_uuid, &sensor_kind, user_place_id, ble_mac)
-                .expect("Failed to generate sensor ID");
+        for device_id in device_ids_ok {
+            let sensor_api_id =
+                generate_sensor_api_id(user_uuid, &sensor_kind, user_place_id, device_id)
+                    .expect("Failed to generate sensor ID");
             assert_eq!(
-                sensor_id.len(),
+                sensor_api_id.len(),
                 20,
                 "Sensor ID should be 20 bytes long, got {} for {:?}",
-                sensor_id.len(),
-                sensor_id
+                sensor_api_id.len(),
+                sensor_api_id
             );
         }
 
-        for ble_mac in ble_macs_invalid {
-            let result = generate_sensor_id(user_uuid, &sensor_kind, user_place_id, ble_mac);
+        for device_id in device_ids_invalid {
+            let result = generate_sensor_api_id(user_uuid, &sensor_kind, user_place_id, device_id);
             assert!(
                 result.is_err(),
-                "Expected error for invalid BLE MAC address: {}",
-                ble_mac
+                "Expected error for invalid device_id: {}",
+                device_id
             );
-            if let Err(Error::RegexNotMatched) = result {
-                // Expected error for invalid BLE MAC address
+            if let Err(Error::DeviceIdInvalid) = result {
+                // Expected error for invalid device_id
             } else {
-                panic!("Expected a RegexNotMatched error, but got: {:?}", result);
+                panic!("Expected a DeviceIdInvalid error, but got: {:?}", result);
             }
         }
     }
 
     #[test]
     fn test_new_sensor_then_delete() {
-        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
+        let user_uuid = "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         let sensor_kind = SensorKind::Aht10;
         let user_place_id = 1; // Assuming this is a valid place ID for the test user
-        let ble_mac = "00:11:22:33:44:55";
+        let device_id = "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAB";
 
-        let result = new_sensor(user_uuid, sensor_kind, user_place_id, ble_mac);
+        let result = new_sensor(user_uuid, sensor_kind, user_place_id, device_id);
         assert!(result.is_ok(), "Failed to create new sensor");
 
         let sensor_api_id = result.unwrap();
@@ -491,14 +491,18 @@ mod tests {
             "Sensor API ID should not be empty"
         );
 
-        let errored_result = new_sensor(user_uuid, sensor_kind, user_place_id, ble_mac);
+        let errored_result = new_sensor(user_uuid, sensor_kind, user_place_id, device_id);
         assert!(
             errored_result.is_err(),
             "Expected error when creating sensor with existing API ID"
         );
 
-        let errored_result =
-            new_sensor("nonexistent-user-uuid", sensor_kind, user_place_id, ble_mac);
+        let errored_result = new_sensor(
+            "nonexistent-user-uuid",
+            sensor_kind,
+            user_place_id,
+            device_id,
+        );
         assert!(
             errored_result.is_err(),
             "Expected error when creating sensor for nonexistent user"
@@ -508,7 +512,7 @@ mod tests {
             user_uuid,
             sensor_kind, // Assuming this is an invalid sensor kind
             123,         // Assuming this is an invalid place ID
-            ble_mac,
+            device_id,
         );
         assert!(
             errored_result.is_err(),
@@ -529,10 +533,10 @@ mod tests {
     }
 
     #[test]
-    fn test_user_uuid_matches_sensor_api_id() {
-        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
-        let sensor_api_id = "sensor-aht10-home";
-        let result = user_uuid_matches_sensor_api_id(user_uuid, sensor_api_id)
+    fn test_user_api_id_matches_sensor_api_id() {
+        let user_api_id = "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let sensor_api_id = "94a990533d761111111111111111111111111111";
+        let result = user_api_id_matches_sensor_api_id(user_api_id, sensor_api_id)
             .expect("Failed to check if user UUID matches sensor API ID");
         assert!(
             result,
@@ -542,9 +546,9 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_sensor_api_id_nonexistent() {
-        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
+        let user_uuid = "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         let sensor_api_id = "nonexistent-sensor";
-        let result = user_uuid_matches_sensor_api_id(user_uuid, sensor_api_id)
+        let result = user_api_id_matches_sensor_api_id(user_uuid, sensor_api_id)
             .expect("Failed to check if user UUID matches nonexistent sensor API ID");
         assert!(
             !result,
@@ -554,9 +558,9 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_place_id() {
-        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
+        let user_uuid = "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         let user_place_id = 1; // Assuming this is a valid place ID for the test user
-        let result = user_uuid_matches_place_id(user_uuid, user_place_id);
+        let result = user_api_id_matches_place_id(user_uuid, user_place_id);
         assert!(
             result.is_ok(),
             "Failed to check if user UUID matches place ID: {:?}",
@@ -570,9 +574,9 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_place_id_nonexistent() {
-        let user_uuid = "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9";
+        let user_uuid = "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         let user_place_id = 999; // Assuming this is an invalid place ID
-        let result = user_uuid_matches_place_id(user_uuid, user_place_id).expect("no error");
+        let result = user_api_id_matches_place_id(user_uuid, user_place_id).expect("no error");
         assert!(
             !result,
             "Expected user UUID to not match nonexistent place ID, but it did"
@@ -581,7 +585,7 @@ mod tests {
 
     #[test]
     fn test_get_user_from_sensor() {
-        let sensor_api_id = "sensor-aht10-home";
+        let sensor_api_id = "94a990533d761111111111111111111111111111";
         let result = get_user_from_sensor(sensor_api_id);
         assert!(
             result.is_ok(),
@@ -636,7 +640,7 @@ mod tests {
         let now = chrono::Utc::now().timestamp() as i32;
 
         let new_data = models::NewAht10Data {
-            sensor: "sensor-aht10-home".into(),
+            sensor: "94a990533d761111111111111111111111111111".into(),
             serialized_data: "{\"temperature\": 22.5, \"humidity\": 45.0}",
             added_at: now, // Example timestamp
         };
@@ -661,7 +665,7 @@ mod tests {
     #[test]
     fn test_insert_aht10data_unexistent_sensor() {
         let new_data = models::NewAht10Data {
-            sensor: "sensor-aht10-homee".into(),
+            sensor: "94a990533d761111111111111111111111111111e".into(),
             serialized_data: "{\"temperature\": 22.5, \"humidity\": 45.0}",
             added_at: 1633036800, // Example timestamp
         };
@@ -683,9 +687,9 @@ mod tests {
     }
     #[test]
     fn test_query_aht10_data() {
-        let query = GetAht10RequestBody {
-            sensor_api_id: "sensor-aht10-home".into(),
-            user_uuid: "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9".into(),
+        let query = GetSensorRequestBody {
+            user_api_id: "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
+            sensor_api_id: "94a990533d761111111111111111111111111111".into(),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -705,9 +709,9 @@ mod tests {
 
     #[test]
     fn test_query_aht10_data_nonexistent_user() {
-        let query = GetAht10RequestBody {
-            sensor_api_id: "sensor-aht10-home".into(),
-            user_uuid: "nonexistent-user-uuid".into(),
+        let query = GetSensorRequestBody {
+            user_api_id: "nonexistent-user_api_id".into(),
+            sensor_api_id: "94a990533d761111111111111111111111111111".into(),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -730,7 +734,7 @@ mod tests {
         let now = chrono::Utc::now().timestamp() as i32;
 
         let new_data = models::NewScd4xData {
-            sensor: "sensor-scd4x-office".into(),
+            sensor: "94a990533d762222222222222222222222222222".into(),
             serialized_data: "{\"co2\": 420, \"temperature\": 21.5, \"humidity\": 40.2}",
             added_at: now, // Example timestamp
         };
@@ -755,7 +759,7 @@ mod tests {
     #[test]
     fn test_insert_scd4xdata_unexistent_sensor() {
         let new_data = models::NewScd4xData {
-            sensor: "sensor-scd4x-officee".into(),
+            sensor: "94a990533d762222222222222222222222222222e".into(),
             serialized_data: "{\"co2\": 420, \"temperature\": 21.5, \"humidity\": 40.2}",
             added_at: 1633036800, // Example timestamp
         };
@@ -781,9 +785,9 @@ mod tests {
 
     #[test]
     fn test_query_scd4x_data() {
-        let query = GetAht10RequestBody {
-            sensor_api_id: "sensor-scd4x-office".into(),
-            user_uuid: "693a3bd4-5f16-4de8-9fb1-31b26edf6ba9".into(),
+        let query = GetSensorRequestBody {
+            user_api_id: "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
+            sensor_api_id: "94a990533d762222222222222222222222222222".into(),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -803,9 +807,9 @@ mod tests {
 
     #[test]
     fn test_query_scd4x_data_nonexistent_user() {
-        let query = GetAht10RequestBody {
-            sensor_api_id: "sensor-scd4x-office".into(),
-            user_uuid: "nonexistent-user-uuid".into(),
+        let query = GetSensorRequestBody {
+            user_api_id: "nonexistent-user_api_id".into(),
+            sensor_api_id: "94a990533d762222222222222222222222222222".into(),
             added_at_upper: None,
             added_at_lower: None,
         };

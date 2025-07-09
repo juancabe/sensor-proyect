@@ -66,25 +66,25 @@ pub struct UserSensor {
     pub place: i32,            // Foreign key to UserPlace
     pub kind: i32,             // Foreign key to SensorKind
     pub last_measurement: i32, // UNIX timestamp in seconds
-    pub ble_mac_address: String,
+    pub device_id: String,     // 20 bytes HEX String -> Generated at the sensor runtime
 }
 
 #[derive(Insertable, Clone)]
 #[diesel(table_name = crate::schema::user_sensors)]
 pub struct NewUserSensor<'a> {
-    pub api_id: &'a str,          // Unique identifier for the user sensor API
-    pub place: i32,               // Foreign key to UserPlace
-    pub kind: i32,                // Foreign key to SensorKind
-    pub last_measurement: i32,    // UNIX timestamp in seconds
-    pub ble_mac_address: &'a str, // BLE MAC address of the sensor
+    pub api_id: &'a str,       // 20 bytes HEX String -> Generated at the server
+    pub place: i32,            // Foreign key to UserPlace
+    pub kind: i32,             // Foreign key to SensorKind
+    pub last_measurement: i32, // UNIX timestamp in seconds
+    pub device_id: &'a str,
 }
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = crate::schema::users)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct User {
-    pub uuid: String,
     pub username: String,
+    pub api_id: String, // 20 bytes HEX String
     pub hashed_password: String,
     pub email: String,
     pub created_at: i32,
@@ -94,8 +94,8 @@ pub struct User {
 #[derive(Insertable, Clone)]
 #[diesel(table_name = crate::schema::users)]
 pub struct NewUser<'a> {
-    pub uuid: &'a str, // UUID of the user
     pub username: &'a str,
+    pub api_id: &'a str, // e.g 94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA
     pub hashed_password: &'a str,
     pub email: &'a str,
     pub created_at: i32,

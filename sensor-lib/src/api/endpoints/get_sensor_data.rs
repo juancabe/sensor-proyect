@@ -2,23 +2,23 @@ use crate::api::{ApiEndpoint, model::aht10_data::Aht10Data};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct GetAht10RequestBody {
-    pub user_uuid: String,
+pub struct GetSensorRequestBody {
+    pub user_api_id: String,
     pub sensor_api_id: String,
     pub added_at_upper: Option<i32>,
     pub added_at_lower: Option<i32>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct GetAht10ResponseBody {
+pub struct GetSensorResponseBody {
     pub item_count: usize,
-    pub data: Vec<Aht10Data>,
+    pub serialized_data: Vec<String>,
 }
 
-pub struct GetAht10 {}
+pub struct GetSensor {}
 
 #[derive(Debug, Clone, Copy)]
-pub enum GetAht10ResponseCode {
+pub enum GetSensorResponseCode {
     Ok,
     BadRequest,
     PayloadTooLarge,
@@ -26,24 +26,24 @@ pub enum GetAht10ResponseCode {
     InternalServerError,
 }
 
-impl From<GetAht10ResponseCode> for http::StatusCode {
-    fn from(code: GetAht10ResponseCode) -> Self {
+impl From<GetSensorResponseCode> for http::StatusCode {
+    fn from(code: GetSensorResponseCode) -> Self {
         match code {
-            GetAht10ResponseCode::Ok => http::StatusCode::OK,
-            GetAht10ResponseCode::BadRequest => http::StatusCode::BAD_REQUEST,
-            GetAht10ResponseCode::PayloadTooLarge => http::StatusCode::PAYLOAD_TOO_LARGE,
-            GetAht10ResponseCode::InternalServerError => http::StatusCode::INTERNAL_SERVER_ERROR,
-            GetAht10ResponseCode::Unauthorized => http::StatusCode::UNAUTHORIZED,
+            GetSensorResponseCode::Ok => http::StatusCode::OK,
+            GetSensorResponseCode::BadRequest => http::StatusCode::BAD_REQUEST,
+            GetSensorResponseCode::PayloadTooLarge => http::StatusCode::PAYLOAD_TOO_LARGE,
+            GetSensorResponseCode::InternalServerError => http::StatusCode::INTERNAL_SERVER_ERROR,
+            GetSensorResponseCode::Unauthorized => http::StatusCode::UNAUTHORIZED,
         }
     }
 }
 
-impl<'a, 'b> ApiEndpoint<'a, 'b> for GetAht10 {
-    type RequestBody = GetAht10RequestBody;
-    type ResponseBody = GetAht10ResponseBody;
-    type ResponseCode = GetAht10ResponseCode;
+impl<'a, 'b> ApiEndpoint<'a, 'b> for GetSensor {
+    type RequestBody = GetSensorRequestBody;
+    type ResponseBody = GetSensorResponseBody;
+    type ResponseCode = GetSensorResponseCode;
 
-    const PATH: &'static str = "/api/v0/get_aht10_data";
+    const PATH: &'static str = "/api/v0/get_sensor_data";
     const METHOD: http::Method = http::Method::GET;
 
     const MAX_REQUEST_BODY_SIZE: u64 = 1024; // 1 KB

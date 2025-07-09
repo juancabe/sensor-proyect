@@ -16,6 +16,7 @@ import {
 const CFG_SERVICE_UUID = '4b80ba9d-64fd-4ffa-86fb-544e73d26ed1';
 const SENSOR_API_ID_CHAR_UUID = '8c680060-22b7-45b8-b325-f7b1b102d80f';
 const API_ACCOUNT_ID_CHAR_UUID = 'e11ca181-20c9-4675-b6f3-3f9fb91d1dc1';
+const SENSOR_UUID_CHAR_UUID = '333cad84-ceb5-4e18-bfcf-6147987c6733';
 
 const bleManager = new BleManager();
 
@@ -83,14 +84,34 @@ function useBLE() {
 
   const connectToDeviceAndConfigure = async (
     device: Device,
-    sensorApiIdHEX: string,
-    accountIdHEX: string
-  ) => {
+    accountIdHEX: string,
+    sensorApiIdFetch: (
+      user_uuid: string,
+      user_place_id: number,
+      device_uuid: string,
+      sensor_kind: string
+    ) => Promise<string>
+  ): Promise<boolean> => {
     try {
       const deviceConnection = await bleManager.connectToDevice(device.id);
       setConnectedDevice(deviceConnection);
       await deviceConnection.discoverAllServicesAndCharacteristics();
       bleManager.stopDeviceScan();
+
+      const device_uuid = await getDeviceUUIDHex(device);
+      if (!device_uuid) {
+        console.log('No device_uuid read from characteristic');
+        return false;
+      } else {
+        console.log('device_uuid: ', device_uuid);
+      }
+
+      const sensorApiIdHEX = await sensorApiIdFetch(
+        accountIdHEX,
+        1,
+        device_uuid!,
+        'Scd4x'
+      );
 
       return await configureSensor(
         deviceConnection,
@@ -98,7 +119,8 @@ function useBLE() {
         accountIdHEX
       );
     } catch (e) {
-      console.log('FAILED TO CONNECT', e);
+      console.log('FAILED TO CONNECT:', e);
+      return false;
     }
   };
 
@@ -176,6 +198,35 @@ function useBLE() {
   //   }
   // };
 
+  const getDeviceUUIDHex = async (device: Device): Promise<string | null> => {
+    try {
+      const uuid = (
+        await device.readCharacteristicForService(
+          CFG_SERVICE_UUID,
+          SENSOR_UUID_CHAR_UUID
+        )
+      ).value;
+
+      if (!uuid) {
+        throw Error('device.value was null');
+      }
+
+      const arr = base64
+        .decode(uuid)
+        .split('')
+        .map((char) => char.charCodeAt(0));
+
+      const hexString = arr
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+
+      return hexString;
+    } catch (e) {
+      console.log('Exception occured on getDeviceUUID: ', e);
+      return null;
+    }
+  };
+
   const configureSensor = async (
     device: Device,
     sensorApiIdHEX: string,
@@ -185,7 +236,6 @@ function useBLE() {
       console.log('No device connected');
       return false;
     }
-
     const sensorApiId = encodeHexId20(sensorApiIdHEX);
     const accountId = encodeHexId20(accountIdHEX);
 

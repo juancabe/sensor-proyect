@@ -3,8 +3,8 @@ use hyper::body::Bytes;
 use hyper::header::HeaderValue;
 use hyper::{Method, Request, Response, StatusCode};
 use sensor_lib::api::ApiEndpoint;
-use sensor_lib::api::endpoints::get_aht10_data::GetAht10;
 use sensor_lib::api::endpoints::get_login::GetLogin;
+use sensor_lib::api::endpoints::get_sensor_data::GetSensor;
 use sensor_lib::api::endpoints::post_sensor::{PostSensor, PostSensorResponseBody};
 use sensor_lib::api::endpoints::post_sensor_data::{PostSensorData, PostSensorResponseCode};
 use sensor_lib::api::model::sensor_kind::SensorKind;
@@ -48,7 +48,7 @@ pub async fn server(
                     let serialized_data = match serde_json::to_string(&post_body.data) {
                         Ok(data) => data,
                         Err(err) => {
-                            log::warn!("Failed to serialize AHT10 data: {}", err);
+                            log::warn!("Failed to serialize Sensor data: {}", err);
                             let mut response = Response::new(empty());
                             *response.status_mut() = StatusCode::BAD_REQUEST;
                             return Ok(response);
@@ -82,15 +82,15 @@ pub async fn server(
                 }
             };
 
-            if !db::user_uuid_matches_sensor_api_id(
-                &parsed_body.user_uuid,
+            if !db::user_api_id_matches_sensor_api_id(
+                &parsed_body.user_api_id,
                 &parsed_body.sensor_api_id,
             )
             .is_ok_and(|r| r)
             {
                 log::warn!(
-                    "User UUID does not match sensor API ID: {} != {}",
-                    parsed_body.user_uuid,
+                    "[User API ID] does not match [Sensor API ID]: [{}] != [{}]",
+                    parsed_body.user_api_id,
                     parsed_body.sensor_api_id
                 );
                 let mut response = Response::new(empty());
@@ -147,11 +147,11 @@ pub async fn server(
                 Ok(()) => Ok(Response::new(empty())),
             }
         }
-        (&GetAht10::METHOD, GetAht10::PATH) => {
-            let max_size = <GetAht10 as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
+        (&GetSensor::METHOD, GetSensor::PATH) => {
+            let max_size = <GetSensor as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
 
             let body =
-                match extract_body_and_parse(req, max_size, Some(GetAht10::parse_request_body))
+                match extract_body_and_parse(req, max_size, Some(GetSensor::parse_request_body))
                     .await
                 {
                     Ok(bytes) => bytes,
@@ -186,7 +186,7 @@ pub async fn server(
             let query_string = match query_result {
                 Ok(data) => serde_json::to_string(&data),
                 Err(err) => {
-                    log::error!("Error querying AHT10 data: {:?}", err);
+                    log::error!("Error querying Sensor data: {:?}", err);
                     let mut response = Response::new(empty());
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(response);
@@ -202,7 +202,7 @@ pub async fn server(
                     return Ok(response);
                 }
                 Err(err) => {
-                    log::error!("Error serializing AHT10 data: {:?}", err);
+                    log::error!("Error serializing Sensor data: {:?}", err);
                     let mut response = Response::new(empty());
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(response);

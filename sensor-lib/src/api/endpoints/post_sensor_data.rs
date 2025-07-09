@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PostSensorDataBody {
-    pub user_uuid: String,
+    pub user_api_id: String,
     pub sensor_api_id: String,
     pub data: AnySensorData,
     pub added_at: Option<i32>,
