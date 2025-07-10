@@ -15,6 +15,12 @@ use crate::{helper::*, models};
 pub async fn server(
     req: Request<hyper::body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    log::info!(
+        "Serving method: {}, at path: {}",
+        req.method(),
+        req.uri().path()
+    );
+
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/") => {
             let body = "<!DOCTYPE html>
@@ -28,6 +34,7 @@ pub async fn server(
         </html>
         ";
 
+            log::info!("[/] Returning 200 Status Code");
             let mut response = Response::new(full(body));
             response
                 .headers_mut()
@@ -35,6 +42,8 @@ pub async fn server(
             Ok(response.into())
         }
         (&PostSensorData::METHOD, PostSensorData::PATH) => {
+            log::info!("Request matched PostSensorData");
+
             let max_size = <PostSensorData as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
 
             let (parsed_body, serialized_data) = match extract_body_and_parse(
@@ -144,10 +153,15 @@ pub async fn server(
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(response);
                 }
-                Ok(()) => Ok(Response::new(empty())),
+                Ok(()) => {
+                    log::info!("Returning 200 Status Code");
+                    Ok(Response::new(empty()))
+                }
             }
         }
         (&GetSensor::METHOD, GetSensor::PATH) => {
+            log::info!("[GetSensor] Request matched GetSensor");
+
             let max_size = <GetSensor as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
 
             let body =
@@ -156,25 +170,25 @@ pub async fn server(
                 {
                     Ok(bytes) => bytes,
                     Err(ExtractError::PayloadTooLarge) => {
-                        log::warn!("Request body too large");
+                        log::warn!("[GetSensor] Request body too large");
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
                         return Ok(response);
                     }
                     Err(ExtractError::ErrorReceiving) => {
-                        log::error!("Error receiving request body");
+                        log::error!("[GetSensor] Error receiving request body");
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         return Ok(response);
                     }
                     Err(ExtractError::ParseErrorAsValue(err)) => {
-                        log::warn!("Failed to parse body as JSON: {}", err);
+                        log::warn!("[GetSensor] Failed to parse body as JSON: {}", err);
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::BAD_REQUEST;
                         return Ok(response);
                     }
                     Err(ExtractError::ParseErrorAsType) => {
-                        log::warn!("Failed to parse request body as type");
+                        log::warn!("[GetSensor] Failed to parse request body as type");
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::BAD_REQUEST;
                         return Ok(response);
@@ -186,7 +200,7 @@ pub async fn server(
             let query_string = match query_result {
                 Ok(data) => serde_json::to_string(&data),
                 Err(err) => {
-                    log::error!("Error querying Sensor data: {:?}", err);
+                    log::error!("[GetSensor] Error querying Sensor data: {:?}", err);
                     let mut response = Response::new(empty());
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(response);
@@ -195,6 +209,7 @@ pub async fn server(
 
             match query_string {
                 Ok(json_data) => {
+                    log::info!("[GetSensor] Returning 200 Status Code");
                     let mut response = Response::new(full(json_data));
                     response
                         .headers_mut()
@@ -202,7 +217,10 @@ pub async fn server(
                     return Ok(response);
                 }
                 Err(err) => {
-                    log::error!("Error serializing Sensor data: {:?}", err);
+                    log::error!(
+                        "[GetSensor] Error serializing return Sensor data: {:?}",
+                        err
+                    );
                     let mut response = Response::new(empty());
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(response);
@@ -210,6 +228,8 @@ pub async fn server(
             }
         }
         (&PostSensor::METHOD, PostSensor::PATH) => {
+            log::info!("[PostSensor] Request matched GetSensor");
+
             let max_size = <PostSensor as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
             // Extract the body from the request
             let body =
@@ -218,25 +238,25 @@ pub async fn server(
                 {
                     Ok(bytes) => bytes,
                     Err(ExtractError::PayloadTooLarge) => {
-                        log::warn!("Request body too large");
+                        log::warn!("[PostSensor] Request body too large");
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
                         return Ok(response);
                     }
                     Err(ExtractError::ErrorReceiving) => {
-                        log::error!("Error receiving request body");
+                        log::error!("[PostSensor] Error receiving request body");
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         return Ok(response);
                     }
                     Err(ExtractError::ParseErrorAsValue(err)) => {
-                        log::warn!("Failed to parse body as JSON: {}", err);
+                        log::warn!("[PostSensor] Failed to parse body as JSON: {}", err);
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::BAD_REQUEST;
                         return Ok(response);
                     }
                     Err(ExtractError::ParseErrorAsType) => {
-                        log::warn!("Failed to parse request body as type");
+                        log::warn!("[PostSensor] Failed to parse request body as type");
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::BAD_REQUEST;
                         return Ok(response);
@@ -250,7 +270,10 @@ pub async fn server(
 
             match db::new_sensor(user_uuid, sensor_kind, user_place_id_, ble_mac_address) {
                 Ok(user_sensor_api_id) => {
-                    log::info!("New sensor created with API ID: {}", user_sensor_api_id);
+                    log::info!(
+                        "[PostSensor] Returning 200 Status Code: New sensor created with API ID: {}",
+                        user_sensor_api_id
+                    );
                     let response_body = PostSensorResponseBody {
                         sensor_api_id: user_sensor_api_id.clone(),
                     };
@@ -264,7 +287,7 @@ pub async fn server(
                     return Ok(response);
                 }
                 Err(err) => {
-                    log::error!("Error creating new sensor: {:?}", err);
+                    log::error!("[PostSensor] Error creating new sensor: {:?}", err);
                     let mut response = Response::new(empty());
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(response);
@@ -272,6 +295,7 @@ pub async fn server(
             }
         }
         (&GetLogin::METHOD, GetLogin::PATH) => {
+            log::info!("[GetLogin] Request matched GetSensor");
             // Handle the login request
             let max_size = <GetLogin as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
 
@@ -281,25 +305,25 @@ pub async fn server(
                 {
                     Ok(bytes) => bytes,
                     Err(ExtractError::PayloadTooLarge) => {
-                        log::warn!("Request body too large");
+                        log::warn!("[GetLogin] Request body too large");
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
                         return Ok(response);
                     }
                     Err(ExtractError::ErrorReceiving) => {
-                        log::error!("Error receiving request body");
+                        log::error!("[GetLogin] Error receiving request body");
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         return Ok(response);
                     }
                     Err(ExtractError::ParseErrorAsValue(err)) => {
-                        log::warn!("Failed to parse body as JSON: {}", err);
+                        log::warn!("[GetLogin] Failed to parse body as JSON: {}", err);
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::BAD_REQUEST;
                         return Ok(response);
                     }
                     Err(ExtractError::ParseErrorAsType) => {
-                        log::warn!("Failed to parse request body as type");
+                        log::warn!("[GetLogin] Failed to parse request body as type");
                         let mut response = Response::new(empty());
                         *response.status_mut() = StatusCode::BAD_REQUEST;
                         return Ok(response);
@@ -308,6 +332,7 @@ pub async fn server(
 
             match db::get_login(&body.username, &body.hashed_password) {
                 Ok(token) => {
+                    log::info!("[GetLogin] Returning 200 Status code");
                     let mut response = Response::new(full(token));
                     response
                         .headers_mut()
@@ -315,7 +340,7 @@ pub async fn server(
                     return Ok(response);
                 }
                 Err(err) => {
-                    log::error!("Error during login: {:?}", err);
+                    log::error!("[GetLogin] Error during login: {:?}", err);
                     let mut response = Response::new(empty());
                     *response.status_mut() = StatusCode::UNAUTHORIZED;
                     return Ok(response);
@@ -324,6 +349,7 @@ pub async fn server(
         }
         // Return 404 Not Found for other routes.
         _ => {
+            log::info!("[404 Not Found] Returning 200 Status Code");
             let mut not_found = Response::new(empty());
             *not_found.status_mut() = StatusCode::NOT_FOUND;
             Ok(not_found)

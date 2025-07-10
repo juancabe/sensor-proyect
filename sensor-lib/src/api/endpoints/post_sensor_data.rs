@@ -52,7 +52,7 @@ impl<'a, 'b> ApiEndpoint<'a, 'b> for PostSensorData {
     type ResponseBody = ();
     type ResponseCode = PostSensorResponseCode;
 
-    const PATH: &'static str = "/api/v0/post_aht10_data";
+    const PATH: &'static str = "/api/v0/post_sensor_data";
     const METHOD: http::Method = http::Method::POST;
 
     const MAX_REQUEST_BODY_SIZE: u64 = 1024; // 1 KB

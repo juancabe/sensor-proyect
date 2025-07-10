@@ -1,17 +1,9 @@
 use core::{panic, str::FromStr};
 use embedded_svc::http::client::Client;
-use esp32_nimble::{
-    enums::{PrimPhy, SecPhy},
-    uuid128, BLEAdvertisementData, BLEDevice, NimbleProperties,
-};
+use esp32_nimble::{utilities::mutex::Mutex, BLEAdvertisementData, BLEDevice};
 use esp_idf_svc::{
     eventloop::System,
-    hal::{
-        delay::{self, FreeRtos},
-        i2c::I2cDriver,
-        peripherals,
-        prelude::*,
-    },
+    hal::{delay::FreeRtos, i2c::I2cDriver, peripherals, prelude::*},
     http::client::{Configuration as HttpConfiguration, EspHttpConnection},
     io::Write,
     sys::{esp_get_free_heap_size, uxTaskGetStackHighWaterMark},
@@ -20,7 +12,7 @@ use esp_idf_svc::{
         ScanSortMethod,
     },
 };
-use esp_idf_sys::{esp_mac_type_t, esp_read_mac, nvs_flash_init};
+use esp_idf_sys::esp_read_mac;
 use sensor_lib::api::{
     endpoints::post_sensor_data::{PostSensorData, PostSensorDataBody, PostSensorResponseCode},
     model::{
@@ -28,17 +20,17 @@ use sensor_lib::api::{
     },
     ApiEndpoint,
 };
+use std::sync::Arc;
 
 use scd4x::Scd4x;
+
+use crate::{ble_protocol::ZStr20, persistence::Persistence};
 
 mod ble_protocol;
 mod persistence;
 mod private;
 
 const BASE_URL: &'static str = "http://sensor-server.juancb.ftp.sh:3000";
-const USER_UUID: &'static str = "test-user-uuid";
-const USER_PLACE_ID: i32 = 1;
-const SENSOR_UUID: &'static str = "test-sensor-uuid";
 const READS_DELAY_MS: u32 = 1000 * 60; // 1 minute
 
 const HTTP_POST_TRIES: u32 = 10;
@@ -96,7 +88,26 @@ fn get_scd41_sensor(i2cp: I2CPeripherals) -> Scd4x<I2cDriver<'static>, FreeRtos>
 
     let delay = esp_idf_svc::hal::delay::FreeRtos;
 
-    Scd4x::new(i2c, delay)
+    let mut scd41 = Scd4x::new(i2c, delay);
+
+    log::info!("SCD41 sensor waking up...");
+    scd41.wake_up();
+    scd41.stop_periodic_measurement().unwrap();
+    scd41.reinit().unwrap();
+
+    let serial = scd41.serial_number().unwrap();
+    log::info!("SCD41 serial: {:#04x}", serial);
+
+    if scd41.self_test_is_ok().unwrap() {
+        log::info!("SCD41 self-test passed");
+    } else {
+        log::error!("SCD41 self-test failed");
+    }
+
+    scd41.start_periodic_measurement().unwrap();
+    println!("Waiting for first measurement... (5 sec)");
+
+    scd41
 }
 
 #[allow(dead_code)]
@@ -110,14 +121,15 @@ enum SendAht10DataError {
 }
 
 fn send_sensor_data(
+    (user_api, sensor_api): (&str, &str),
     client: &mut Client<EspHttpConnection>,
     data: AnySensorData,
 ) -> Result<PostSensorResponseCode, SendAht10DataError> {
     let url: String = format!("{}{}", BASE_URL, PostSensorData::PATH);
 
     let body = PostSensorDataBody {
-        user_uuid: USER_UUID.to_string(),
-        sensor_api_id: SENSOR_UUID.to_string(),
+        user_api_id: user_api.to_string(),
+        sensor_api_id: sensor_api.to_string(),
         data,
         added_at: None,
     };
@@ -251,60 +263,60 @@ fn wait_wifi_stopped(
     Ok(())
 }
 
-fn co2_loop(peripherals: peripherals::Peripherals) {
-    let mut scd41 = get_scd41_sensor(I2CPeripherals {
-        gpio3_sda: peripherals.pins.gpio4,
-        gpio2_scl: peripherals.pins.gpio3,
-        i2c0: peripherals.i2c0,
-    });
+// fn co2_loop(peripherals: peripherals::Peripherals) {
+//     let mut scd41 = get_scd41_sensor(I2CPeripherals {
+//         gpio3_sda: peripherals.pins.gpio4,
+//         gpio2_scl: peripherals.pins.gpio3,
+//         i2c0: peripherals.i2c0,
+//     });
 
-    log::info!("SCD41 sensor waking up...");
-    scd41.wake_up();
-    scd41.stop_periodic_measurement().unwrap();
-    scd41.reinit().unwrap();
+//     log::info!("SCD41 sensor waking up...");
+//     scd41.wake_up();
+//     scd41.stop_periodic_measurement().unwrap();
+//     scd41.reinit().unwrap();
 
-    let serial = scd41.serial_number().unwrap();
-    log::info!("SCD41 serial: {:#04x}", serial);
+//     let serial = scd41.serial_number().unwrap();
+//     log::info!("SCD41 serial: {:#04x}", serial);
 
-    if scd41.self_test_is_ok().unwrap() {
-        log::info!("SCD41 self-test passed");
-    } else {
-        log::error!("SCD41 self-test failed");
-    }
+//     if scd41.self_test_is_ok().unwrap() {
+//         log::info!("SCD41 self-test passed");
+//     } else {
+//         log::error!("SCD41 self-test failed");
+//     }
 
-    scd41.start_periodic_measurement().unwrap();
-    println!("Waiting for first measurement... (5 sec)");
-    loop {
-        match scd41.measurement() {
-            Ok(data) => log::info!(
-                "CO2: {0}, Temperature: {1:#.2} °C, Humidity: {2:#.2} RH",
-                data.co2,
-                data.temperature,
-                data.humidity
-            ),
-            Err(e) => {
-                log::warn!("Failed to read SCD41 data: {:?}", e);
-            }
-        };
+//     scd41.start_periodic_measurement().unwrap();
+//     println!("Waiting for first measurement... (5 sec)");
+//     loop {
+//         match scd41.measurement() {
+//             Ok(data) => log::info!(
+//                 "CO2: {0}, Temperature: {1:#.2} °C, Humidity: {2:#.2} RH",
+//                 data.co2,
+//                 data.temperature,
+//                 data.humidity
+//             ),
+//             Err(e) => {
+//                 log::warn!("Failed to read SCD41 data: {:?}", e);
+//             }
+//         };
 
-        FreeRtos::delay_ms(5000);
-    }
-}
+//         FreeRtos::delay_ms(5000);
+//     }
+// }
 
-fn ble_advertisement_loop() {
-    let ble_device = BLEDevice::take();
-    let ble_advertiser = ble_device.get_advertising();
-    let mut ad_data = BLEAdvertisementData::new();
-    ad_data.name("esp32-sensor");
+// fn ble_advertisement_loop() {
+//     let ble_device = BLEDevice::take();
+//     let ble_advertiser = ble_device.get_advertising();
+//     let mut ad_data = BLEAdvertisementData::new();
+//     ad_data.name("esp32-sensor");
 
-    ble_advertiser.lock().set_data(&mut ad_data);
-    ble_advertiser.lock().start();
+//     ble_advertiser.lock().set_data(&mut ad_data);
+//     ble_advertiser.lock().start();
 
-    log::info!("Advertisement started!");
-    loop {
-        FreeRtos::delay_ms(100);
-    }
-}
+//     log::info!("Advertisement started!");
+//     loop {
+//         FreeRtos::delay_ms(100);
+//     }
+// }
 
 fn get_device_mac() -> Result<[u8; 6], esp_idf_sys::EspError> {
     let mut mac: [u8; 6] = [0; 6];
@@ -335,7 +347,24 @@ fn return_sensor_uuid(_: ()) -> [u8; 20] {
     }
 }
 
-fn configure_esp_ble_loop(ble_device: &BLEDevice) {
+#[derive(Default, Clone, Copy)]
+struct BleLoopReturn {
+    pub user_api_id: Option<ZStr20>,
+    pub sensor_api_id: Option<ZStr20>,
+}
+
+impl BleLoopReturn {
+    pub fn is_written(&self) -> bool {
+        self.sensor_api_id.is_some() && self.user_api_id.is_some()
+    }
+}
+
+#[derive(Debug)]
+enum BleLoopError {
+    BleAdvertiserLockError(String),
+}
+
+fn configure_esp_ble_loop(ble_device: &BLEDevice) -> Result<BleLoopReturn, BleLoopError> {
     use ble_protocol;
     let p = ble_protocol::BleProtocol::new(return_sensor_uuid);
 
@@ -343,8 +372,13 @@ fn configure_esp_ble_loop(ble_device: &BLEDevice) {
     let server = ble_device.get_server();
     let svc = server.create_service(*p.service_uuid);
 
-    let (sensor_api_id_char, api_account_id_char, sensor_uuid_char) = p.characteristics;
+    let result_mutex = Arc::new(Mutex::new(BleLoopReturn::default()));
 
+    let (sensor_api_id_char, api_account_id_char, sensor_uuid_char, wifi_ssid, wifi_pass) =
+        p.characteristics;
+    // TODO: Wifi pass and wifi ssid characteristics
+
+    let result_clone = result_mutex.clone();
     svc.lock()
         .create_characteristic(
             *sensor_api_id_char.uuid,
@@ -365,11 +399,13 @@ fn configure_esp_ble_loop(ble_device: &BLEDevice) {
             let data = args.recv_data();
             if let Some(zstr) = write_fn(data) {
                 log::info!("Received ZStr20: {:?}", zstr);
+                result_clone.lock().sensor_api_id = Some(zstr);
             } else {
                 log::error!("Failed to parse ZStr20 from data: {:?}", data);
             }
         });
 
+    let result_clone = result_mutex.clone();
     svc.lock()
         .create_characteristic(
             *api_account_id_char.uuid,
@@ -390,6 +426,7 @@ fn configure_esp_ble_loop(ble_device: &BLEDevice) {
             let data = args.recv_data();
             if let Some(zstr) = write_fn(data) {
                 log::info!("Received ZStr20: {:?}", zstr);
+                result_clone.lock().user_api_id = Some(zstr);
             } else {
                 log::error!("Failed to parse ZStr20 from data: {:?}", data);
             }
@@ -415,21 +452,35 @@ fn configure_esp_ble_loop(ble_device: &BLEDevice) {
                 .name("esp32-sensor")
                 .add_service_uuid(*p.service_uuid),
         )
-        .unwrap();
+        .map_err(|e| BleLoopError::BleAdvertiserLockError(e.to_string()))?;
 
-    ble_advertiser.lock().start().unwrap();
+    ble_advertiser
+        .lock()
+        .start()
+        .map_err(|e| BleLoopError::BleAdvertiserLockError(e.to_string()))?;
 
     log::info!("BLE advertising started");
     log::info!("BLE service created with UUID: {}", *p.service_uuid);
 
     loop {
-        // Wait for BLE connections
-        FreeRtos::delay_ms(1000);
+        FreeRtos::delay_ms(200);
 
         // Check if the service is still running
         if !ble_advertiser.lock().is_advertising() {
             log::warn!("BLE advertising stopped, restarting...");
-            ble_advertiser.lock().start().unwrap();
+            ble_advertiser
+                .lock()
+                .start()
+                .map_err(|e| BleLoopError::BleAdvertiserLockError(e.to_string()))?;
+        }
+
+        if result_mutex.lock().is_written() {
+            log::info!("Results written successfully");
+            let _ = ble_advertiser
+                .lock()
+                .stop()
+                .inspect_err(|e| log::warn!("Error stopping ble_adverstiser: {:?}", e));
+            return Ok(*(result_mutex.lock()));
         }
     }
 }
@@ -447,185 +498,261 @@ fn main() {
     // })
     // .expect("Failed to get AHT10 sensor");
 
-    // let mut scd41 = get_scd41_sensor(I2CPeripherals {
-    //     gpio3_sda: peripherals.pins.gpio4,
-    //     gpio2_scl: peripherals.pins.gpio3,
-    //     i2c0: peripherals.i2c0,
-    // });
+    let mut scd41 = get_scd41_sensor(I2CPeripherals {
+        gpio3_sda: peripherals.pins.gpio4,
+        gpio2_scl: peripherals.pins.gpio3,
+        i2c0: peripherals.i2c0,
+    });
 
-    let ble_device = BLEDevice::take();
-    configure_esp_ble_loop(&ble_device);
+    let nvs = esp_idf_svc::nvs::EspDefaultNvsPartition::take()
+        .expect("Couldn't take NVS Default Partition");
+    let mut persistence: Persistence =
+        Persistence::new(nvs.clone()).expect("Error creating Persistence");
 
-    // let sysloop = esp_idf_svc::eventloop::EspEventLoop::take().expect("Failed to take event loop");
+    let sensor_key: persistence::Keys = persistence::Keys::SensorApiId(None);
+    let user_key: persistence::Keys = persistence::Keys::UserApiId(None);
+
+    let mut sensor_buf = vec![0u8; sensor_key.min_buffer_size()];
+    let mut user_buf = vec![0u8; user_key.min_buffer_size()];
+
+    if !(persistence
+        .get(&sensor_key, &mut sensor_buf)
+        .expect("Should be able to use NVS [SensorApiId]")
+        && persistence
+            .get(&user_key, &mut user_buf)
+            .expect("Should be able to use NVS [SensorApiId]"))
+    {
+        let ble_device = BLEDevice::take();
+        let res: BleLoopReturn;
+        let mut count = 0;
+        loop {
+            if count > 100 {
+                panic!("Too many retries for configure_esp_ble_loop")
+            }
+
+            match configure_esp_ble_loop(&ble_device) {
+                Ok(ret) => {
+                    res = ret;
+                    break;
+                }
+                Err(e) => {
+                    log::warn!(
+                        "An error occurred on the configure_esp_ble_loop, retrying: {:?}",
+                        e
+                    );
+                    count += 1;
+                }
+            }
+        }
+        let sensor_api_hex = res.sensor_api_id.expect("Should be Some").as_hex_string();
+        let user_api_hex = res.user_api_id.expect("Should be Some").as_hex_string();
+        let sensor_key = persistence::Keys::SensorApiId(Some(&sensor_api_hex));
+        let user_key = persistence::Keys::UserApiId(Some(&user_api_hex));
+
+        log::info!(
+            "\nSensor API ID: {}\n, User API ID: {}",
+            sensor_api_hex,
+            user_api_hex
+        );
+        persistence
+            .set(&sensor_key)
+            .expect("Unable to set SensorApiId value");
+        persistence
+            .set(&user_key)
+            .expect("Unable to set UserApiId value");
+
+        let a = persistence
+            .get(&sensor_key, &mut sensor_buf)
+            .expect("Should be able to use NVS [SensorApiId]");
+        let b = persistence
+            .get(&user_key, &mut sensor_buf)
+            .expect("Should be able to use NVS [UserApiId]");
+
+        if !(a && b) {
+            panic!("NVS Keys-Values were not there after they were set")
+        }
+    }
+
+    let user_api =
+        String::from_utf8(user_buf).expect("Should be able to convert user_buf to string");
+    let sens_api =
+        String::from_utf8(sensor_buf).expect("Should be able to convert sensor_buf to string");
+
+    log::info!("user_api.len(): {}, user_api: {}", user_api.len(), user_api);
+    log::info!("sens_api.len(): {}, sens_api: {}", sens_api.len(), sens_api);
+
+    let sysloop = esp_idf_svc::eventloop::EspEventLoop::take().expect("Failed to take event loop");
 
     // let nvs =
     //     esp_idf_svc::nvs::EspDefaultNvsPartition::take().expect("Failed to take NVS partition");
 
-    // let modem = peripherals.modem;
+    let modem = peripherals.modem;
 
-    // let wifi_devices = WifiDevices {
-    //     modem,
-    //     sysloop: sysloop.clone(),
-    //     nvs: nvs.clone(),
-    // };
+    let wifi_devices = WifiDevices {
+        modem,
+        sysloop: sysloop.clone(),
+        nvs: nvs.clone(),
+    };
 
-    // let mut wifi_device = load_wifi_device(wifi_devices).expect("Failed to load WiFi device");
+    let mut wifi_device = load_wifi_device(wifi_devices).expect("Failed to load WiFi device");
 
-    // let http_client = EspHttpConnection::new(&HttpConfiguration::default())
-    //     .expect("Failed to create HTTP client");
-    // let mut http_client = Client::wrap(http_client);
+    let http_client = EspHttpConnection::new(&HttpConfiguration::default())
+        .expect("Failed to create HTTP client");
+    let mut http_client = Client::wrap(http_client);
 
-    // let mut wifi_attempts_failed: usize = 0;
+    let mut wifi_attempts_failed: usize = 0;
 
-    // // loop to just read sensor data
+    let sensor_uuid: String = hex::encode(return_sensor_uuid(()));
 
-    // 'select_wifi: loop {
-    //     if wifi_attempts_failed >= private::CLIENT_WIFIS.len() * 3 {
-    //         log::error!(
-    //             "Failed to connect to WiFi after {} attempts",
-    //             wifi_attempts_failed
-    //         );
-    //         // TODO: Cannot connect to any WiFi
-    //         panic!("Cannot connect to any WiFi");
-    //     }
+    'select_wifi: loop {
+        if wifi_attempts_failed >= private::CLIENT_WIFIS.len() * 3 {
+            log::error!(
+                "Failed to connect to WiFi after {} attempts",
+                wifi_attempts_failed
+            );
+            // TODO: Cannot connect to any WiFi
+            panic!("Cannot connect to any WiFi");
+        }
 
-    //     for wifi in private::CLIENT_WIFIS {
-    //         log::info!("Attempting to connect to WiFi: {}", wifi.0);
+        for wifi in private::CLIENT_WIFIS {
+            log::info!("Attempting to connect to WiFi: {}", wifi.0);
 
-    //         let client_config = ClientConfiguration {
-    //             ssid: heapless::String::from_str(wifi.0).unwrap(),
-    //             bssid: None,
-    //             auth_method: wifi.2,
-    //             password: heapless::String::from_str(wifi.1).unwrap(),
-    //             channel: None,
-    //             scan_method: ScanMethod::CompleteScan(ScanSortMethod::Signal),
-    //             pmf_cfg: PmfConfiguration::NotCapable,
-    //         };
+            let client_config = ClientConfiguration {
+                ssid: heapless::String::from_str(wifi.0).unwrap(),
+                bssid: None,
+                auth_method: wifi.2,
+                password: heapless::String::from_str(wifi.1).unwrap(),
+                channel: None,
+                scan_method: ScanMethod::CompleteScan(ScanSortMethod::Signal),
+                pmf_cfg: PmfConfiguration::NotCapable,
+            };
 
-    //         match connect_wifi(
-    //             &mut wifi_device,
-    //             client_config,
-    //             500, // Timeout in milliseconds
-    //         ) {
-    //             Ok(()) => {
-    //                 wifi_attempts_failed = 0;
-    //                 log::info!("WiFi {} connected successfully", wifi.0);
-    //                 loop {
-    //                     let mut data: Option<Scd4xData> = None;
+            match connect_wifi(
+                &mut wifi_device,
+                client_config,
+                500, // Timeout in milliseconds
+            ) {
+                Ok(()) => {
+                    wifi_attempts_failed = 0;
+                    log::info!("WiFi {} connected successfully", wifi.0);
+                    loop {
+                        let mut data: Option<Scd4xData> = None;
 
-    //                     // // Read data from AHT10 sensor
-    //                     // for _ in 0..SENSOR_READ_TRIES {
-    //                     //     match aht10.read_data() {
-    //                     //         Ok((humidity, temperature)) => {
-    //                     //             if temperature < -41.0 {
-    //                     //                 log::warn!("Temperature reading is below -41.0 °C, skipping this reading");
-    //                     //                 continue;
-    //                     //             }
+                        // // Read data from AHT10 sensor
+                        // for _ in 0..SENSOR_READ_TRIES {
+                        //     match aht10.read_data() {
+                        //         Ok((humidity, temperature)) => {
+                        //             if temperature < -41.0 {
+                        //                 log::warn!("Temperature reading is below -41.0 °C, skipping this reading");
+                        //                 continue;
+                        //             }
 
-    //                     //             data = Some(Aht10Data {
-    //                     //                 sensor_id: SENSOR_UUID.to_string(),
-    //                     //                 humidity,
-    //                     //                 temperature,
-    //                     //             });
+                        //             data = Some(Aht10Data {
+                        //                 sensor_id: SENSOR_UUID.to_string(),
+                        //                 humidity,
+                        //                 temperature,
+                        //             });
 
-    //                     //             log::info!("AHT10 data: {:?}", data);
+                        //             log::info!("AHT10 data: {:?}", data);
 
-    //                     //             break;
-    //                     //         }
-    //                     //         Err(e) => {
-    //                     //             log::warn!("Failed to read data from AHT10: {:?}", e);
-    //                     //         }
-    //                     //     };
-    //                     // }
+                        //             break;
+                        //         }
+                        //         Err(e) => {
+                        //             log::warn!("Failed to read data from AHT10: {:?}", e);
+                        //         }
+                        //     };
+                        // }
 
-    //                     // //Read data from SCD41 sensor
-    //                     // for _ in 0..SENSOR_READ_TRIES {
-    //                     //     match scd41.measurement() {
-    //                     //         Ok(sensor_data) => {
-    //                     //             let co2 = sensor_data.co2;
-    //                     //             let temperature = sensor_data.temperature;
-    //                     //             let humidity = sensor_data.humidity;
+                        //Read data from SCD41 sensor
+                        for _ in 0..SENSOR_READ_TRIES {
+                            FreeRtos::delay_ms(5000);
+                            match scd41.measurement() {
+                                Ok(sensor_data) => {
+                                    let co2 = sensor_data.co2;
+                                    let temperature = sensor_data.temperature;
+                                    let humidity = sensor_data.humidity;
 
-    //                     //             if temperature < -41.0 {
-    //                     //                 log::warn!("Temperature reading is below -41.0 °C, skipping this reading");
-    //                     //                 continue;
-    //                     //             }
+                                    if temperature < -41.0 {
+                                        log::warn!("Temperature reading is below -41.0 °C, skipping this reading");
+                                        continue;
+                                    }
 
-    //                     //             data = Some(Scd4xData {
-    //                     //                 sensor_id: SENSOR_UUID.to_string(),
-    //                     //                 co2,
-    //                     //                 humidity,
-    //                     //                 temperature,
-    //                     //             });
+                                    data = Some(Scd4xData {
+                                        sensor_id: sensor_uuid.clone(),
+                                        co2,
+                                        humidity,
+                                        temperature,
+                                    });
 
-    //                     //             log::info!("SCD41 data: {:?}", data);
+                                    log::info!("SCD41 data: {:?}", data);
 
-    //                     //             break;
-    //                     //         }
-    //                     //         Err(e) => {
-    //                     //             log::warn!("Failed to read data from SCD41: {:?}", e);
-    //                     //         }
-    //                     //     };
-    //                     // }
+                                    break;
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to read data from SCD41: {:?}", e);
+                                }
+                            };
+                        }
 
-    //                     // Send data to server
-    //                     match data {
-    //                         Some(data) => {
-    //                             let mut data_sent = false;
-    //                             for i in 0..HTTP_POST_TRIES {
-    //                                 match send_sensor_data(
-    //                                     &mut http_client,
-    //                                     data.clone().to_any_sensor_data(),
-    //                                 ) {
-    //                                     Ok(response_code) => {
-    //                                         log::info!(
-    //                                             "Data sent successfully, response code: {:?}",
-    //                                             response_code
-    //                                         );
-    //                                         data_sent = true;
-    //                                         break;
-    //                                     }
-    //                                     Err(e) => {
-    //                                         log::warn!(
-    //                                             "Failed to send AHT10 data [{}/{}]: {:?}",
-    //                                             i,
-    //                                             HTTP_POST_TRIES,
-    //                                             e
-    //                                         );
-    //                                     }
-    //                                 }
-    //                             }
+                        // Send data to server
+                        match data {
+                            Some(data) => {
+                                let mut data_sent = false;
+                                for i in 0..HTTP_POST_TRIES {
+                                    match send_sensor_data(
+                                        (&user_api, &sens_api),
+                                        &mut http_client,
+                                        data.clone().to_any_sensor_data(),
+                                    ) {
+                                        Ok(response_code) => {
+                                            log::info!(
+                                                "Data sent successfully, response code: {:?}",
+                                                response_code
+                                            );
+                                            data_sent = true;
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "Failed to send Sensor data [{}/{}]: {:?}",
+                                                i,
+                                                HTTP_POST_TRIES,
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
 
-    //                             if !data_sent {
-    //                                 log::error!(
-    //                                     "Failed to send AHT10 data after {} attempts",
-    //                                     HTTP_POST_TRIES
-    //                                 );
-    //                                 continue 'select_wifi;
-    //                             }
-    //                         }
-    //                         None => {
-    //                             log::warn!("No AHT10 data available");
-    //                             // TODO: Send `sensor down` to server
-    //                             continue 'select_wifi;
-    //                         }
-    //                     }
+                                if !data_sent {
+                                    log::error!(
+                                        "Failed to send AHT10 data after {} attempts",
+                                        HTTP_POST_TRIES
+                                    );
+                                    continue 'select_wifi;
+                                }
+                            }
+                            None => {
+                                log::warn!("No AHT10 data available");
+                                // TODO: Send `sensor down` to server
+                                continue 'select_wifi;
+                            }
+                        }
 
-    //                     // Wait for a while before the next reading
-    //                     match wait_wifi_stopped(&mut wifi_device, READS_DELAY_MS) {
-    //                         Ok(()) => (),
-    //                         Err(e) => {
-    //                             log::error!("WiFi related error on wait_wifi_stopped: {:?}\nGoing back to select_wifi", e);
-    //                             continue 'select_wifi;
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //             Err(e) => {
-    //                 wifi_attempts_failed += 1;
-    //                 log::warn!("Failed to connect WiFi {}: {:?}", wifi.0, e);
-    //             }
-    //         }
-    //     }
-    // }
+                        // Wait for a while before the next reading
+                        match wait_wifi_stopped(&mut wifi_device, READS_DELAY_MS) {
+                            Ok(()) => (),
+                            Err(e) => {
+                                log::error!("WiFi related error on wait_wifi_stopped: {:?}\nGoing back to select_wifi", e);
+                                continue 'select_wifi;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    wifi_attempts_failed += 1;
+                    log::warn!("Failed to connect WiFi {}: {:?}", wifi.0, e);
+                }
+            }
+        }
+    }
 }

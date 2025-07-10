@@ -4,6 +4,8 @@ const CFG_SERVICE_UUID: &str = "4b80ba9d-64fd-4ffa-86fb-544e73d26ed1";
 const SENSOR_API_ID_CHAR_UUID: &str = "8c680060-22b7-45b8-b325-f7b1b102d80f";
 const API_ACCOUNT_ID_CHAR_UUID: &str = "e11ca181-20c9-4675-b6f3-3f9fb91d1dc1";
 const SENSOR_UUID_CHAR_UUID: &str = "333cad84-ceb5-4e18-bfcf-6147987c6733";
+const WIFI_SSID_CHAR_UUID: &str = "66766233-ca34-4b23-866a-122faf0d42b4";
+const WIFI_PASS_CHAR_UUID: &str = "388e5402-5eb9-4788-8df1-386463417a23";
 
 #[derive(Debug, Clone, Copy)]
 pub struct BleCharacteristic<'a, R, W, N> {
@@ -35,6 +37,8 @@ pub struct BleProtocol<'a> {
         BleCharacteristic<'a, (), ZStr20, ()>,
         BleCharacteristic<'a, (), ZStr20, ()>,
         BleCharacteristic<'a, (), (), &'a [u8; 20]>,
+        BleCharacteristic<'a, (), ZStr20, ()>,
+        BleCharacteristic<'a, (), ZStr20, ()>,
     ),
 }
 
@@ -42,6 +46,8 @@ const SENSOR_CONFIG_SERVICE_UUID: BleUuid = uuid128!(CFG_SERVICE_UUID);
 const SENSOR_CONFIG_SENSOR_API_ID_CHAR_UUID: BleUuid = uuid128!(SENSOR_API_ID_CHAR_UUID);
 const SENSOR_CONFIG_API_ACCOUNT_ID_CHAR_UUID: BleUuid = uuid128!(API_ACCOUNT_ID_CHAR_UUID);
 const SENSOR_CONFIG_SENSOR_UUID_CHAR_UUID: BleUuid = uuid128!(SENSOR_UUID_CHAR_UUID);
+const SENSOR_CONFIG_WIFI_SSID_CHAR_UUID: BleUuid = uuid128!(WIFI_SSID_CHAR_UUID);
+const SENSOR_CONFIG_PASS_CHAR_UUID: BleUuid = uuid128!(WIFI_PASS_CHAR_UUID);
 
 impl<'a> BleProtocol<'a> {
     pub fn new(sensor_id: fn(()) -> [u8; 20]) -> Self {
@@ -66,12 +72,30 @@ impl<'a> BleProtocol<'a> {
                     write: None,
                     notify: None,
                 },
+                BleCharacteristic {
+                    uuid: &SENSOR_CONFIG_WIFI_SSID_CHAR_UUID,
+                    read: None,
+                    write: Some(ZStr20::from_unsized_slice),
+                    notify: None,
+                },
+                BleCharacteristic {
+                    uuid: &SENSOR_CONFIG_PASS_CHAR_UUID,
+                    read: None,
+                    write: Some(ZStr20::from_unsized_slice),
+                    notify: None,
+                },
             ),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
+pub enum ZStr20Error {
+    SizeNotMatch,
+    FromHexError(hex::FromHexError),
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ZStr20 {
     pub bytes: [u8; 21],
 }
@@ -97,5 +121,22 @@ impl ZStr20 {
         // }
 
         Some(ZStr20::new(slice.try_into().ok()?))
+    }
+
+    pub fn as_hex_string(&self) -> String {
+        hex::encode(&self.bytes[..Self::SIZE])
+    }
+
+    pub fn from_hex_string(hex: &str) -> Result<Self, ZStr20Error> {
+        if hex.len() != Self::SIZE {
+            Err(ZStr20Error::SizeNotMatch)?
+        }
+
+        let bytes = hex::decode(hex).map_err(|e| ZStr20Error::FromHexError(e))?;
+        let val = match ZStr20::from_unsized_slice(bytes.as_slice()) {
+            Some(val) => val,
+            None => Err(ZStr20Error::SizeNotMatch)?,
+        };
+        Ok(val)
     }
 }

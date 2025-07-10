@@ -3,25 +3,29 @@ use esp_idf_svc::nvs::{EspNvs, NvsDefault};
 pub const NAMESPACE: &'static str = "default";
 
 pub enum Keys<'a> {
-    JWT(Option<&'a str>),
+    UserApiId(Option<&'a str>),
+    SensorApiId(Option<&'a str>),
 }
 
 impl<'a> Keys<'a> {
     pub const fn key_string(&self) -> &'static str {
         match self {
-            Keys::JWT(_) => "jwt",
+            Keys::UserApiId(_) => "user_api_id",
+            Keys::SensorApiId(_) => "sensor_api_id",
         }
     }
     // str lenghth limit for JWTs is 2047 characters, str buffer size is 2048: need 1 byte for null terminator
     pub const fn max_value_length(&self) -> usize {
         match self {
-            Keys::JWT(_) => 2047,
+            Keys::UserApiId(_) => 40,
+            Keys::SensorApiId(_) => 40,
         }
     }
 
     pub const fn min_buffer_size(&self) -> usize {
         match self {
-            Keys::JWT(_) => self.max_value_length() + 1, // + 1 for null terminator
+            Keys::UserApiId(_) => self.max_value_length() + 1,
+            Keys::SensorApiId(_) => self.max_value_length() + 1,
         }
     }
 }
@@ -48,9 +52,10 @@ impl Persistence {
         Ok(Persistence { nvs })
     }
 
-    pub fn set(&mut self, key: Keys<'_>) -> Result<(), Error> {
+    pub fn set(&mut self, key: &Keys<'_>) -> Result<(), Error> {
         match key {
-            Keys::JWT(Some(value)) => {
+            // UserApiId
+            Keys::UserApiId(Some(value)) => {
                 if value.len() > key.max_value_length() {
                     return Err(Error::SizeLimitExceeded(
                         value.len() - key.max_value_length(),
@@ -61,7 +66,24 @@ impl Persistence {
                     .set_str(key.key_string(), value)
                     .map_err(|e| Error::SetError(e))?;
             }
-            Keys::JWT(None) => {
+            Keys::UserApiId(None) => {
+                self.nvs
+                    .remove(key.key_string())
+                    .map_err(Error::CreationError)?;
+            }
+            // SensorApiId
+            Keys::SensorApiId(Some(value)) => {
+                if value.len() > key.max_value_length() {
+                    return Err(Error::SizeLimitExceeded(
+                        value.len() - key.max_value_length(),
+                    ));
+                }
+
+                self.nvs
+                    .set_str(key.key_string(), value)
+                    .map_err(|e| Error::SetError(e))?;
+            }
+            Keys::SensorApiId(None) => {
                 self.nvs
                     .remove(key.key_string())
                     .map_err(Error::CreationError)?;
@@ -71,13 +93,20 @@ impl Persistence {
         Ok(())
     }
 
-    pub fn get(&self, key: Keys<'_>, buf: &mut [u8]) -> Result<bool, Error> {
+    pub fn get(&self, key: &Keys<'_>, buf: &mut [u8]) -> Result<bool, Error> {
         if buf.len() < (key.min_buffer_size()) {
             return Err(Error::LackingBuffer(key.min_buffer_size() - buf.len()));
         }
 
         match key {
-            Keys::JWT(_) => {
+            Keys::UserApiId(_) => {
+                let res = self
+                    .nvs
+                    .get_str(key.key_string(), buf)
+                    .map_err(|e| Error::GetError(e))?;
+                Ok(res.is_some())
+            }
+            Keys::SensorApiId(_) => {
                 let res = self
                     .nvs
                     .get_str(key.key_string(), buf)
