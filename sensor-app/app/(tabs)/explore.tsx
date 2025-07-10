@@ -123,6 +123,7 @@ async function sensorApiIdFetch(
   ble_mac: string,
   sensor_kind: string
 ): Promise<string> {
+  // const api_path = 'http://192.168.1.133:3000/api/v0/post_sensor';
   const api_path = 'http://sensor-server.juancb.ftp.sh:3000/api/v0/post_sensor';
   const user_uuid = accountIdHEX;
 
