@@ -2,25 +2,25 @@
 
 diesel::table! {
     aht10data (id) {
-        id -> Integer,
+        id -> Int4,
         sensor -> Text,
         serialized_data -> Text,
-        added_at -> Integer,
+        added_at -> Timestamp,
     }
 }
 
 diesel::table! {
     scd4xdata (id) {
-        id -> Integer,
+        id -> Int4,
         sensor -> Text,
         serialized_data -> Text,
-        added_at -> Integer,
+        added_at -> Timestamp,
     }
 }
 
 diesel::table! {
     sensor_kinds (id) {
-        id -> Integer,
+        id -> Int4,
         name -> Text,
         description -> Nullable<Text>,
     }
@@ -28,21 +28,21 @@ diesel::table! {
 
 diesel::table! {
     user_places (id) {
-        id -> Integer,
+        id -> Int4,
         user -> Text,
         name -> Text,
         description -> Nullable<Text>,
-        created_at -> Integer,
-        updated_at -> Integer,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
 diesel::table! {
     user_sensors (api_id) {
         api_id -> Text,
-        place -> Integer,
-        kind -> Integer,
-        last_measurement -> Integer,
+        place -> Int4,
+        kind -> Int4,
+        last_measurement -> Timestamp,
         device_id -> Text,
     }
 }
@@ -53,8 +53,8 @@ diesel::table! {
         api_id -> Text,
         hashed_password -> Text,
         email -> Text,
-        created_at -> Integer,
-        updated_at -> Integer,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 

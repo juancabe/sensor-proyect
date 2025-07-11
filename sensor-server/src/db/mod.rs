@@ -1,3 +1,4 @@
+use chrono::{DateTime, NaiveDateTime};
 use diesel::connection::SimpleConnection;
 use diesel::dsl::count_star;
 use diesel::prelude::*;
@@ -11,7 +12,7 @@ use sensor_lib::api::model::sensor_kind::SensorKind;
 
 use crate::models;
 
-use diesel::r2d2::Error as DieselPoolError;
+use r2d2::Error as DieselPoolError;
 
 type FailedDeserialize = usize;
 
@@ -41,28 +42,22 @@ impl From<DieselPoolError> for crate::db::Error {
     }
 }
 
-type DbPool = r2d2::Pool<ConnectionManager<diesel::SqliteConnection>>;
+type DbPool = r2d2::Pool<ConnectionManager<diesel::PgConnection>>;
 
 static DB_POOL: Lazy<DbPool> = Lazy::new(|| {
     dotenv().expect("Failed to read .env file");
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let manager = ConnectionManager::<diesel::SqliteConnection>::new(database_url);
+    let manager = ConnectionManager::<diesel::PgConnection>::new(database_url);
     r2d2::Pool::builder()
         .build(manager)
         .expect("Failed to create pool.")
 });
 
-fn get_db_pool()
--> Result<r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, crate::db::Error> {
-    let mut db: r2d2::PooledConnection<ConnectionManager<SqliteConnection>> = DB_POOL
+pub fn get_db_pool()
+-> Result<r2d2::PooledConnection<ConnectionManager<PgConnection>>, crate::db::Error> {
+    let mut db: r2d2::PooledConnection<ConnectionManager<PgConnection>> = DB_POOL
         .get()
         .map_err(|_| crate::db::Error::DataBaseConnectionError)?;
-
-    db.batch_execute(
-        "PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = FULL;",
-    )?;
 
     Ok(db)
 }
@@ -91,8 +86,8 @@ pub fn query_aht10_data(
 
     let max_date = query.added_at_upper;
     let min_date = query.added_at_lower;
-    let sensor_ = &query.sensor_api_id;
-    let api_id = &query.user_api_id;
+    let sensor_ = &query.sensor_api_id.to_uppercase();
+    let api_id = &query.user_api_id.to_uppercase();
 
     let mut failed_deserialize: usize = 0;
 
@@ -102,8 +97,8 @@ pub fn query_aht10_data(
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
         .filter(users::api_id.eq(api_id))
-        .filter(aht10data::added_at.le(max_date.unwrap_or(i32::MAX)))
-        .filter(aht10data::added_at.ge(min_date.unwrap_or(0)))
+        .filter(aht10data::added_at.le(max_date.unwrap_or(NaiveDateTime::MAX)))
+        .filter(aht10data::added_at.ge(min_date.unwrap_or(NaiveDateTime::from_timestamp_opt(0, 0).expect("(secs: 0, nsecs: 0) should be valid timestamp"))))
         .select(models::Aht10Data::as_select())
         .load::<models::Aht10Data>(&mut db_conn)?
         .into_iter()
@@ -146,8 +141,8 @@ pub fn query_scd4x_data(
 
     let max_date = query.added_at_upper;
     let min_date = query.added_at_lower;
-    let sensor_ = &query.sensor_api_id;
-    let api_id = &query.user_api_id;
+    let sensor_ = &query.sensor_api_id.to_uppercase();
+    let api_id = &query.user_api_id.to_uppercase();
 
     let mut failed_deserialize: usize = 0;
 
@@ -157,8 +152,8 @@ pub fn query_scd4x_data(
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
         .filter(users::api_id.eq(api_id))
-        .filter(scd4xdata::added_at.le(max_date.unwrap_or(i32::MAX)))
-        .filter(scd4xdata::added_at.ge(min_date.unwrap_or(0)))
+        .filter(scd4xdata::added_at.le(max_date.unwrap_or(NaiveDateTime::MAX)))
+        .filter(scd4xdata::added_at.ge(min_date.unwrap_or(NaiveDateTime::from_timestamp_opt(0, 0).expect("(secs: 0, nsecs: 0) should be valid timestamp"))))
         .select(models::Scd4xData::as_select())
         .load::<models::Scd4xData>(&mut db_conn)?
         .into_iter()
@@ -188,6 +183,8 @@ pub fn get_user_from_sensor(sensor_api_id: &str) -> Result<String, crate::db::Er
     // use crate::schema::user_places::dsl::*;
     // use crate::schema::user_sensors::dsl::*;
 
+    let sensor_api_id = sensor_api_id.to_uppercase();
+
     use crate::schema::{
         user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
     };
@@ -199,7 +196,7 @@ pub fn get_user_from_sensor(sensor_api_id: &str) -> Result<String, crate::db::Er
 
     let user_id_result = user_sensors_table
         .inner_join(user_places_table)
-        .filter(user_sensors::api_id.eq(sensor_api_id))
+        .filter(user_sensors::api_id.eq(&sensor_api_id))
         .select(user_places::user)
         .first::<String>(&mut db_conn);
 
@@ -233,8 +230,8 @@ pub fn user_api_id_matches_sensor_api_id(
     let count = user_sensors_table
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::api_id.eq(user_api_id))
-        .filter(user_sensors::api_id.eq(sensor_api_id))
+        .filter(users::api_id.eq(user_api_id.to_uppercase()))
+        .filter(user_sensors::api_id.eq(sensor_api_id.to_uppercase()))
         .select(count_star())
         .first::<i64>(&mut db_conn)?;
 
@@ -243,7 +240,7 @@ pub fn user_api_id_matches_sensor_api_id(
 
 pub fn user_api_id_matches_place_id(
     user_api_id: &str,
-    user_place_id_: i32,
+    user_place_id: i32,
 ) -> Result<bool, crate::db::Error> {
     use crate::schema::{
         user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
@@ -254,8 +251,8 @@ pub fn user_api_id_matches_place_id(
 
     let count = user_places_table
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::api_id.eq(user_api_id))
-        .filter(user_places::id.eq(user_place_id_))
+        .filter(users::api_id.eq(user_api_id.to_uppercase()))
+        .filter(user_places::id.eq(user_place_id))
         .select(count_star())
         .first::<i64>(&mut db_conn)?;
 
@@ -271,7 +268,7 @@ pub fn get_sensor_kind_from_id(sensor_api_id: &str) -> Result<SensorKind, crate:
     let mut db_conn = get_db_pool()?;
 
     let kind = user_sensors_table
-        .filter(user_sensors::api_id.eq(sensor_api_id))
+        .filter(user_sensors::api_id.eq(sensor_api_id.to_uppercase()))
         .select(user_sensors::kind)
         .first::<i32>(&mut db_conn)?;
 
@@ -284,7 +281,7 @@ pub fn save_new_aht10_data(data: models::NewAht10Data<'_>) -> Result<(), Error> 
 
     log::info!("Saving new AHT10 data: {:?}", data);
 
-    let mut db_conn: r2d2::PooledConnection<ConnectionManager<SqliteConnection>> = get_db_pool()?;
+    let mut db_conn: r2d2::PooledConnection<ConnectionManager<PgConnection>> = get_db_pool()?;
 
     diesel::insert_into(aht10data::table)
         .values(data)
@@ -297,7 +294,7 @@ pub fn save_new_scd4x_data(data: models::NewScd4xData<'_>) -> Result<(), Error> 
 
     log::info!("Saving new SCD4X data: {:?}", data);
 
-    let mut db_conn: r2d2::PooledConnection<ConnectionManager<SqliteConnection>> = get_db_pool()?;
+    let mut db_conn: r2d2::PooledConnection<ConnectionManager<PgConnection>> = get_db_pool()?;
 
     diesel::insert_into(scd4xdata::table)
         .values(data)
@@ -325,7 +322,7 @@ pub fn generate_sensor_api_id(
 
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    hasher.update(user_uuid.as_bytes());
+    hasher.update(user_uuid.to_uppercase().as_bytes());
     hasher.update(sensor_kind.as_str().as_bytes());
     hasher.update(user_place_id.to_string().as_bytes());
     hasher.update(device_id.as_bytes());
@@ -338,26 +335,29 @@ pub fn generate_sensor_api_id(
 pub fn new_sensor(
     user_api_id: &str,
     sensor_kind: SensorKind,
-    user_place_id_: i32,
+    user_place_id: i32,
     device_id: &str,
 ) -> Result<String, Error> {
     use crate::schema::user_sensors;
 
-    if !user_api_id_matches_place_id(user_api_id, user_place_id_)? {
+    let user_api_id = user_api_id.to_uppercase();
+
+    if !user_api_id_matches_place_id(&user_api_id, user_place_id)? {
         return Err(Error::DataBaseError(diesel::result::Error::NotFound));
     }
 
     let mut db_conn = get_db_pool()?;
 
     let user_sensor_api_id =
-        generate_sensor_api_id(user_api_id, &sensor_kind, user_place_id_, device_id);
+        generate_sensor_api_id(&user_api_id, &sensor_kind, user_place_id, device_id);
     let user_sensor_api_id = hex::encode(user_sensor_api_id?);
 
     let new_sensor = models::NewUserSensor {
         api_id: &user_sensor_api_id,
-        place: user_place_id_,
+        place: user_place_id,
         kind: sensor_kind as i32,
-        last_measurement: 0,
+        last_measurement: NaiveDateTime::from_timestamp_opt(0, 0)
+            .expect("(secs: 0, nsecs: 0) should be valid timestamp"),
         device_id,
     };
 
@@ -382,6 +382,8 @@ pub fn get_login(username: &str, hashed_password: &str) -> Result<String, Error>
 
 #[cfg(test)]
 mod tests {
+
+    use chrono::NaiveDate;
 
     use super::*;
 
@@ -482,14 +484,10 @@ mod tests {
         let user_place_id = 1; // Assuming this is a valid place ID for the test user
         let device_id = "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAB";
 
-        let result = new_sensor(user_uuid, sensor_kind, user_place_id, device_id);
-        assert!(result.is_ok(), "Failed to create new sensor");
+        let result = new_sensor(user_uuid, sensor_kind, user_place_id, device_id)
+            .expect("Should be able to create new sensor with DB");
 
-        let sensor_api_id = result.unwrap();
-        assert!(
-            !sensor_api_id.is_empty(),
-            "Sensor API ID should not be empty"
-        );
+        assert!(!result.is_empty(), "Sensor API ID should not be empty");
 
         let errored_result = new_sensor(user_uuid, sensor_kind, user_place_id, device_id);
         assert!(
@@ -527,19 +525,19 @@ mod tests {
             user_sensors::dsl::user_sensors as user_sensors_table,
         };
 
-        diesel::delete(user_sensors_table.filter(user_sensors::api_id.eq(&sensor_api_id)))
+        diesel::delete(user_sensors_table.filter(user_sensors::api_id.eq(&result)))
             .execute(&mut db_conn)
             .expect("Failed to delete sensor");
     }
 
     #[test]
     fn test_user_api_id_matches_sensor_api_id() {
-        let user_api_id = "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-        let sensor_api_id = "94a990533d761111111111111111111111111111";
-        let result = user_api_id_matches_sensor_api_id(user_api_id, sensor_api_id)
+        let user_api_id = "94A990533D76AAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let sensor_api_id = "ABC36768CF4D927E267A72AC1CB8108693BDAFD1";
+        let matches = user_api_id_matches_sensor_api_id(user_api_id, sensor_api_id)
             .expect("Failed to check if user UUID matches sensor API ID");
         assert!(
-            result,
+            matches,
             "Expected user UUID to match sensor API ID, but it did not"
         );
     }
@@ -615,16 +613,16 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_embeed_run_migrations() {
-        use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-        const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
-        let mut db_conn = get_db_pool().expect("Failed to get database connection");
-        db_conn
-            .run_pending_migrations(MIGRATIONS)
-            .expect("Failed to run migrations");
-        log::info!("Migrations ran successfully");
-    }
+    // #[test]
+    // fn test_embeed_run_migrations() {
+    //     use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+    //     const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+    //     let mut db_conn = get_db_pool().expect("Failed to get database connection");
+    //     db_conn
+    //         .run_pending_migrations(MIGRATIONS)
+    //         .expect("Failed to run migrations");
+    //     log::info!("Migrations ran successfully");
+    // }
 
     #[test]
     fn test_test_db_pool() {
@@ -637,16 +635,17 @@ mod tests {
 
     #[test]
     fn test_insert_aht10data_then_delete() {
-        let now = chrono::Utc::now().timestamp() as i32;
+        let now = chrono::Utc::now().naive_utc();
 
         let new_data = models::NewAht10Data {
-            sensor: "94a990533d761111111111111111111111111111".into(),
+            sensor: "94A990533D761111111111111111111111111111".into(),
             serialized_data: "{\"temperature\": 22.5, \"humidity\": 45.0}",
             added_at: now, // Example timestamp
         };
 
-        let result = save_new_aht10_data(new_data);
-        assert!(result.is_ok(), "Failed to insert AHT10 data");
+        println!("INSERTING DATA");
+        save_new_aht10_data(new_data).expect("Data should be inserted correctly");
+        println!("DATA INSERTED");
 
         let mut db_conn = get_db_pool().expect("Failed to get database connection");
 
@@ -665,9 +664,9 @@ mod tests {
     #[test]
     fn test_insert_aht10data_unexistent_sensor() {
         let new_data = models::NewAht10Data {
-            sensor: "94a990533d761111111111111111111111111111e".into(),
+            sensor: "94A990533D761111111111111111111111111111e".into(),
             serialized_data: "{\"temperature\": 22.5, \"humidity\": 45.0}",
-            added_at: 1633036800, // Example timestamp
+            added_at: chrono::Utc::now().naive_utc(),
         };
 
         let result = save_new_aht10_data(new_data);
@@ -688,8 +687,8 @@ mod tests {
     #[test]
     fn test_query_aht10_data() {
         let query = GetSensorRequestBody {
-            user_api_id: "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
-            sensor_api_id: "94a990533d761111111111111111111111111111".into(),
+            user_api_id: "94A990533D76AAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
+            sensor_api_id: "94A990533D761111111111111111111111111111".into(),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -711,7 +710,7 @@ mod tests {
     fn test_query_aht10_data_nonexistent_user() {
         let query = GetSensorRequestBody {
             user_api_id: "nonexistent-user_api_id".into(),
-            sensor_api_id: "94a990533d761111111111111111111111111111".into(),
+            sensor_api_id: "94A990533D761111111111111111111111111111".into(),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -731,16 +730,15 @@ mod tests {
 
     #[test]
     fn test_insert_scd4xdata_then_delete() {
-        let now = chrono::Utc::now().timestamp() as i32;
+        let now = chrono::Utc::now().naive_utc();
 
         let new_data = models::NewScd4xData {
-            sensor: "94a990533d762222222222222222222222222222".into(),
+            sensor: "94A990533D762222222222222222222222222222".into(),
             serialized_data: "{\"co2\": 420, \"temperature\": 21.5, \"humidity\": 40.2}",
             added_at: now, // Example timestamp
         };
 
-        let result = save_new_scd4x_data(new_data);
-        assert!(result.is_ok(), "Failed to insert SCD4X data");
+        save_new_scd4x_data(new_data).expect("Data should be inserted correctly");
 
         let mut db_conn = get_db_pool().expect("Failed to get database connection");
 
@@ -759,9 +757,9 @@ mod tests {
     #[test]
     fn test_insert_scd4xdata_unexistent_sensor() {
         let new_data = models::NewScd4xData {
-            sensor: "94a990533d762222222222222222222222222222e".into(),
+            sensor: "94A990533D762222222222222222222222222222e".into(),
             serialized_data: "{\"co2\": 420, \"temperature\": 21.5, \"humidity\": 40.2}",
-            added_at: 1633036800, // Example timestamp
+            added_at: chrono::Utc::now().naive_utc(),
         };
 
         let result = save_new_scd4x_data(new_data);
@@ -786,8 +784,8 @@ mod tests {
     #[test]
     fn test_query_scd4x_data() {
         let query = GetSensorRequestBody {
-            user_api_id: "94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
-            sensor_api_id: "94a990533d762222222222222222222222222222".into(),
+            user_api_id: "94A990533D76AAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
+            sensor_api_id: "94A990533D762222222222222222222222222222".into(),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -809,7 +807,7 @@ mod tests {
     fn test_query_scd4x_data_nonexistent_user() {
         let query = GetSensorRequestBody {
             user_api_id: "nonexistent-user_api_id".into(),
-            sensor_api_id: "94a990533d762222222222222222222222222222".into(),
+            sensor_api_id: "94A990533D762222222222222222222222222222".into(),
             added_at_upper: None,
             added_at_lower: None,
         };

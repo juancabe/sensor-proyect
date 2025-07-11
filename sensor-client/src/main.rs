@@ -12,11 +12,14 @@ use esp_idf_svc::{
         ScanSortMethod,
     },
 };
-use esp_idf_sys::esp_read_mac;
+use esp_idf_sys::{esp_read_mac, EspError};
 use sensor_lib::api::{
     endpoints::post_sensor_data::{PostSensorData, PostSensorDataBody, PostSensorResponseCode},
     model::{
-        aht10_data::Aht10Data, any_sensor_data::AnySensorData, scd4x_data::Scd4xData, SensorData,
+        // aht10_data::Aht10Data,
+        any_sensor_data::AnySensorData,
+        scd4x_data::Scd4xData,
+        SensorData,
     },
     ApiEndpoint,
 };
@@ -30,8 +33,8 @@ mod ble_protocol;
 mod persistence;
 mod private;
 
-const BASE_URL: &'static str = "http://sensor-server.juancb.ftp.sh:3000";
-// const BASE_URL: &'static str = "http://192.168.1.133:3000";
+// const BASE_URL: &'static str = "http://sensor-server.juancb.ftp.sh:3000";
+const BASE_URL: &'static str = "http://192.168.1.133:3000";
 const READS_DELAY_MS: u32 = 1000 * 60; // 1 minute
 
 const HTTP_POST_TRIES: u32 = 10;
@@ -61,7 +64,7 @@ enum GetAht10Error {
     InitializationError(adafruit_aht10::Aht10Error),
 }
 
-fn get_aht10_sensor(
+fn _get_aht10_sensor(
     peripherals: I2CPeripherals,
 ) -> Result<adafruit_aht10::AdafruitAHT10<I2cDriver<'static>>, GetAht10Error> {
     let config = esp_idf_svc::hal::i2c::I2cConfig::new().baudrate(100.kHz().into());
@@ -82,10 +85,25 @@ fn get_aht10_sensor(
     Ok(aht10)
 }
 
-fn get_scd41_sensor(i2cp: I2CPeripherals) -> Scd4x<I2cDriver<'static>, FreeRtos> {
+#[derive(Debug)]
+#[allow(dead_code)]
+enum GetScd41Error {
+    DriverCreation(EspError),
+    StopPeriodicMesurement(String),
+    Reinit(String),
+    SerialNumber(String),
+    SelfTestOk(String),
+    StartPeriodicMeasurement(String),
+}
+
+type Serial = u64;
+
+fn get_scd41_sensor(
+    i2cp: I2CPeripherals,
+) -> Result<(Scd4x<I2cDriver<'static>, FreeRtos>, Serial), GetScd41Error> {
     let config = esp_idf_svc::hal::i2c::I2cConfig::new().baudrate(100.kHz().into());
     let i2c = I2cDriver::new(i2cp.i2c0, i2cp.gpio3_sda, i2cp.gpio2_scl, &config)
-        .expect("Failed to create I2C driver");
+        .map_err(|e| GetScd41Error::DriverCreation(e))?;
 
     let delay = esp_idf_svc::hal::delay::FreeRtos;
 
@@ -93,22 +111,33 @@ fn get_scd41_sensor(i2cp: I2CPeripherals) -> Scd4x<I2cDriver<'static>, FreeRtos>
 
     log::info!("SCD41 sensor waking up...");
     scd41.wake_up();
-    scd41.stop_periodic_measurement().unwrap();
-    scd41.reinit().unwrap();
+    scd41
+        .stop_periodic_measurement()
+        .map_err(|e| GetScd41Error::StopPeriodicMesurement(format!("SCD_ERROR: {:?}", e)))?;
+    scd41
+        .reinit()
+        .map_err(|e| GetScd41Error::Reinit(format!("SCD_ERROR: {:?}", e)))?;
 
-    let serial = scd41.serial_number().unwrap();
+    let serial = scd41
+        .serial_number()
+        .map_err(|e| GetScd41Error::SerialNumber(format!("SCD_ERROR: {:?}", e)))?;
     log::info!("SCD41 serial: {:#04x}", serial);
 
-    if scd41.self_test_is_ok().unwrap() {
+    if scd41
+        .self_test_is_ok()
+        .map_err(|e| GetScd41Error::SelfTestOk(format!("SCD_ERROR: {:?}", e)))?
+    {
         log::info!("SCD41 self-test passed");
     } else {
         log::error!("SCD41 self-test failed");
     }
 
-    scd41.start_periodic_measurement().unwrap();
+    scd41
+        .start_periodic_measurement()
+        .map_err(|e| GetScd41Error::StartPeriodicMeasurement(format!("SCD_ERROR: {:?}", e)))?;
     println!("Waiting for first measurement... (5 sec)");
 
-    scd41
+    Ok((scd41, serial))
 }
 
 #[allow(dead_code)]
@@ -129,8 +158,8 @@ fn send_sensor_data(
     let url: String = format!("{}{}", BASE_URL, PostSensorData::PATH);
 
     let body = PostSensorDataBody {
-        user_api_id: user_api.to_string(),
-        sensor_api_id: sensor_api.to_string(),
+        user_api_id: user_api.to_uppercase(),
+        sensor_api_id: sensor_api.to_uppercase(),
         data,
         added_at: None,
     };
@@ -361,6 +390,7 @@ impl BleLoopReturn {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 enum BleLoopError {
     BleAdvertiserLockError(String),
 }
@@ -375,7 +405,7 @@ fn configure_esp_ble_loop(ble_device: &BLEDevice) -> Result<BleLoopReturn, BleLo
 
     let result_mutex = Arc::new(Mutex::new(BleLoopReturn::default()));
 
-    let (sensor_api_id_char, api_account_id_char, sensor_uuid_char, wifi_ssid, wifi_pass) =
+    let (sensor_api_id_char, api_account_id_char, sensor_uuid_char, _wifi_ssid, _wifi_pass) =
         p.characteristics;
     // TODO: Wifi pass and wifi ssid characteristics
 
@@ -499,11 +529,12 @@ fn main() {
     // })
     // .expect("Failed to get AHT10 sensor");
 
-    let mut scd41 = get_scd41_sensor(I2CPeripherals {
+    let (mut scd41, _serial) = get_scd41_sensor(I2CPeripherals {
         gpio3_sda: peripherals.pins.gpio4,
         gpio2_scl: peripherals.pins.gpio3,
         i2c0: peripherals.i2c0,
-    });
+    })
+    .expect("SCD41 should be available");
 
     let nvs = esp_idf_svc::nvs::EspDefaultNvsPartition::take()
         .expect("Couldn't take NVS Default Partition");
@@ -583,9 +614,6 @@ fn main() {
     log::info!("sens_api.len(): {}, sens_api: {}", sens_api.len(), sens_api);
 
     let sysloop = esp_idf_svc::eventloop::EspEventLoop::take().expect("Failed to take event loop");
-
-    // let nvs =
-    //     esp_idf_svc::nvs::EspDefaultNvsPartition::take().expect("Failed to take NVS partition");
 
     let modem = peripherals.modem;
 
@@ -733,7 +761,7 @@ fn main() {
                                 }
                             }
                             None => {
-                                log::warn!("No AHT10 data available");
+                                log::warn!("No Sensor data available");
                                 // TODO: Send `sensor down` to server
                                 continue 'select_wifi;
                             }
