@@ -12,7 +12,7 @@ use esp_idf_svc::{
         ScanSortMethod,
     },
 };
-use esp_idf_sys::{esp_read_mac, EspError};
+use esp_idf_sys::esp_read_mac;
 use sensor_lib::api::{
     endpoints::post_sensor_data::{PostSensorData, PostSensorDataBody, PostSensorResponseCode},
     model::{
@@ -25,20 +25,23 @@ use sensor_lib::api::{
 };
 use std::sync::Arc;
 
-use scd4x::Scd4x;
-
-use crate::{ble_protocol::ZStr20, persistence::Persistence};
+use crate::{
+    ble_protocol::ZStr20,
+    modem_sleep::ModemSleep,
+    persistence::Persistence,
+    sensors::{Scd41InitData, Scd41WorkingMode, Sensors},
+};
 
 mod ble_protocol;
+mod modem_sleep;
 mod persistence;
 mod private;
+mod sensors;
 
-// const BASE_URL: &'static str = "http://sensor-server.juancb.ftp.sh:3000";
-const BASE_URL: &'static str = "http://192.168.1.133:3000";
+const BASE_URL: &'static str = "http://sensor-server.juancb.ftp.sh:3000";
 const READS_DELAY_MS: u32 = 1000 * 60; // 1 minute
 
 const HTTP_POST_TRIES: u32 = 10;
-const SENSOR_READ_TRIES: u32 = 10;
 
 fn _log_memory_usage(task_name: &str) {
     let free_heap = unsafe { esp_get_free_heap_size() };
@@ -55,89 +58,6 @@ struct I2CPeripherals {
     gpio3_sda: esp_idf_svc::hal::gpio::Gpio4,
     gpio2_scl: esp_idf_svc::hal::gpio::Gpio3,
     i2c0: esp_idf_svc::hal::i2c::I2C0,
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-enum GetAht10Error {
-    I2cError(esp_idf_sys::EspError),
-    InitializationError(adafruit_aht10::Aht10Error),
-}
-
-fn _get_aht10_sensor(
-    peripherals: I2CPeripherals,
-) -> Result<adafruit_aht10::AdafruitAHT10<I2cDriver<'static>>, GetAht10Error> {
-    let config = esp_idf_svc::hal::i2c::I2cConfig::new().baudrate(100.kHz().into());
-    let i2c = I2cDriver::new(
-        peripherals.i2c0,
-        peripherals.gpio3_sda,
-        peripherals.gpio2_scl,
-        &config,
-    )
-    .map_err(|e| GetAht10Error::I2cError(e))?;
-
-    let mut aht10 = adafruit_aht10::AdafruitAHT10::new(i2c);
-
-    aht10
-        .begin()
-        .map_err(|e| GetAht10Error::InitializationError(e))?;
-
-    Ok(aht10)
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-enum GetScd41Error {
-    DriverCreation(EspError),
-    StopPeriodicMesurement(String),
-    Reinit(String),
-    SerialNumber(String),
-    SelfTestOk(String),
-    StartPeriodicMeasurement(String),
-}
-
-type Serial = u64;
-
-fn get_scd41_sensor(
-    i2cp: I2CPeripherals,
-) -> Result<(Scd4x<I2cDriver<'static>, FreeRtos>, Serial), GetScd41Error> {
-    let config = esp_idf_svc::hal::i2c::I2cConfig::new().baudrate(100.kHz().into());
-    let i2c = I2cDriver::new(i2cp.i2c0, i2cp.gpio3_sda, i2cp.gpio2_scl, &config)
-        .map_err(|e| GetScd41Error::DriverCreation(e))?;
-
-    let delay = esp_idf_svc::hal::delay::FreeRtos;
-
-    let mut scd41 = Scd4x::new(i2c, delay);
-
-    log::info!("SCD41 sensor waking up...");
-    scd41.wake_up();
-    scd41
-        .stop_periodic_measurement()
-        .map_err(|e| GetScd41Error::StopPeriodicMesurement(format!("SCD_ERROR: {:?}", e)))?;
-    scd41
-        .reinit()
-        .map_err(|e| GetScd41Error::Reinit(format!("SCD_ERROR: {:?}", e)))?;
-
-    let serial = scd41
-        .serial_number()
-        .map_err(|e| GetScd41Error::SerialNumber(format!("SCD_ERROR: {:?}", e)))?;
-    log::info!("SCD41 serial: {:#04x}", serial);
-
-    if scd41
-        .self_test_is_ok()
-        .map_err(|e| GetScd41Error::SelfTestOk(format!("SCD_ERROR: {:?}", e)))?
-    {
-        log::info!("SCD41 self-test passed");
-    } else {
-        log::error!("SCD41 self-test failed");
-    }
-
-    scd41
-        .start_periodic_measurement()
-        .map_err(|e| GetScd41Error::StartPeriodicMeasurement(format!("SCD_ERROR: {:?}", e)))?;
-    println!("Waiting for first measurement... (5 sec)");
-
-    Ok((scd41, serial))
 }
 
 #[allow(dead_code)]
@@ -251,6 +171,8 @@ fn connect_wifi<'a>(
         .connect()
         .map_err(|e| LoadWifiError::ConnectError(e))?;
 
+    FreeRtos::delay_ms(1000);
+
     // Wait until the network interface is up
     wifi_device
         .wait_netif_up()
@@ -281,13 +203,11 @@ fn wait_wifi_stopped(
     wifi_device: &mut BlockingWifi<EspWifi>,
     milliseconds: u32,
 ) -> Result<(), esp_idf_sys::EspError> {
-    wifi_device.disconnect()?;
-    wifi_device.stop()?;
-    log::info!("WiFi stopped successfully");
+    wifi_device.modem_sleep()?;
+    log::info!("WiFi sleeping successfully");
     FreeRtos::delay_ms(milliseconds);
-    log::info!("Reconnecting to WiFi...");
-    wifi_device.start()?;
-    wifi_device.connect()?;
+    log::info!("WiFi waking up...");
+    wifi_device.modem_wakeup()?;
     wifi_device.wait_netif_up()?;
     log::info!("Reconnected to WiFi");
     Ok(())
@@ -528,13 +448,30 @@ fn main() {
     //     i2c0: peripherals.i2c0,
     // })
     // .expect("Failed to get AHT10 sensor");
-
-    let (mut scd41, _serial) = get_scd41_sensor(I2CPeripherals {
+    let config = esp_idf_svc::hal::i2c::I2cConfig::new().baudrate(100.kHz().into());
+    let i2cp = I2CPeripherals {
         gpio3_sda: peripherals.pins.gpio4,
         gpio2_scl: peripherals.pins.gpio3,
         i2c0: peripherals.i2c0,
-    })
-    .expect("SCD41 should be available");
+    };
+
+    let i2c = I2cDriver::new(i2cp.i2c0, i2cp.gpio3_sda, i2cp.gpio2_scl, &config)
+        .expect("Should be able to create I2CDriver");
+
+    let mut sensors = match Sensors::new(
+        i2c,
+        Some(()),
+        Some(Scd41InitData::new(Scd41WorkingMode::LowPower)),
+        false,
+    ) {
+        Ok(s) => s,
+        Err((_i2c, scd41, aht10)) => {
+            panic!(
+                "Unable to create sensor driver\nscd41: {:?}\naht10: {:?}\n\n",
+                scd41, aht10
+            );
+        }
+    };
 
     let nvs = esp_idf_svc::nvs::EspDefaultNvsPartition::take()
         .expect("Couldn't take NVS Default Partition");
@@ -631,7 +568,7 @@ fn main() {
 
     let mut wifi_attempts_failed: usize = 0;
 
-    let sensor_uuid: String = hex::encode(return_sensor_uuid(()));
+    let sensor_uuid: String = ZStr20::new(&return_sensor_uuid(())).as_hex_string();
 
     'select_wifi: loop {
         if wifi_attempts_failed >= private::CLIENT_WIFIS.len() * 3 {
@@ -665,63 +602,34 @@ fn main() {
                     wifi_attempts_failed = 0;
                     log::info!("WiFi {} connected successfully", wifi.0);
                     loop {
-                        let mut data: Option<Scd4xData> = None;
-
-                        // // Read data from AHT10 sensor
-                        // for _ in 0..SENSOR_READ_TRIES {
-                        //     match aht10.read_data() {
-                        //         Ok((humidity, temperature)) => {
-                        //             if temperature < -41.0 {
-                        //                 log::warn!("Temperature reading is below -41.0 °C, skipping this reading");
-                        //                 continue;
-                        //             }
-
-                        //             data = Some(Aht10Data {
-                        //                 sensor_id: SENSOR_UUID.to_string(),
-                        //                 humidity,
-                        //                 temperature,
-                        //             });
-
-                        //             log::info!("AHT10 data: {:?}", data);
-
-                        //             break;
-                        //         }
-                        //         Err(e) => {
-                        //             log::warn!("Failed to read data from AHT10: {:?}", e);
-                        //         }
-                        //     };
-                        // }
-
-                        //Read data from SCD41 sensor
-                        for _ in 0..SENSOR_READ_TRIES {
-                            FreeRtos::delay_ms(5000);
-                            match scd41.measurement() {
-                                Ok(sensor_data) => {
-                                    let co2 = sensor_data.co2;
-                                    let temperature = sensor_data.temperature;
-                                    let humidity = sensor_data.humidity;
-
-                                    if temperature < -41.0 {
-                                        log::warn!("Temperature reading is below -41.0 °C, skipping this reading");
-                                        continue;
-                                    }
-
-                                    data = Some(Scd4xData {
+                        let data = match sensors.measure() {
+                            Ok((sensors_back, measurement)) => {
+                                log::info!("Sensors measurement: {:?}", measurement);
+                                sensors = sensors_back;
+                                if !measurement.scd41_measured {
+                                    None
+                                } else {
+                                    let d = Scd4xData {
                                         sensor_id: sensor_uuid.clone(),
-                                        co2,
-                                        humidity,
-                                        temperature,
-                                    });
-
-                                    log::info!("SCD41 data: {:?}", data);
-
-                                    break;
+                                        co2: measurement.data.co2.expect("CO2 should exist"),
+                                        humidity: measurement
+                                            .data
+                                            .humidity
+                                            .expect("Humidity should exist"),
+                                        temperature: measurement
+                                            .data
+                                            .temperature
+                                            .expect("Temperature should exist"),
+                                    };
+                                    Some(d)
                                 }
-                                Err(e) => {
-                                    log::warn!("Failed to read data from SCD41: {:?}", e);
-                                }
-                            };
-                        }
+                            }
+                            Err((sensors_back, _e)) => {
+                                sensors = sensors_back;
+                                log::error!("No sensors measured");
+                                None
+                            }
+                        };
 
                         // Send data to server
                         match data {
