@@ -1,12 +1,10 @@
-use diesel::query_dsl::methods::SelectDsl;
-use diesel::{RunQueryDsl, SelectableHelper};
 use http_body_util::combinators::BoxBody;
 use hyper::body::Bytes;
 use hyper::header::HeaderValue;
 use hyper::{Method, Request, Response, StatusCode};
 use sensor_lib::api::ApiEndpoint;
-use sensor_lib::api::endpoints::get_login::GetLogin;
-use sensor_lib::api::endpoints::get_sensor_data::GetSensor;
+use sensor_lib::api::endpoints::get_login::{GetLogin, GetLoginResponseCode};
+use sensor_lib::api::endpoints::get_sensor_data::{GetSensorData, GetSensorDataResponseCode};
 use sensor_lib::api::endpoints::post_sensor::{PostSensor, PostSensorResponseBody};
 use sensor_lib::api::endpoints::post_sensor_data::{PostSensorData, PostSensorResponseCode};
 use sensor_lib::api::model::sensor_kind::SensorKind;
@@ -14,11 +12,45 @@ use sensor_lib::api::model::sensor_kind::SensorKind;
 use crate::db;
 use crate::{helper::*, models};
 
+fn user_n_sensor_api_ids_check(
+    endpoint_name: &str,
+    user_api_id: &str,
+    sensor_api_id: &str,
+    unauthorized_code: http::StatusCode,
+) -> Result<(), Response<BoxBody<Bytes, hyper::Error>>> {
+    match db::user_api_id_matches_sensor_api_id(&user_api_id, &sensor_api_id) {
+        Ok(false) => {
+            log::warn!(
+                "[{}] [User API ID] does not match [Sensor API ID]: [{}] != [{}]",
+                endpoint_name,
+                user_api_id,
+                sensor_api_id
+            );
+            let mut response = Response::new(empty());
+            *response.status_mut() = unauthorized_code;
+            return Err(response);
+        }
+        Ok(true) => Ok(()),
+        Err(e) => {
+            log::error!(
+                "[{}] Calling user_api_id_matches_sensor_api_id(\nuser_api_id:{},\nsensor_api_id:{}\nERROR: {:?})",
+                endpoint_name,
+                user_api_id,
+                sensor_api_id,
+                e
+            );
+            let mut response = Response::new(empty());
+            *response.status_mut() = unauthorized_code;
+            return Err(response);
+        }
+    }
+}
+
 pub async fn server(
     req: Request<hyper::body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     log::info!(
-        "Serving method: {}, at path: {}",
+        "\n\n\nServing method: {}, at path: {}",
         req.method(),
         req.uri().path()
     );
@@ -94,7 +126,7 @@ pub async fn server(
             };
 
             log::debug!(
-                "[PostSensorData] Raw user_api_id bytes: {:?}, Raw sensor_api_id bytes: {:?}",
+                "[PostSensorData] _raw_ user_api_id bytes: {:?}, sensor_api_id bytes: {:?}",
                 parsed_body.user_api_id.as_bytes(),
                 parsed_body.sensor_api_id.as_bytes()
             );
@@ -102,34 +134,20 @@ pub async fn server(
             let sanitized_user_api_id = parsed_body.user_api_id.replace('\0', "");
             let sanitized_sensor_api_id = parsed_body.sensor_api_id.replace('\0', "");
 
-            match db::user_api_id_matches_sensor_api_id(
+            log::debug!(
+                "[PostSensorData] _sanitized_ user_api_id bytes: {:?}, sensor_api_id bytes: {:?}",
+                sanitized_user_api_id.as_bytes(),
+                sanitized_sensor_api_id.as_bytes()
+            );
+
+            match user_n_sensor_api_ids_check(
+                "[PostSensorData]",
                 &sanitized_user_api_id,
                 &sanitized_sensor_api_id,
+                PostSensorResponseCode::Unauthorized.into(),
             ) {
-                Ok(false) => {
-                    log::warn!(
-                        "[PostSensorData] [User API ID] does not match [Sensor API ID]: [{}] != [{}]",
-                        sanitized_user_api_id,
-                        sanitized_sensor_api_id
-                    );
-                    let mut response = Response::new(empty());
-                    *response.status_mut() = PostSensorResponseCode::Unauthorized.into();
-                    return Ok(response);
-                }
-                Ok(true) => {
-                    // Just continue
-                }
-                Err(e) => {
-                    log::error!(
-                        "[PostSensorData] Calling user_api_id_matches_sensor_api_id(\nuser_api_id:{},\nsensor_api_id:{}\nERROR: {:?})",
-                        sanitized_user_api_id,
-                        sanitized_sensor_api_id,
-                        e
-                    );
-                    let mut response = Response::new(empty());
-                    *response.status_mut() = PostSensorResponseCode::Unauthorized.into();
-                    return Ok(response);
-                }
+                Err(r) => return Ok(r),
+                Ok(_) => (),
             }
 
             let e = match db::get_sensor_kind_from_id(&sanitized_sensor_api_id) {
@@ -178,48 +196,61 @@ pub async fn server(
                 }
             }
         }
-        (&GetSensor::METHOD, GetSensor::PATH) => {
-            log::info!("[GetSensor] Request matched GetSensor");
+        (&GetSensorData::METHOD, GetSensorData::PATH) => {
+            log::info!("[GetSensorData] Request matched GetSensorData");
 
-            let max_size = <GetSensor as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
+            let max_size = <GetSensorData as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
 
-            let body =
-                match extract_body_and_parse(req, max_size, Some(GetSensor::parse_request_body))
-                    .await
-                {
-                    Ok(bytes) => bytes,
-                    Err(ExtractError::PayloadTooLarge) => {
-                        log::warn!("[GetSensor] Request body too large");
-                        let mut response = Response::new(empty());
-                        *response.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
-                        return Ok(response);
-                    }
-                    Err(ExtractError::ErrorReceiving) => {
-                        log::error!("[GetSensor] Error receiving request body");
-                        let mut response = Response::new(empty());
-                        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        return Ok(response);
-                    }
-                    Err(ExtractError::ParseErrorAsValue(err)) => {
-                        log::warn!("[GetSensor] Failed to parse body as JSON: {}", err);
-                        let mut response = Response::new(empty());
-                        *response.status_mut() = StatusCode::BAD_REQUEST;
-                        return Ok(response);
-                    }
-                    Err(ExtractError::ParseErrorAsType) => {
-                        log::warn!("[GetSensor] Failed to parse request body as type");
-                        let mut response = Response::new(empty());
-                        *response.status_mut() = StatusCode::BAD_REQUEST;
-                        return Ok(response);
-                    }
-                };
+            let body = match extract_body_and_parse(
+                req,
+                max_size,
+                Some(GetSensorData::parse_request_body),
+            )
+            .await
+            {
+                Ok(bytes) => bytes,
+                Err(ExtractError::PayloadTooLarge) => {
+                    log::warn!("[GetSensorData] Request body too large");
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
+                    return Ok(response);
+                }
+                Err(ExtractError::ErrorReceiving) => {
+                    log::error!("[GetSensorData] Error receiving request body");
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    return Ok(response);
+                }
+                Err(ExtractError::ParseErrorAsValue(err)) => {
+                    log::warn!("[GetSensorData] Failed to parse body as JSON: {}", err);
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = StatusCode::BAD_REQUEST;
+                    return Ok(response);
+                }
+                Err(ExtractError::ParseErrorAsType) => {
+                    log::warn!("[GetSensorData] Failed to parse request body as type");
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = StatusCode::BAD_REQUEST;
+                    return Ok(response);
+                }
+            };
 
-            let query_result = db::query_aht10_data(body);
+            match user_n_sensor_api_ids_check(
+                "[GetSensorData]",
+                &body.user_api_id,
+                &body.sensor_api_id,
+                GetSensorDataResponseCode::Unauthorized.into(),
+            ) {
+                Err(r) => return Ok(r),
+                Ok(_) => (),
+            }
+
+            let query_result = db::query_sensor_data(body);
 
             let query_string = match query_result {
                 Ok(data) => serde_json::to_string(&data),
                 Err(err) => {
-                    log::error!("[GetSensor] Error querying Sensor data: {:?}", err);
+                    log::error!("[GetSensorData] Error querying Sensor data: {:?}", err);
                     let mut response = Response::new(empty());
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     return Ok(response);
@@ -228,7 +259,7 @@ pub async fn server(
 
             match query_string {
                 Ok(json_data) => {
-                    log::info!("[GetSensor] Returning 200 Status Code");
+                    log::info!("[GetSensorData] Returning 200 Status Code");
                     let mut response = Response::new(full(json_data));
                     response
                         .headers_mut()
@@ -237,7 +268,7 @@ pub async fn server(
                 }
                 Err(err) => {
                     log::error!(
-                        "[GetSensor] Error serializing return Sensor data: {:?}",
+                        "[GetSensorData] Error serializing return Sensor data: {:?}",
                         err
                     );
                     let mut response = Response::new(empty());
@@ -247,7 +278,7 @@ pub async fn server(
             }
         }
         (&PostSensor::METHOD, PostSensor::PATH) => {
-            log::info!("[PostSensor] Request matched GetSensor");
+            log::info!("[PostSensor] Request matched PostSensor");
 
             let max_size = <PostSensor as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
             // Extract the body from the request
@@ -282,12 +313,12 @@ pub async fn server(
                     }
                 };
 
-            let user_uuid = &body.user_uuid;
+            let user_api_id = &body.user_api_id;
             let user_place_id_ = body.user_place_id;
             let sensor_kind = body.sensor_kind;
-            let ble_mac_address = &body.sensor_mac;
+            let device_id = &body.device_id;
 
-            match db::new_sensor(user_uuid, sensor_kind, user_place_id_, ble_mac_address) {
+            match db::new_sensor(user_api_id, sensor_kind, user_place_id_, device_id) {
                 Ok(user_sensor_api_id) => {
                     log::info!(
                         "[PostSensor] Returning 200 Status Code: New sensor created with API ID: {}",
@@ -314,7 +345,7 @@ pub async fn server(
             }
         }
         (&GetLogin::METHOD, GetLogin::PATH) => {
-            log::info!("[GetLogin] Request matched GetSensor");
+            log::info!("[GetLogin] Request matched GetSensorData");
             // Handle the login request
             let max_size = <GetLogin as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
 
@@ -326,25 +357,25 @@ pub async fn server(
                     Err(ExtractError::PayloadTooLarge) => {
                         log::warn!("[GetLogin] Request body too large");
                         let mut response = Response::new(empty());
-                        *response.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
+                        *response.status_mut() = GetLoginResponseCode::PayloadTooLarge.into();
                         return Ok(response);
                     }
                     Err(ExtractError::ErrorReceiving) => {
                         log::error!("[GetLogin] Error receiving request body");
                         let mut response = Response::new(empty());
-                        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                        *response.status_mut() = GetLoginResponseCode::InternalServerError.into();
                         return Ok(response);
                     }
                     Err(ExtractError::ParseErrorAsValue(err)) => {
                         log::warn!("[GetLogin] Failed to parse body as JSON: {}", err);
                         let mut response = Response::new(empty());
-                        *response.status_mut() = StatusCode::BAD_REQUEST;
+                        *response.status_mut() = GetLoginResponseCode::BadRequest.into();
                         return Ok(response);
                     }
                     Err(ExtractError::ParseErrorAsType) => {
                         log::warn!("[GetLogin] Failed to parse request body as type");
                         let mut response = Response::new(empty());
-                        *response.status_mut() = StatusCode::BAD_REQUEST;
+                        *response.status_mut() = GetLoginResponseCode::BadRequest.into();
                         return Ok(response);
                     }
                 };
@@ -356,14 +387,25 @@ pub async fn server(
                     response
                         .headers_mut()
                         .append("content-type", HeaderValue::from_static("application/json"));
-                    return Ok(response);
+                    Ok(response)
                 }
-                Err(err) => {
-                    log::error!("[GetLogin] Error during login: {:?}", err);
-                    let mut response = Response::new(empty());
-                    *response.status_mut() = StatusCode::UNAUTHORIZED;
-                    return Ok(response);
-                }
+                Err(err) => match err {
+                    db::Error::NotFound => {
+                        log::warn!(
+                            "[GetLogin] NotFound Error during login (UNAUTHORIZED): {:?}",
+                            err
+                        );
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = GetLoginResponseCode::Unauthorized.into();
+                        Ok(response)
+                    }
+                    _ => {
+                        log::error!("[GetLogin] Internal Error during login: {:?}", err);
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = GetLoginResponseCode::InternalServerError.into();
+                        Ok(response)
+                    }
+                },
             }
         }
         // Return 404 Not Found for other routes.

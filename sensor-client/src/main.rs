@@ -28,7 +28,7 @@ use std::sync::Arc;
 use crate::{
     ble_protocol::ZStr20,
     modem_sleep::ModemSleep,
-    persistence::Persistence,
+    persistence::{Keys, Persistence},
     sensors::{Scd41InitData, Scd41WorkingMode, Sensors},
 };
 
@@ -78,8 +78,8 @@ fn send_sensor_data(
     let url: String = format!("{}{}", BASE_URL, PostSensorData::PATH);
 
     let body = PostSensorDataBody {
-        user_api_id: user_api.to_uppercase(),
-        sensor_api_id: sensor_api.to_uppercase(),
+        user_api_id: user_api.to_string(),
+        sensor_api_id: sensor_api.to_string(),
         data,
         added_at: None,
     };
@@ -213,88 +213,28 @@ fn wait_wifi_stopped(
     Ok(())
 }
 
-// fn co2_loop(peripherals: peripherals::Peripherals) {
-//     let mut scd41 = get_scd41_sensor(I2CPeripherals {
-//         gpio3_sda: peripherals.pins.gpio4,
-//         gpio2_scl: peripherals.pins.gpio3,
-//         i2c0: peripherals.i2c0,
-//     });
-
-//     log::info!("SCD41 sensor waking up...");
-//     scd41.wake_up();
-//     scd41.stop_periodic_measurement().unwrap();
-//     scd41.reinit().unwrap();
-
-//     let serial = scd41.serial_number().unwrap();
-//     log::info!("SCD41 serial: {:#04x}", serial);
-
-//     if scd41.self_test_is_ok().unwrap() {
-//         log::info!("SCD41 self-test passed");
-//     } else {
-//         log::error!("SCD41 self-test failed");
-//     }
-
-//     scd41.start_periodic_measurement().unwrap();
-//     println!("Waiting for first measurement... (5 sec)");
-//     loop {
-//         match scd41.measurement() {
-//             Ok(data) => log::info!(
-//                 "CO2: {0}, Temperature: {1:#.2} °C, Humidity: {2:#.2} RH",
-//                 data.co2,
-//                 data.temperature,
-//                 data.humidity
-//             ),
-//             Err(e) => {
-//                 log::warn!("Failed to read SCD41 data: {:?}", e);
-//             }
-//         };
-
-//         FreeRtos::delay_ms(5000);
-//     }
-// }
-
-// fn ble_advertisement_loop() {
-//     let ble_device = BLEDevice::take();
-//     let ble_advertiser = ble_device.get_advertising();
-//     let mut ad_data = BLEAdvertisementData::new();
-//     ad_data.name("esp32-sensor");
-
-//     ble_advertiser.lock().set_data(&mut ad_data);
-//     ble_advertiser.lock().start();
-
-//     log::info!("Advertisement started!");
-//     loop {
-//         FreeRtos::delay_ms(100);
-//     }
-// }
-
-fn get_device_mac() -> Result<[u8; 6], esp_idf_sys::EspError> {
+fn get_device_mac() -> [u8; 6] {
     let mut mac: [u8; 6] = [0; 6];
-
     // Read the MAC address
     unsafe {
         esp_read_mac(mac.as_mut_ptr(), esp_idf_sys::esp_mac_type_t_ESP_MAC_BT);
     }
 
-    Ok(mac)
+    log::debug!("get_device_mac: {:?}", mac);
+
+    mac
 }
 
-fn return_sensor_uuid(_: ()) -> [u8; 20] {
-    let mut buf = [0u8; 20];
-    let mac = get_device_mac();
-    match mac {
-        Ok(mac) => {
-            // TODO: Better UUID including sensor serial
-            // Convert MAC address to a 20-byte UUID
-            buf[0..6].copy_from_slice(&mac);
-            buf[6..20].fill(0); // Fill the rest with zeros
-            buf
-        }
-        Err(e) => {
-            log::error!("Failed to get device MAC address: {:?}", e);
-            panic!("Failed to get device MAC address");
-        }
-    }
+fn return_sensor_id(_: ()) -> [u8; 20] {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(&get_device_mac());
+    let sid = hasher.finalize()[..20] // We can subslice into 20 bytes because a SHA256 hash is made of 256 bits == 32 bytes
+        .try_into()
+        .expect("Array of length 20 should have 20 items");
+
+    log::debug!("return_sensor_id: {:?}", sid);
+    sid
 }
 
 #[derive(Default, Clone, Copy)]
@@ -317,7 +257,7 @@ enum BleLoopError {
 
 fn configure_esp_ble_loop(ble_device: &BLEDevice) -> Result<BleLoopReturn, BleLoopError> {
     use ble_protocol;
-    let p = ble_protocol::BleProtocol::new(return_sensor_uuid);
+    let p = ble_protocol::BleProtocol::new(return_sensor_id);
 
     let ble_advertiser = ble_device.get_advertising();
     let server = ble_device.get_server();
@@ -342,8 +282,7 @@ fn configure_esp_ble_loop(ble_device: &BLEDevice) -> Result<BleLoopReturn, BleLo
                 .expect("Characteristic write function is not set");
 
             log::info!(
-                "Characteristic {} written: {}",
-                sensor_api_id_char.uuid,
+                "Characteristic [sensor_api_id_char] written: {}",
                 String::from_utf8_lossy(args.current_data())
             );
 
@@ -418,7 +357,7 @@ fn configure_esp_ble_loop(ble_device: &BLEDevice) -> Result<BleLoopReturn, BleLo
 
         // Check if the service is still running
         if !ble_advertiser.lock().is_advertising() {
-            log::warn!("BLE advertising stopped, restarting...");
+            log::error!("BLE advertising stopped, restarting...");
             ble_advertiser
                 .lock()
                 .start()
@@ -442,12 +381,6 @@ fn main() {
 
     let peripherals = peripherals::Peripherals::take().expect("Failed to take peripherals");
 
-    // let mut aht10 = get_aht10_sensor(I2CPeripherals {
-    //     gpio3_sda: peripherals.pins.gpio3,
-    //     gpio2_scl: peripherals.pins.gpio2,
-    //     i2c0: peripherals.i2c0,
-    // })
-    // .expect("Failed to get AHT10 sensor");
     let config = esp_idf_svc::hal::i2c::I2cConfig::new().baudrate(100.kHz().into());
     let i2cp = I2CPeripherals {
         gpio3_sda: peripherals.pins.gpio4,
@@ -489,8 +422,9 @@ fn main() {
         .expect("Should be able to use NVS [SensorApiId]")
         && persistence
             .get(&user_key, &mut user_buf)
-            .expect("Should be able to use NVS [SensorApiId]"))
+            .expect("Should be able to use NVS [UserApiId]"))
     {
+        // If any neccessary data for sever communication is not available, we set it with BLE
         let ble_device = BLEDevice::take();
         let res: BleLoopReturn;
         let mut count = 0;
@@ -568,7 +502,7 @@ fn main() {
 
     let mut wifi_attempts_failed: usize = 0;
 
-    let sensor_uuid: String = ZStr20::new(&return_sensor_uuid(())).as_hex_string();
+    let sensor_uuid: String = ZStr20::new(&return_sensor_id(())).as_hex_string();
 
     'select_wifi: loop {
         if wifi_attempts_failed >= private::CLIENT_WIFIS.len() * 3 {
@@ -646,6 +580,26 @@ fn main() {
                                                 "Data sent successfully, response code: {:?}",
                                                 response_code
                                             );
+
+                                            if let PostSensorResponseCode::Unauthorized =
+                                                response_code
+                                            {
+                                                match persistence.set(&Keys::SensorApiId(None)) {
+                                                    Err(e) => log::error!(
+                                                        "Error 'resetting' SensorApiId: {:?}",
+                                                        e
+                                                    ),
+                                                    Ok(()) => log::info!("SensorApiId set to None"),
+                                                }
+                                                match persistence.set(&Keys::UserApiId(None)) {
+                                                    Err(e) => log::error!(
+                                                        "Error 'resetting' UserApiId: {:?}",
+                                                        e
+                                                    ),
+                                                    Ok(()) => log::info!("UserApiId set to None"),
+                                                }
+                                            }
+
                                             data_sent = true;
                                             break;
                                         }

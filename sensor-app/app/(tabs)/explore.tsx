@@ -1,22 +1,22 @@
-import { Image } from 'expo-image';
-import { Button, Platform, StyleSheet, TouchableHighlight } from 'react-native';
+import {
+  Button,
+  StyleSheet,
+  TouchableHighlight,
+  useColorScheme,
+} from 'react-native';
 
-import { Collapsible } from '@/components/Collapsible';
-import { ExternalLink } from '@/components/ExternalLink';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import useBLE from '@/hooks/useBLE';
-import { useCallback, useEffect, useState } from 'react';
-import { Colors } from '@/constants/Colors';
+import { useCallback, useState } from 'react';
 
-import { useColorScheme } from 'react-native';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useFocusEffect } from 'expo-router';
 import { ThemedList } from '@/components/ThemedList';
-import { Device } from 'react-native-ble-plx';
 import { SessionKeys, useSession } from '@/hooks/useSession';
+import { useFocusEffect } from 'expo-router';
+import { Device } from 'react-native-ble-plx';
 
 export default function TabTwoScreen() {
   useFocusEffect(
@@ -118,13 +118,12 @@ export default function TabTwoScreen() {
 }
 
 async function sensorApiIdFetch(
-  accountIdHEX: string,
+  user_api_id: string,
   user_place_id: number,
-  ble_mac: string,
+  device_id: string,
   sensor_kind: string
 ): Promise<string> {
   const api_path = 'http://sensor-server.juancb.ftp.sh:3000/api/v0/post_sensor';
-  const user_uuid = accountIdHEX;
 
   const response = await fetch(api_path, {
     method: 'POST',
@@ -132,9 +131,9 @@ async function sensorApiIdFetch(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      user_uuid,
+      user_api_id,
       user_place_id,
-      sensor_mac: ble_mac,
+      device_id,
       sensor_kind,
     }),
   });

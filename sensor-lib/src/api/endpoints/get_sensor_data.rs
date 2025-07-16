@@ -3,7 +3,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct GetSensorRequestBody {
+pub struct GetSensorDataRequestBody {
     pub user_api_id: String,
     pub sensor_api_id: String,
     pub added_at_upper: Option<NaiveDateTime>,
@@ -11,15 +11,15 @@ pub struct GetSensorRequestBody {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct GetSensorResponseBody {
+pub struct GetSensorDataResponseBody {
     pub item_count: usize,
     pub serialized_data: Vec<String>,
 }
 
-pub struct GetSensor {}
+pub struct GetSensorData {}
 
 #[derive(Debug, Clone, Copy)]
-pub enum GetSensorResponseCode {
+pub enum GetSensorDataResponseCode {
     Ok,
     BadRequest,
     PayloadTooLarge,
@@ -27,22 +27,24 @@ pub enum GetSensorResponseCode {
     InternalServerError,
 }
 
-impl From<GetSensorResponseCode> for http::StatusCode {
-    fn from(code: GetSensorResponseCode) -> Self {
+impl From<GetSensorDataResponseCode> for http::StatusCode {
+    fn from(code: GetSensorDataResponseCode) -> Self {
         match code {
-            GetSensorResponseCode::Ok => http::StatusCode::OK,
-            GetSensorResponseCode::BadRequest => http::StatusCode::BAD_REQUEST,
-            GetSensorResponseCode::PayloadTooLarge => http::StatusCode::PAYLOAD_TOO_LARGE,
-            GetSensorResponseCode::InternalServerError => http::StatusCode::INTERNAL_SERVER_ERROR,
-            GetSensorResponseCode::Unauthorized => http::StatusCode::UNAUTHORIZED,
+            GetSensorDataResponseCode::Ok => http::StatusCode::OK,
+            GetSensorDataResponseCode::BadRequest => http::StatusCode::BAD_REQUEST,
+            GetSensorDataResponseCode::PayloadTooLarge => http::StatusCode::PAYLOAD_TOO_LARGE,
+            GetSensorDataResponseCode::InternalServerError => {
+                http::StatusCode::INTERNAL_SERVER_ERROR
+            }
+            GetSensorDataResponseCode::Unauthorized => http::StatusCode::UNAUTHORIZED,
         }
     }
 }
 
-impl<'a, 'b> ApiEndpoint<'a, 'b> for GetSensor {
-    type RequestBody = GetSensorRequestBody;
-    type ResponseBody = GetSensorResponseBody;
-    type ResponseCode = GetSensorResponseCode;
+impl<'a, 'b> ApiEndpoint<'a, 'b> for GetSensorData {
+    type RequestBody = GetSensorDataRequestBody;
+    type ResponseBody = GetSensorDataResponseBody;
+    type ResponseCode = GetSensorDataResponseCode;
 
     const PATH: &'static str = "/api/v0/get_sensor_data";
     const METHOD: http::Method = http::Method::GET;

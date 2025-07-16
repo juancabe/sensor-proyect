@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::api::model::{aht10_data::Aht10Data, scd4x_data::Scd4xData};
+
 #[derive(Deserialize, Serialize, Debug, Clone, Copy)]
 pub enum SensorKind {
     Aht10 = 1,
@@ -27,6 +29,29 @@ impl SensorKind {
             1 => Some(SensorKind::Aht10),
             2 => Some(SensorKind::Scd4x),
             _ => None,
+        }
+    }
+
+    pub fn from_i32(value: i32) -> Option<SensorKind> {
+        match value {
+            1 => Some(SensorKind::Aht10),
+            2 => Some(SensorKind::Scd4x),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub enum SensorKindData {
+    Aht10(Aht10Data),
+    Scd4x(Scd4xData),
+}
+
+impl SensorKindData {
+    pub fn as_sensor_kind(&self) -> SensorKind {
+        match self {
+            SensorKindData::Aht10(_) => SensorKind::Aht10,
+            SensorKindData::Scd4x(_) => SensorKind::Scd4x,
         }
     }
 }

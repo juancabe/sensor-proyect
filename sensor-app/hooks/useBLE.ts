@@ -1,17 +1,11 @@
-/* eslint-disable no-bitwise */
-import { useMemo, useState } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
 import { Buffer } from 'buffer';
+import { useState } from 'react';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 import * as ExpoDevice from 'expo-device';
 
 import base64 from 'react-native-base64';
-import {
-  BleError,
-  BleManager,
-  Characteristic,
-  Device,
-} from 'react-native-ble-plx';
+import { BleManager, Device } from 'react-native-ble-plx';
 
 const CFG_SERVICE_UUID = '4b80ba9d-64fd-4ffa-86fb-544e73d26ed1';
 const SENSOR_API_ID_CHAR_UUID = '8c680060-22b7-45b8-b325-f7b1b102d80f';
@@ -86,9 +80,9 @@ function useBLE() {
     device: Device,
     accountIdHEX: string,
     sensorApiIdFetch: (
-      user_uuid: string,
+      user_api_id: string,
       user_place_id: number,
-      device_uuid: string,
+      device_id: string,
       sensor_kind: string
     ) => Promise<string>
   ): Promise<boolean> => {

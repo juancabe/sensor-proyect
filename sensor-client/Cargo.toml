@@ -36,6 +36,7 @@ hex = "0.4.3"
 adafruit-aht10 = { git = "https://github.com/juancabe/adafruit-aht10.git"}
 scd4x = {version = "0.4.0", features = ["scd41"]}
 embedded-svc = "0.28.1"
+sha2 = "0.10.9"
 
 # --- Optional Embassy Integration ---
 # esp-idf-svc = { version = "0.51", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }

@@ -273,12 +273,12 @@ impl<'a> Sensors<'a> {
                             data.temperature = Some(temperature);
                             aht10_measured = true;
 
-                            log::info!("[SCD41] data: {:?}", data);
+                            log::info!("[AHT10] data: {:?}", data);
 
                             break;
                         }
                         Err(e) => {
-                            log::warn!("[SCD41] Failed to read data: {:?}", e);
+                            log::warn!("[AHT10] Failed to read data: {:?}", e);
                         }
                     };
                 }
