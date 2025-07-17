@@ -280,6 +280,24 @@ pub async fn server(
         (&PostSensor::METHOD, PostSensor::PATH) => {
             log::info!("[PostSensor] Request matched PostSensor");
 
+            let return_found_ok = |user_sensor_api_id: String| {
+                log::info!(
+                    "[PostSensor] Returning 200 Status Code: New sensor created with API ID: {}",
+                    user_sensor_api_id
+                );
+                let response_body = PostSensorResponseBody {
+                    sensor_api_id: user_sensor_api_id.clone(),
+                };
+                let response_body_json = serde_json::to_string(&response_body)
+                    .expect("Failed to serialize response body");
+
+                let mut response = Response::new(full(response_body_json));
+                response
+                    .headers_mut()
+                    .append("content-type", HeaderValue::from_static("application/json"));
+                return response;
+            };
+
             let max_size = <PostSensor as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
             // Extract the body from the request
             let body =
@@ -314,27 +332,28 @@ pub async fn server(
                 };
 
             let user_api_id = &body.user_api_id;
-            let user_place_id_ = body.user_place_id;
+            let user_place_id = body.user_place_id;
             let sensor_kind = body.sensor_kind;
             let device_id = &body.device_id;
 
-            match db::new_sensor(user_api_id, sensor_kind, user_place_id_, device_id) {
-                Ok(user_sensor_api_id) => {
-                    log::info!(
-                        "[PostSensor] Returning 200 Status Code: New sensor created with API ID: {}",
-                        user_sensor_api_id
-                    );
-                    let response_body = PostSensorResponseBody {
-                        sensor_api_id: user_sensor_api_id.clone(),
-                    };
-                    let response_body_json = serde_json::to_string(&response_body)
-                        .expect("Failed to serialize response body");
+            match db::sensor_exists(user_api_id, user_place_id, device_id) {
+                Ok(opt) => match opt {
+                    Some(api_id) => return Ok(return_found_ok(api_id)),
+                    None => {
+                        log::info!("[PostSensor] sensor_exists -> None (sensor doesnt exist)")
+                    }
+                },
+                Err(e) => {
+                    log::error!(
+                        "[PostSensor] on sensor_exists, continuing to new_sensor: {:?}",
+                        e
+                    )
+                }
+            }
 
-                    let mut response = Response::new(full(response_body_json));
-                    response
-                        .headers_mut()
-                        .append("content-type", HeaderValue::from_static("application/json"));
-                    return Ok(response);
+            match db::new_sensor(user_api_id, sensor_kind, user_place_id, device_id) {
+                Ok(user_sensor_api_id) => {
+                    return Ok(return_found_ok(user_sensor_api_id));
                 }
                 Err(err) => {
                     log::error!("[PostSensor] Error creating new sensor: {:?}", err);
@@ -381,31 +400,28 @@ pub async fn server(
                 };
 
             match db::get_login(&body.username, &body.hashed_password) {
-                Ok(token) => {
-                    log::info!("[GetLogin] Returning 200 Status code");
-                    let mut response = Response::new(full(token));
-                    response
-                        .headers_mut()
-                        .append("content-type", HeaderValue::from_static("application/json"));
-                    Ok(response)
-                }
-                Err(err) => match err {
-                    db::Error::NotFound => {
-                        log::warn!(
-                            "[GetLogin] NotFound Error during login (UNAUTHORIZED): {:?}",
-                            err
-                        );
+                Ok(token) => match token {
+                    Some(token) => {
+                        log::info!("[GetLogin] Returning 200 Status code");
+                        let mut response = Response::new(full(token));
+                        response
+                            .headers_mut()
+                            .append("content-type", HeaderValue::from_static("application/json"));
+                        Ok(response)
+                    }
+                    None => {
+                        log::warn!("[GetLogin] get_login returned NONE (UNAUTHORIZED)");
                         let mut response = Response::new(empty());
                         *response.status_mut() = GetLoginResponseCode::Unauthorized.into();
                         Ok(response)
                     }
-                    _ => {
-                        log::error!("[GetLogin] Internal Error during login: {:?}", err);
-                        let mut response = Response::new(empty());
-                        *response.status_mut() = GetLoginResponseCode::InternalServerError.into();
-                        Ok(response)
-                    }
                 },
+                Err(err) => {
+                    log::error!("[GetLogin] Internal Error during login: {:?}", err);
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = GetLoginResponseCode::InternalServerError.into();
+                    Ok(response)
+                }
             }
         }
         // Return 404 Not Found for other routes.

@@ -447,13 +447,23 @@ fn main() {
                 }
             }
         }
+
+        let ble_sensor_api_id = res.sensor_api_id.expect("Should be Some");
+        let ble_user_api_id = res.user_api_id.expect("Should be Some");
+
+        log::debug!(
+            "\n[RAW BLE]\nSensor API ID: {:?}\nUser API ID: {:?}",
+            ble_sensor_api_id.bytes,
+            ble_user_api_id.bytes
+        );
+
         let sensor_api_hex = res.sensor_api_id.expect("Should be Some").as_hex_string();
         let user_api_hex = res.user_api_id.expect("Should be Some").as_hex_string();
         let sensor_key = persistence::Keys::SensorApiId(Some(&sensor_api_hex));
         let user_key = persistence::Keys::UserApiId(Some(&user_api_hex));
 
         log::info!(
-            "\nSensor API ID: {}\n, User API ID: {}",
+            "\nSensor API ID: {}\nUser API ID: {}",
             sensor_api_hex,
             user_api_hex
         );
@@ -468,7 +478,7 @@ fn main() {
             .get(&sensor_key, &mut sensor_buf)
             .expect("Should be able to use NVS [SensorApiId]");
         let b = persistence
-            .get(&user_key, &mut sensor_buf)
+            .get(&user_key, &mut user_buf)
             .expect("Should be able to use NVS [UserApiId]");
 
         if !(a && b) {
@@ -598,6 +608,7 @@ fn main() {
                                                     ),
                                                     Ok(()) => log::info!("UserApiId set to None"),
                                                 }
+                                                panic!("UNAUTHORIZED API KEYS");
                                             }
 
                                             data_sent = true;

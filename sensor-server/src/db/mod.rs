@@ -368,6 +368,39 @@ pub fn generate_sensor_api_id(
     Ok(sensor_id)
 }
 
+// Returns sensor api id if already present on DB
+pub fn sensor_exists(
+    user_api_id: &str,
+    user_place_id: i32,
+    device_id: &str,
+) -> Result<Option<String>, Error> {
+    use crate::schema::{
+        user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
+    };
+    use crate::schema::{
+        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
+
+    let mut db_conn = get_db_pool()?;
+
+    let res = users_table
+        .filter(users::api_id.eq(user_api_id))
+        .inner_join(user_places_table)
+        .filter(user_places::id.eq(user_place_id))
+        .inner_join(user_sensors_table.on(user_sensors::device_id.eq(device_id)))
+        .select(user_sensors::api_id)
+        .first::<String>(&mut db_conn);
+
+    match res {
+        Ok(r) => Ok(Some(r)),
+        Err(e) => match e {
+            diesel::result::Error::NotFound => Ok(None),
+            e => Err(Error::DataBaseError(e)),
+        },
+    }
+}
+
 pub fn new_sensor(
     user_api_id: &str,
     sensor_kind: SensorKind,
@@ -404,16 +437,22 @@ pub fn new_sensor(
     Ok(user_sensor_api_id)
 }
 
-pub fn get_login(username: &str, hashed_password: &str) -> Result<String, Error> {
+pub fn get_login(username: &str, hashed_password: &str) -> Result<Option<String>, Error> {
     use crate::schema::{users::dsl as users, users::dsl::users as users_table};
     let mut db_conn = get_db_pool()?;
-    let user = users_table
+    let user_api_id = users_table
         .filter(users::username.eq(username))
         .filter(users::hashed_password.eq(hashed_password))
         .select(users::api_id)
-        .first::<String>(&mut db_conn)
-        .map_err(|_| Error::DataBaseError(diesel::result::Error::NotFound))?;
-    Ok(user)
+        .first::<String>(&mut db_conn);
+
+    match user_api_id {
+        Ok(user_api_id) => Ok(Some(user_api_id)),
+        Err(e) => match e {
+            diesel::result::Error::NotFound => Ok(None),
+            _ => Err(Error::DataBaseError(e)),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -428,7 +467,7 @@ mod tests {
 
         let result = get_login(username, hashed_password);
         assert!(result.is_ok(), "Failed to get login: {:?}", result.err());
-        let user_uuid = result.unwrap();
+        let user_uuid = result.unwrap().expect("Should be Some");
         assert!(!user_uuid.is_empty(), "User UUID should not be empty");
     }
 
@@ -439,14 +478,9 @@ mod tests {
 
         let result = get_login(username, hashed_password);
         assert!(
-            result.is_err(),
-            "Expected error when getting login for nonexistent user"
+            result.is_ok_and(|none| none.is_none()),
+            "Expected None when getting login with incorrect password"
         );
-        if let Err(crate::db::Error::DataBaseError(diesel::result::Error::NotFound)) = result {
-            // Expected error for nonexistent user
-        } else {
-            panic!("Expected a NotFound error, but got: {:?}", result);
-        }
     }
 
     #[test]
@@ -456,14 +490,9 @@ mod tests {
 
         let result = get_login(username, hashed_password);
         assert!(
-            result.is_err(),
-            "Expected error when getting login with incorrect password"
+            result.is_ok_and(|none| none.is_none()),
+            "Expected None when getting login with incorrect password"
         );
-        if let Err(crate::db::Error::DataBaseError(diesel::result::Error::NotFound)) = result {
-            // Expected error for incorrect password
-        } else {
-            panic!("Expected a NotFound error, but got: {:?}", result);
-        }
     }
 
     #[test]
