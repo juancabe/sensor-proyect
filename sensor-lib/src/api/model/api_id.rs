@@ -16,7 +16,7 @@ pub struct ApiId {
 impl ApiId {
     pub const ID_LENGTH: usize = 40;
 
-    pub fn new() -> Self {
+    pub fn random() -> Self {
         use rand::Rng;
         let mut rng = rand::rng();
         let id: String = (0..Self::ID_LENGTH)

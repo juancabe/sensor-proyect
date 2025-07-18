@@ -11,7 +11,7 @@ use sensor_lib::api::endpoints::register::RegisterRequestBody;
 use sensor_lib::api::model::api_id::ApiId;
 use sensor_lib::api::model::sensor_kind::{SensorKind, SensorKindData};
 
-use crate::models::{self, NewUser};
+use crate::models::{self};
 
 use r2d2::Error as DieselPoolError;
 
@@ -491,7 +491,7 @@ pub fn new_user(query: RegisterRequestBody) -> Result<ApiId, NewUserError> {
     }
 
     // Create new user
-    let api_id = ApiId::new();
+    let api_id = ApiId::random();
     let new_user = models::NewUser {
         api_id: &api_id.to_string(),
         username: &query.username,
@@ -528,6 +528,10 @@ pub fn delete_user(api_id: &str) -> Result<Option<()>, Error> {
 mod tests {
 
     use super::*;
+
+    const VALID_USER_API_ID: &'static str = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const VALID_AHT10_API_ID: &'static str = "94a990533d761111111111111111111111111111";
+    const VALID_SCD41_API_ID: &'static str = "94a990533d762222222222222222222222222222";
 
     #[test]
     fn test_new_user_then_delete() {
@@ -587,7 +591,7 @@ mod tests {
 
     #[test]
     fn test_generate_sensor_id() {
-        let user_uuid = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let user_uuid = VALID_USER_API_ID;
         let sensor_kind = SensorKind::Aht10;
         let user_place_id = 1; // Assuming this is a valid place ID for the test user
         let device_ids_ok = [
@@ -632,7 +636,7 @@ mod tests {
 
     #[test]
     fn test_new_sensor_then_delete() {
-        let user_uuid = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let user_uuid = VALID_USER_API_ID;
         let sensor_kind = SensorKind::Aht10;
         let user_place_id = 1; // Assuming this is a valid place ID for the test user
         let device_id = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaab";
@@ -685,7 +689,7 @@ mod tests {
 
     #[test]
     fn test_user_api_id_matches_sensor_api_id() {
-        let user_api_id = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let user_api_id = VALID_USER_API_ID;
         let sensor_api_id = "abc36768cf4d927e267a72ac1cb8108693bdafd1";
         let matches = user_api_id_matches_sensor_api_id(user_api_id, sensor_api_id)
             .expect("Failed to check if user UUID matches sensor API ID");
@@ -697,7 +701,7 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_sensor_api_id_nonexistent() {
-        let user_uuid = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let user_uuid = VALID_USER_API_ID;
         let sensor_api_id = "nonexistent-sensor";
         let result = user_api_id_matches_sensor_api_id(user_uuid, sensor_api_id)
             .expect("Failed to check if user UUID matches nonexistent sensor API ID");
@@ -709,7 +713,7 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_place_id() {
-        let user_uuid = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let user_uuid = VALID_USER_API_ID;
         let user_place_id = 1; // Assuming this is a valid place ID for the test user
         let result = user_api_id_matches_place_id(user_uuid, user_place_id);
         assert!(
@@ -725,7 +729,7 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_place_id_nonexistent() {
-        let user_uuid = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let user_uuid = VALID_USER_API_ID;
         let user_place_id = 999; // Assuming this is an invalid place ID
         let result = user_api_id_matches_place_id(user_uuid, user_place_id).expect("no error");
         assert!(
@@ -736,7 +740,7 @@ mod tests {
 
     #[test]
     fn test_get_user_from_sensor() {
-        let sensor_api_id = "94a990533d761111111111111111111111111111";
+        let sensor_api_id = VALID_AHT10_API_ID;
         let result = get_user_from_sensor(sensor_api_id);
         assert!(
             result.is_ok(),
@@ -780,7 +784,7 @@ mod tests {
         let now = chrono::Utc::now().naive_utc();
 
         let new_data = models::NewAht10Data {
-            sensor: "94a990533d761111111111111111111111111111".into(),
+            sensor: VALID_AHT10_API_ID.into(),
             serialized_data: "{\"temperature\": 22.5, \"humidity\": 45.0}",
             added_at: now, // Example timestamp
         };
@@ -829,10 +833,8 @@ mod tests {
     #[test]
     fn test_query_aht10_data() {
         let query = GetSensorDataRequestBody {
-            user_api_id: ApiId::from_string("94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-                .expect("Valid API ID"),
-            sensor_api_id: ApiId::from_string("94a990533d761111111111111111111111111111")
-                .expect("Valid API ID"),
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).expect("Valid API ID"),
+            sensor_api_id: ApiId::from_string(VALID_AHT10_API_ID).expect("Valid API ID"),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -855,8 +857,7 @@ mod tests {
         let query = GetSensorDataRequestBody {
             user_api_id: ApiId::from_string("abcdef9999abcdef9999abcdef9999abcdef9999")
                 .expect("Valid API ID"),
-            sensor_api_id: ApiId::from_string("94a990533d762222222222222222222222222222")
-                .expect("Valid API ID"),
+            sensor_api_id: ApiId::from_string(VALID_SCD41_API_ID).expect("Valid API ID"),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -879,7 +880,7 @@ mod tests {
         let now = chrono::Utc::now().naive_utc();
 
         let new_data = models::NewScd4xData {
-            sensor: "94a990533d762222222222222222222222222222".into(),
+            sensor: VALID_SCD41_API_ID.into(),
             serialized_data: "{\"co2\": 420, \"temperature\": 21.5, \"humidity\": 40.2}",
             added_at: now, // Example timestamp
         };
@@ -930,10 +931,8 @@ mod tests {
     #[test]
     fn test_query_scd4x_data() {
         let query = GetSensorDataRequestBody {
-            user_api_id: ApiId::from_string("94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-                .expect("Valid API ID"),
-            sensor_api_id: ApiId::from_string("94a990533d762222222222222222222222222222")
-                .expect("Valid API ID"),
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).expect("Valid API ID"),
+            sensor_api_id: ApiId::from_string(VALID_SCD41_API_ID).expect("Valid API ID"),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -956,8 +955,7 @@ mod tests {
         let query = GetSensorDataRequestBody {
             user_api_id: ApiId::from_string("abcdef9999abcdef9999abcdef9999abcdef9999")
                 .expect("Valid API ID"),
-            sensor_api_id: ApiId::from_string("94a990533d762222222222222222222222222222")
-                .expect("Valid API ID"),
+            sensor_api_id: ApiId::from_string(VALID_SCD41_API_ID).expect("Valid API ID"),
             added_at_upper: None,
             added_at_lower: None,
         };

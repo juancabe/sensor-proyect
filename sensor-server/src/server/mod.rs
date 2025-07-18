@@ -3,10 +3,16 @@ use hyper::body::Bytes;
 use hyper::header::HeaderValue;
 use hyper::{Method, Request, Response, StatusCode};
 use sensor_lib::api::ApiEndpoint;
-use sensor_lib::api::endpoints::get_login::{GetLogin, GetLoginResponseCode};
-use sensor_lib::api::endpoints::get_sensor_data::{GetSensorData, GetSensorDataResponseCode};
-use sensor_lib::api::endpoints::post_sensor::{PostSensor, PostSensorResponseBody};
-use sensor_lib::api::endpoints::post_sensor_data::{PostSensorData, PostSensorResponseCode};
+use sensor_lib::api::endpoints::get_login::{GetLogin, GetLoginRequestBody, GetLoginResponseCode};
+use sensor_lib::api::endpoints::get_sensor_data::{
+    GetSensorData, GetSensorDataRequestBody, GetSensorDataResponseCode,
+};
+use sensor_lib::api::endpoints::post_sensor::{
+    PostSensor, PostSensorRequestBody, PostSensorResponseBody,
+};
+use sensor_lib::api::endpoints::post_sensor_data::{
+    PostSensorData, PostSensorDataRequestBody, PostSensorResponseCode,
+};
 use sensor_lib::api::model::sensor_kind::SensorKind;
 
 use crate::db;
@@ -46,6 +52,207 @@ fn user_n_sensor_api_ids_check(
     }
 }
 
+fn post_sensor_data(
+    body: PostSensorDataRequestBody,
+    serialized_data: &str,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    log::debug!("[PostSensorData] Received body: {:?}", body);
+
+    match user_n_sensor_api_ids_check(
+        "[PostSensorData]",
+        &body.user_api_id.as_str(),
+        &body.sensor_api_id.as_str(),
+        PostSensorResponseCode::Unauthorized.into(),
+    ) {
+        Err(r) => return Ok(r),
+        Ok(_) => (),
+    }
+
+    let e = match db::get_sensor_kind_from_id(&body.sensor_api_id.as_str()) {
+        Ok(kind) => match kind {
+            SensorKind::Aht10 => {
+                let data = models::NewAht10Data {
+                    sensor: body.sensor_api_id.to_string(),
+                    serialized_data: &serialized_data,
+                    added_at: body.added_at.unwrap_or_else(|| {
+                        // Use current time in seconds if not provided
+                        chrono::Utc::now().naive_utc()
+                    }),
+                };
+                db::save_new_aht10_data(data)
+            }
+            SensorKind::Scd4x => {
+                let data = models::NewScd4xData {
+                    sensor: body.sensor_api_id.to_string(),
+                    serialized_data: &serialized_data,
+                    added_at: body.added_at.unwrap_or_else(|| {
+                        // Use current time in seconds if not provided
+                        chrono::Utc::now().naive_utc()
+                    }),
+                };
+                db::save_new_scd4x_data(data)
+            }
+        },
+        Err(err) => {
+            log::error!("[PostSensorData] Error getting sensor kind: {:?}", err);
+            let mut response = Response::new(empty());
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(response);
+        }
+    };
+
+    match e {
+        Err(e) => {
+            log::error!("[PostSensorData] Error saving new sensor data: {:?}", e);
+            let mut response = Response::new(empty());
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(response);
+        }
+        Ok(()) => {
+            log::info!("[PostSensorData] Returning 200 Status Code");
+            Ok(Response::new(empty()))
+        }
+    }
+}
+
+fn get_sensor_data(
+    body: GetSensorDataRequestBody,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    log::debug!("[GetSensorData] Received body: {:?}", body);
+
+    match user_n_sensor_api_ids_check(
+        "[GetSensorData]",
+        body.user_api_id.as_str(),
+        body.sensor_api_id.as_str(),
+        GetSensorDataResponseCode::Unauthorized.into(),
+    ) {
+        Err(r) => return Ok(r),
+        Ok(_) => (),
+    }
+
+    let query_result = db::query_sensor_data(body);
+
+    let query_string = match query_result {
+        Ok(data) => serde_json::to_string(&data),
+        Err(err) => {
+            log::error!("[GetSensorData] Error querying Sensor data: {:?}", err);
+            let mut response = Response::new(empty());
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(response);
+        }
+    };
+
+    match query_string {
+        Ok(json_data) => {
+            log::info!("[GetSensorData] Returning 200 Status Code");
+            let mut response = Response::new(full(json_data));
+            response
+                .headers_mut()
+                .append("content-type", HeaderValue::from_static("application/json"));
+            return Ok(response);
+        }
+        Err(err) => {
+            log::error!(
+                "[GetSensorData] Error serializing return Sensor data: {:?}",
+                err
+            );
+            let mut response = Response::new(empty());
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(response);
+        }
+    }
+}
+
+fn post_sensor(
+    body: PostSensorRequestBody,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    log::debug!("[PostSensor] Received body: {:?}", body);
+
+    let return_found_ok = |user_sensor_api_id: String| {
+        log::info!(
+            "[PostSensor] Returning 200 Status Code: New sensor created with API ID: {}",
+            user_sensor_api_id
+        );
+        let response_body = PostSensorResponseBody {
+            sensor_api_id: user_sensor_api_id.clone(),
+        };
+        let response_body_json =
+            serde_json::to_string(&response_body).expect("Failed to serialize response body");
+
+        let mut response = Response::new(full(response_body_json));
+        response
+            .headers_mut()
+            .append("content-type", HeaderValue::from_static("application/json"));
+        return response;
+    };
+
+    let user_api_id = &body.user_api_id;
+    let user_place_id = body.user_place_id;
+    let sensor_kind = body.sensor_kind;
+    let device_id = &body.device_id;
+
+    match db::sensor_exists(user_api_id.as_str(), user_place_id, device_id.as_str()) {
+        Ok(opt) => match opt {
+            Some(api_id) => return Ok(return_found_ok(api_id)),
+            None => {
+                log::info!("[PostSensor] sensor_exists -> None (sensor doesnt exist)")
+            }
+        },
+        Err(e) => {
+            log::error!(
+                "[PostSensor] on sensor_exists, continuing to new_sensor: {:?}",
+                e
+            )
+        }
+    }
+
+    match db::new_sensor(
+        user_api_id.as_str(),
+        sensor_kind,
+        user_place_id,
+        device_id.as_str(),
+    ) {
+        Ok(user_sensor_api_id) => {
+            return Ok(return_found_ok(user_sensor_api_id));
+        }
+        Err(err) => {
+            log::error!("[PostSensor] Error creating new sensor: {:?}", err);
+            let mut response = Response::new(empty());
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(response);
+        }
+    }
+}
+
+fn get_login(
+    body: GetLoginRequestBody,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    match db::get_login(&body.username, &body.hashed_password) {
+        Ok(token) => match token {
+            Some(token) => {
+                log::info!("[GetLogin] Returning 200 Status code");
+                let mut response = Response::new(full(token));
+                response
+                    .headers_mut()
+                    .append("content-type", HeaderValue::from_static("application/json"));
+                Ok(response)
+            }
+            None => {
+                log::warn!("[GetLogin] get_login returned NONE (UNAUTHORIZED)");
+                let mut response = Response::new(empty());
+                *response.status_mut() = GetLoginResponseCode::Unauthorized.into();
+                Ok(response)
+            }
+        },
+        Err(err) => {
+            log::error!("[GetLogin] Internal Error during login: {:?}", err);
+            let mut response = Response::new(empty());
+            *response.status_mut() = GetLoginResponseCode::InternalServerError.into();
+            Ok(response)
+        }
+    }
+}
+
 pub async fn server(
     req: Request<hyper::body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
@@ -77,6 +284,7 @@ pub async fn server(
         }
         (&PostSensorData::METHOD, PostSensorData::PATH) => {
             log::info!("[PostSensorData] Request matched PostSensorData");
+            log::debug!("[PostSensorData] Request: {:?}", req);
 
             let max_size = <PostSensorData as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
 
@@ -125,61 +333,7 @@ pub async fn server(
                 }
             };
 
-            match user_n_sensor_api_ids_check(
-                "[PostSensorData]",
-                &body.user_api_id.as_str(),
-                &body.sensor_api_id.as_str(),
-                PostSensorResponseCode::Unauthorized.into(),
-            ) {
-                Err(r) => return Ok(r),
-                Ok(_) => (),
-            }
-
-            let e = match db::get_sensor_kind_from_id(&body.sensor_api_id.as_str()) {
-                Ok(kind) => match kind {
-                    SensorKind::Aht10 => {
-                        let data = models::NewAht10Data {
-                            sensor: body.user_api_id.to_string(),
-                            serialized_data: &serialized_data,
-                            added_at: body.added_at.unwrap_or_else(|| {
-                                // Use current time in seconds if not provided
-                                chrono::Utc::now().naive_utc()
-                            }),
-                        };
-                        db::save_new_aht10_data(data)
-                    }
-                    SensorKind::Scd4x => {
-                        let data = models::NewScd4xData {
-                            sensor: body.user_api_id.to_string(),
-                            serialized_data: &serialized_data,
-                            added_at: body.added_at.unwrap_or_else(|| {
-                                // Use current time in seconds if not provided
-                                chrono::Utc::now().naive_utc()
-                            }),
-                        };
-                        db::save_new_scd4x_data(data)
-                    }
-                },
-                Err(err) => {
-                    log::error!("[PostSensorData] Error getting sensor kind: {:?}", err);
-                    let mut response = Response::new(empty());
-                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    return Ok(response);
-                }
-            };
-
-            match e {
-                Err(e) => {
-                    log::error!("[PostSensorData] Error saving new sensor data: {:?}", e);
-                    let mut response = Response::new(empty());
-                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    return Ok(response);
-                }
-                Ok(()) => {
-                    log::info!("[PostSensorData] Returning 200 Status Code");
-                    Ok(Response::new(empty()))
-                }
-            }
+            post_sensor_data(body, &serialized_data)
         }
         (&GetSensorData::METHOD, GetSensorData::PATH) => {
             log::info!("[GetSensorData] Request matched GetSensorData");
@@ -220,68 +374,10 @@ pub async fn server(
                 }
             };
 
-            match user_n_sensor_api_ids_check(
-                "[GetSensorData]",
-                body.user_api_id.as_str(),
-                body.sensor_api_id.as_str(),
-                GetSensorDataResponseCode::Unauthorized.into(),
-            ) {
-                Err(r) => return Ok(r),
-                Ok(_) => (),
-            }
-
-            let query_result = db::query_sensor_data(body);
-
-            let query_string = match query_result {
-                Ok(data) => serde_json::to_string(&data),
-                Err(err) => {
-                    log::error!("[GetSensorData] Error querying Sensor data: {:?}", err);
-                    let mut response = Response::new(empty());
-                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    return Ok(response);
-                }
-            };
-
-            match query_string {
-                Ok(json_data) => {
-                    log::info!("[GetSensorData] Returning 200 Status Code");
-                    let mut response = Response::new(full(json_data));
-                    response
-                        .headers_mut()
-                        .append("content-type", HeaderValue::from_static("application/json"));
-                    return Ok(response);
-                }
-                Err(err) => {
-                    log::error!(
-                        "[GetSensorData] Error serializing return Sensor data: {:?}",
-                        err
-                    );
-                    let mut response = Response::new(empty());
-                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    return Ok(response);
-                }
-            }
+            get_sensor_data(body)
         }
         (&PostSensor::METHOD, PostSensor::PATH) => {
             log::info!("[PostSensor] Request matched PostSensor");
-
-            let return_found_ok = |user_sensor_api_id: String| {
-                log::info!(
-                    "[PostSensor] Returning 200 Status Code: New sensor created with API ID: {}",
-                    user_sensor_api_id
-                );
-                let response_body = PostSensorResponseBody {
-                    sensor_api_id: user_sensor_api_id.clone(),
-                };
-                let response_body_json = serde_json::to_string(&response_body)
-                    .expect("Failed to serialize response body");
-
-                let mut response = Response::new(full(response_body_json));
-                response
-                    .headers_mut()
-                    .append("content-type", HeaderValue::from_static("application/json"));
-                return response;
-            };
 
             let max_size = <PostSensor as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
             // Extract the body from the request
@@ -316,42 +412,7 @@ pub async fn server(
                     }
                 };
 
-            let user_api_id = &body.user_api_id;
-            let user_place_id = body.user_place_id;
-            let sensor_kind = body.sensor_kind;
-            let device_id = &body.device_id;
-
-            match db::sensor_exists(user_api_id.as_str(), user_place_id, device_id.as_str()) {
-                Ok(opt) => match opt {
-                    Some(api_id) => return Ok(return_found_ok(api_id)),
-                    None => {
-                        log::info!("[PostSensor] sensor_exists -> None (sensor doesnt exist)")
-                    }
-                },
-                Err(e) => {
-                    log::error!(
-                        "[PostSensor] on sensor_exists, continuing to new_sensor: {:?}",
-                        e
-                    )
-                }
-            }
-
-            match db::new_sensor(
-                user_api_id.as_str(),
-                sensor_kind,
-                user_place_id,
-                device_id.as_str(),
-            ) {
-                Ok(user_sensor_api_id) => {
-                    return Ok(return_found_ok(user_sensor_api_id));
-                }
-                Err(err) => {
-                    log::error!("[PostSensor] Error creating new sensor: {:?}", err);
-                    let mut response = Response::new(empty());
-                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    return Ok(response);
-                }
-            }
+            post_sensor(body)
         }
         (&GetLogin::METHOD, GetLogin::PATH) => {
             log::info!("[GetLogin] Request matched GetSensorData");
@@ -389,30 +450,7 @@ pub async fn server(
                     }
                 };
 
-            match db::get_login(&body.username, &body.hashed_password) {
-                Ok(token) => match token {
-                    Some(token) => {
-                        log::info!("[GetLogin] Returning 200 Status code");
-                        let mut response = Response::new(full(token));
-                        response
-                            .headers_mut()
-                            .append("content-type", HeaderValue::from_static("application/json"));
-                        Ok(response)
-                    }
-                    None => {
-                        log::warn!("[GetLogin] get_login returned NONE (UNAUTHORIZED)");
-                        let mut response = Response::new(empty());
-                        *response.status_mut() = GetLoginResponseCode::Unauthorized.into();
-                        Ok(response)
-                    }
-                },
-                Err(err) => {
-                    log::error!("[GetLogin] Internal Error during login: {:?}", err);
-                    let mut response = Response::new(empty());
-                    *response.status_mut() = GetLoginResponseCode::InternalServerError.into();
-                    Ok(response)
-                }
-            }
+            get_login(body)
         }
         // Return 404 Not Found for other routes.
         _ => {
@@ -421,5 +459,60 @@ pub async fn server(
             *not_found.status_mut() = StatusCode::NOT_FOUND;
             Ok(not_found)
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    // These tests will need to diesel migration redo everytime they are run
+
+    const VALID_USER_API_ID: &'static str = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const VALID_AHT10_API_ID: &'static str = "94a990533d761111111111111111111111111111";
+    const VALID_SCD41_API_ID: &'static str = "94a990533d762222222222222222222222222222";
+
+    use super::*;
+    use sensor_lib::api::model::{
+        any_sensor_data::AnySensorData, api_id::ApiId, scd4x_data::Scd4xData,
+    };
+
+    #[test]
+    #[ignore = "reason: Requires database setup"]
+    fn test_post_sensor_data() {
+        let body = PostSensorDataRequestBody {
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
+            sensor_api_id: ApiId::from_string(VALID_SCD41_API_ID).unwrap(),
+            data: AnySensorData::Scd4x(Scd4xData::new("todelete".to_string(), 123, 12.2, 12.3)),
+            added_at: None,
+        };
+        let serialized_data = serde_json::to_string(&body.data).unwrap();
+        post_sensor_data(body, &serialized_data).unwrap();
+    }
+
+    #[test]
+    #[ignore = "reason: Requires database setup"]
+    fn test_post_sensor_data_unexistent_user() {
+        let body = PostSensorDataRequestBody {
+            user_api_id: ApiId::random(),
+            sensor_api_id: ApiId::from_string(VALID_SCD41_API_ID).unwrap(),
+            data: AnySensorData::Scd4x(Scd4xData::new("todelete".to_string(), 123, 12.2, 12.3)),
+            added_at: None,
+        };
+        let serialized_data = serde_json::to_string(&body.data).unwrap();
+        let response = post_sensor_data(body, &serialized_data).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_post_sensor_data_unexistent_sensor() {
+        let body = PostSensorDataRequestBody {
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
+            sensor_api_id: ApiId::random(),
+            data: AnySensorData::Scd4x(Scd4xData::new("todelete".to_string(), 123, 12.2, 12.3)),
+            added_at: None,
+        };
+        let serialized_data = serde_json::to_string(&body.data).unwrap();
+        let response = post_sensor_data(body, &serialized_data).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 }

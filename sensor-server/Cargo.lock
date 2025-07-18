@@ -975,6 +975,7 @@ dependencies = [
 name = "sensor-server"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "chrono",
  "diesel",
  "diesel_migrations",

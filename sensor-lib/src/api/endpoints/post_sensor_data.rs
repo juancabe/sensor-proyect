@@ -6,7 +6,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct PostSensorDataBody {
+pub struct PostSensorDataRequestBody {
     pub user_api_id: ApiId,
     pub sensor_api_id: ApiId,
     pub data: AnySensorData,
@@ -52,7 +52,7 @@ impl From<PostSensorResponseCode> for http::StatusCode {
 }
 
 impl<'a, 'b> ApiEndpoint<'a, 'b> for PostSensorData {
-    type RequestBody = PostSensorDataBody;
+    type RequestBody = PostSensorDataRequestBody;
     type ResponseBody = ();
     type ResponseCode = PostSensorResponseCode;
 

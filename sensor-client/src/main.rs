@@ -14,7 +14,9 @@ use esp_idf_svc::{
 };
 use esp_idf_sys::esp_read_mac;
 use sensor_lib::api::{
-    endpoints::post_sensor_data::{PostSensorData, PostSensorDataBody, PostSensorResponseCode},
+    endpoints::post_sensor_data::{
+        PostSensorData, PostSensorDataRequestBody, PostSensorResponseCode,
+    },
     model::{
         // aht10_data::Aht10Data,
         any_sensor_data::AnySensorData,
@@ -78,7 +80,7 @@ fn send_sensor_data(
 ) -> Result<PostSensorResponseCode, SendAht10DataError> {
     let url: String = format!("{}{}", BASE_URL, PostSensorData::PATH);
 
-    let body = PostSensorDataBody {
+    let body = PostSensorDataRequestBody {
         user_api_id: ApiId::from_string(user_api).expect("We should have saved a valid UserApiId"),
         sensor_api_id: ApiId::from_string(sensor_api)
             .expect("We should have saved a valid SensorApiId"),
