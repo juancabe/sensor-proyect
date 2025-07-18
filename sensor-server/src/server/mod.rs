@@ -135,7 +135,7 @@ pub async fn server(
                 Ok(_) => (),
             }
 
-            let e = match db::get_sensor_kind_from_id(&body.user_api_id.as_str()) {
+            let e = match db::get_sensor_kind_from_id(&body.sensor_api_id.as_str()) {
                 Ok(kind) => match kind {
                     SensorKind::Aht10 => {
                         let data = models::NewAht10Data {

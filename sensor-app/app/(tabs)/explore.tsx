@@ -131,9 +131,13 @@ async function sensorApiIdFetch(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      user_api_id,
+      user_api_id: {
+        id: user_api_id,
+      },
       user_place_id,
-      device_id,
+      device_id: {
+        id: device_id,
+      },
       sensor_kind,
     }),
   });
