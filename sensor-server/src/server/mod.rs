@@ -80,7 +80,7 @@ pub async fn server(
 
             let max_size = <PostSensorData as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
 
-            let (parsed_body, serialized_data) = match extract_body_and_parse(
+            let (body, serialized_data) = match extract_body_and_parse(
                 req,
                 max_size,
                 Some(PostSensorData::parse_request_body),
@@ -125,38 +125,23 @@ pub async fn server(
                 }
             };
 
-            log::debug!(
-                "[PostSensorData] _raw_ user_api_id bytes: {:?}, sensor_api_id bytes: {:?}",
-                parsed_body.user_api_id.as_bytes(),
-                parsed_body.sensor_api_id.as_bytes()
-            );
-
-            let sanitized_user_api_id = parsed_body.user_api_id.replace('\0', "");
-            let sanitized_sensor_api_id = parsed_body.sensor_api_id.replace('\0', "");
-
-            log::debug!(
-                "[PostSensorData] _sanitized_ user_api_id bytes: {:?}, sensor_api_id bytes: {:?}",
-                sanitized_user_api_id.as_bytes(),
-                sanitized_sensor_api_id.as_bytes()
-            );
-
             match user_n_sensor_api_ids_check(
                 "[PostSensorData]",
-                &sanitized_user_api_id,
-                &sanitized_sensor_api_id,
+                &body.user_api_id.as_str(),
+                &body.sensor_api_id.as_str(),
                 PostSensorResponseCode::Unauthorized.into(),
             ) {
                 Err(r) => return Ok(r),
                 Ok(_) => (),
             }
 
-            let e = match db::get_sensor_kind_from_id(&sanitized_sensor_api_id) {
+            let e = match db::get_sensor_kind_from_id(&body.user_api_id.as_str()) {
                 Ok(kind) => match kind {
                     SensorKind::Aht10 => {
                         let data = models::NewAht10Data {
-                            sensor: sanitized_sensor_api_id,
+                            sensor: body.user_api_id.to_string(),
                             serialized_data: &serialized_data,
-                            added_at: parsed_body.added_at.unwrap_or_else(|| {
+                            added_at: body.added_at.unwrap_or_else(|| {
                                 // Use current time in seconds if not provided
                                 chrono::Utc::now().naive_utc()
                             }),
@@ -165,9 +150,9 @@ pub async fn server(
                     }
                     SensorKind::Scd4x => {
                         let data = models::NewScd4xData {
-                            sensor: sanitized_sensor_api_id,
+                            sensor: body.user_api_id.to_string(),
                             serialized_data: &serialized_data,
-                            added_at: parsed_body.added_at.unwrap_or_else(|| {
+                            added_at: body.added_at.unwrap_or_else(|| {
                                 // Use current time in seconds if not provided
                                 chrono::Utc::now().naive_utc()
                             }),
@@ -237,8 +222,8 @@ pub async fn server(
 
             match user_n_sensor_api_ids_check(
                 "[GetSensorData]",
-                &body.user_api_id,
-                &body.sensor_api_id,
+                body.user_api_id.as_str(),
+                body.sensor_api_id.as_str(),
                 GetSensorDataResponseCode::Unauthorized.into(),
             ) {
                 Err(r) => return Ok(r),
@@ -336,7 +321,7 @@ pub async fn server(
             let sensor_kind = body.sensor_kind;
             let device_id = &body.device_id;
 
-            match db::sensor_exists(user_api_id, user_place_id, device_id) {
+            match db::sensor_exists(user_api_id.as_str(), user_place_id, device_id.as_str()) {
                 Ok(opt) => match opt {
                     Some(api_id) => return Ok(return_found_ok(api_id)),
                     None => {
@@ -351,7 +336,12 @@ pub async fn server(
                 }
             }
 
-            match db::new_sensor(user_api_id, sensor_kind, user_place_id, device_id) {
+            match db::new_sensor(
+                user_api_id.as_str(),
+                sensor_kind,
+                user_place_id,
+                device_id.as_str(),
+            ) {
                 Ok(user_sensor_api_id) => {
                     return Ok(return_found_ok(user_sensor_api_id));
                 }

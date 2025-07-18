@@ -1,11 +1,11 @@
-use crate::api::{ApiEndpoint, model::aht10_data::Aht10Data};
+use crate::api::{ApiEndpoint, model::api_id::ApiId};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct GetSensorDataRequestBody {
-    pub user_api_id: String,
-    pub sensor_api_id: String,
+    pub user_api_id: ApiId,
+    pub sensor_api_id: ApiId,
     pub added_at_upper: Option<NaiveDateTime>,
     pub added_at_lower: Option<NaiveDateTime>,
 }

@@ -7,9 +7,11 @@ use dotenvy::dotenv;
 use once_cell::sync::Lazy;
 use sensor_lib::api;
 use sensor_lib::api::endpoints::get_sensor_data::GetSensorDataRequestBody;
+use sensor_lib::api::endpoints::register::RegisterRequestBody;
+use sensor_lib::api::model::api_id::ApiId;
 use sensor_lib::api::model::sensor_kind::{SensorKind, SensorKindData};
 
-use crate::models;
+use crate::models::{self, NewUser};
 
 use r2d2::Error as DieselPoolError;
 
@@ -83,10 +85,10 @@ pub fn query_sensor_data(
     let mut db_conn = get_db_pool()?;
 
     let r = users_table
-        .filter(users::api_id.eq(&query.user_api_id))
+        .filter(users::api_id.eq(&query.user_api_id.as_str()))
         .inner_join(user_places_table)
         .inner_join(user_sensors_table.on(user_places::id.eq(user_sensors::place)))
-        .filter(user_sensors::api_id.eq(&query.sensor_api_id))
+        .filter(user_sensors::api_id.eq(&query.sensor_api_id.as_str()))
         .select(models::UserSensor::as_select())
         .load::<models::UserSensor>(&mut db_conn)?;
 
@@ -122,17 +124,15 @@ pub fn query_aht10_data(
 
     let max_date = query.added_at_upper;
     let min_date = query.added_at_lower;
-    let sensor_ = query.sensor_api_id.to_lowercase();
-    let api_id = query.user_api_id.to_lowercase();
 
     let mut failed_deserialize: usize = 0;
 
     let vec = aht10data_table
-        .filter(aht10data::sensor.eq(sensor_))
+        .filter(aht10data::sensor.eq(query.sensor_api_id.as_str()))
         .inner_join(user_sensors_table)
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::api_id.eq(api_id))
+        .filter(users::api_id.eq(query.user_api_id.as_str()))
         .filter(aht10data::added_at.le(max_date.unwrap_or(NaiveDateTime::MAX)))
         .filter(aht10data::added_at.ge(min_date.unwrap_or(NaiveDateTime::from_timestamp_opt(0, 0).expect("(secs: 0, nsecs: 0) should be valid timestamp"))))
         .select(models::Aht10Data::as_select())
@@ -177,17 +177,15 @@ pub fn query_scd4x_data(
 
     let max_date = query.added_at_upper;
     let min_date = query.added_at_lower;
-    let sensor_ = &query.sensor_api_id;
-    let api_id = &query.user_api_id;
 
     let mut failed_deserialize: usize = 0;
 
     let vec = scd4xdata_table
-        .filter(scd4xdata::sensor.eq(sensor_))
+        .filter(scd4xdata::sensor.eq(query.sensor_api_id.as_str()))
         .inner_join(user_sensors_table)
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::api_id.eq(api_id))
+        .filter(users::api_id.eq(query.user_api_id.as_str()))
         .filter(scd4xdata::added_at.le(max_date.unwrap_or(NaiveDateTime::MAX)))
         .filter(scd4xdata::added_at.ge(min_date.unwrap_or(NaiveDateTime::from_timestamp_opt(0, 0).expect("(secs: 0, nsecs: 0) should be valid timestamp"))))
         .select(models::Scd4xData::as_select())
@@ -455,10 +453,102 @@ pub fn get_login(username: &str, hashed_password: &str) -> Result<Option<String>
     }
 }
 
+#[derive(Debug)]
+pub enum NewUserError {
+    EmailUsed,
+    UsernameUsed,
+    OtherError(Error),
+}
+
+pub fn new_user(query: RegisterRequestBody) -> Result<ApiId, NewUserError> {
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
+
+    let mut db_conn = get_db_pool().map_err(NewUserError::OtherError)?;
+
+    // Check if email is already used
+    match users_table
+        .filter(users::email.eq(&query.email))
+        .select(users::username)
+        .first::<String>(&mut db_conn)
+    {
+        Ok(_) => return Err(NewUserError::EmailUsed),
+        Err(e) => match e {
+            diesel::result::Error::NotFound => (),
+            _ => return Err(NewUserError::OtherError(Error::DataBaseError(e))),
+        },
+    }
+
+    match users_table
+        .filter(users::username.eq(&query.username))
+        .select(users::username)
+        .first::<String>(&mut db_conn)
+    {
+        Ok(_) => return Err(NewUserError::UsernameUsed),
+        Err(e) => match e {
+            diesel::result::Error::NotFound => (),
+            _ => return Err(NewUserError::OtherError(Error::DataBaseError(e))),
+        },
+    }
+
+    // Create new user
+    let api_id = ApiId::new();
+    let new_user = models::NewUser {
+        api_id: &api_id.to_string(),
+        username: &query.username,
+        email: &query.email,
+        hashed_password: &query.hashed_password,
+        created_at: chrono::Utc::now().naive_utc(),
+        updated_at: chrono::Utc::now().naive_utc(),
+    };
+
+    diesel::insert_into(users_table)
+        .values(new_user)
+        .execute(&mut db_conn)
+        .map_err(|e| NewUserError::OtherError(Error::DataBaseError(e)))?;
+
+    Ok(api_id)
+}
+
+// Returns NONE if user does not exist, Some(()) if user was deleted successfully
+pub fn delete_user(api_id: &str) -> Result<Option<()>, Error> {
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
+
+    let mut db_conn = get_db_pool()?;
+
+    match diesel::delete(users_table.filter(users::api_id.eq(api_id))).execute(&mut db_conn) {
+        Ok(_) => Ok(Some(())),
+        Err(e) => match e {
+            diesel::result::Error::NotFound => Ok(None),
+            _ => Err(Error::DataBaseError(e)),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn test_new_user_then_delete() {
+        let query = RegisterRequestBody {
+            username: "testuser_not_exists".to_string(),
+            hashed_password: "hashedpassword123".to_string(), // Replace with actual hashed password
+            email: "testuser_not_exists@example.com".to_string(),
+        };
+
+        let r = new_user(query);
+        let user_api_id = r.expect("Should be able to create new user with DB");
+
+        // Delete
+        match delete_user(&user_api_id.to_string()) {
+            Ok(opt) => assert!(
+                opt.is_some(),
+                "User should be deleted successfully, it isn't"
+            ),
+            Err(_) => panic!("Should be able to delete user with DB"),
+        }
+    }
 
     #[test]
     fn test_get_login() {
@@ -676,17 +766,6 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn test_embeed_run_migrations() {
-    //     use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-    //     const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
-    //     let mut db_conn = get_db_pool().expect("Failed to get database connection");
-    //     db_conn
-    //         .run_pending_migrations(MIGRATIONS)
-    //         .expect("Failed to run migrations");
-    //     log::info!("Migrations ran successfully");
-    // }
-
     #[test]
     fn test_test_db_pool() {
         let result = test_db_pool();
@@ -750,8 +829,10 @@ mod tests {
     #[test]
     fn test_query_aht10_data() {
         let query = GetSensorDataRequestBody {
-            user_api_id: "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-            sensor_api_id: "94a990533d761111111111111111111111111111".into(),
+            user_api_id: ApiId::from_string("94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                .expect("Valid API ID"),
+            sensor_api_id: ApiId::from_string("94a990533d761111111111111111111111111111")
+                .expect("Valid API ID"),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -772,8 +853,10 @@ mod tests {
     #[test]
     fn test_query_aht10_data_nonexistent_user() {
         let query = GetSensorDataRequestBody {
-            user_api_id: "nonexistent-user_api_id".into(),
-            sensor_api_id: "94a990533d761111111111111111111111111111".into(),
+            user_api_id: ApiId::from_string("abcdef9999abcdef9999abcdef9999abcdef9999")
+                .expect("Valid API ID"),
+            sensor_api_id: ApiId::from_string("94a990533d762222222222222222222222222222")
+                .expect("Valid API ID"),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -847,8 +930,10 @@ mod tests {
     #[test]
     fn test_query_scd4x_data() {
         let query = GetSensorDataRequestBody {
-            user_api_id: "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-            sensor_api_id: "94a990533d762222222222222222222222222222".into(),
+            user_api_id: ApiId::from_string("94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                .expect("Valid API ID"),
+            sensor_api_id: ApiId::from_string("94a990533d762222222222222222222222222222")
+                .expect("Valid API ID"),
             added_at_upper: None,
             added_at_lower: None,
         };
@@ -869,8 +954,10 @@ mod tests {
     #[test]
     fn test_query_scd4x_data_nonexistent_user() {
         let query = GetSensorDataRequestBody {
-            user_api_id: "nonexistent-user_api_id".into(),
-            sensor_api_id: "94a990533d762222222222222222222222222222".into(),
+            user_api_id: ApiId::from_string("abcdef9999abcdef9999abcdef9999abcdef9999")
+                .expect("Valid API ID"),
+            sensor_api_id: ApiId::from_string("94a990533d762222222222222222222222222222")
+                .expect("Valid API ID"),
             added_at_upper: None,
             added_at_lower: None,
         };

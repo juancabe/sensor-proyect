@@ -1,4 +1,4 @@
-use crate::api::ApiEndpoint;
+use crate::api::{ApiEndpoint, model::api_id::ApiId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -9,7 +9,7 @@ pub struct GetLoginRequestBody {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct GetLoginResponseBody {
-    pub uuid_api_token: String,
+    pub api_id: ApiId,
 }
 
 pub struct GetLogin {}

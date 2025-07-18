@@ -1,11 +1,14 @@
-use crate::api::{ApiEndpoint, model::any_sensor_data::AnySensorData};
+use crate::api::{
+    ApiEndpoint,
+    model::{any_sensor_data::AnySensorData, api_id::ApiId},
+};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PostSensorDataBody {
-    pub user_api_id: String,
-    pub sensor_api_id: String,
+    pub user_api_id: ApiId,
+    pub sensor_api_id: ApiId,
     pub data: AnySensorData,
     pub added_at: Option<NaiveDateTime>,
 }

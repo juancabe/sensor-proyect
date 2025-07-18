@@ -1,11 +1,14 @@
-use crate::api::{ApiEndpoint, model::sensor_kind::SensorKind};
+use crate::api::{
+    ApiEndpoint,
+    model::{api_id::ApiId, sensor_kind::SensorKind},
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PostSensorRequestBody {
-    pub user_api_id: String,
+    pub user_api_id: ApiId,
     pub user_place_id: i32,
-    pub device_id: String,
+    pub device_id: ApiId,
     pub sensor_kind: SensorKind,
 }
 

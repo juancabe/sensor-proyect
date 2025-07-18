@@ -18,6 +18,7 @@ use sensor_lib::api::{
     model::{
         // aht10_data::Aht10Data,
         any_sensor_data::AnySensorData,
+        api_id::ApiId,
         scd4x_data::Scd4xData,
         SensorData,
     },
@@ -78,8 +79,9 @@ fn send_sensor_data(
     let url: String = format!("{}{}", BASE_URL, PostSensorData::PATH);
 
     let body = PostSensorDataBody {
-        user_api_id: user_api.to_string(),
-        sensor_api_id: sensor_api.to_string(),
+        user_api_id: ApiId::from_string(user_api).expect("We should have saved a valid UserApiId"),
+        sensor_api_id: ApiId::from_string(sensor_api)
+            .expect("We should have saved a valid SensorApiId"),
         data,
         added_at: None,
     };
@@ -488,8 +490,10 @@ fn main() {
 
     let user_api =
         String::from_utf8(user_buf).expect("Should be able to convert user_buf to string");
+    let user_api = user_api.trim_end_matches('\0');
     let sens_api =
         String::from_utf8(sensor_buf).expect("Should be able to convert sensor_buf to string");
+    let sens_api = sens_api.trim_end_matches('\0');
 
     log::info!("user_api.len(): {}, user_api: {}", user_api.len(), user_api);
     log::info!("sens_api.len(): {}, sens_api: {}", sens_api.len(), sens_api);
