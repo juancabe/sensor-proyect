@@ -55,7 +55,7 @@ impl<'a, 'b> ApiEndpoint<'a, 'b> for Register {
     type ResponseCode = RegisterResponseCode;
 
     const PATH: &'static str = "/api/v0/register";
-    const METHOD: http::Method = http::Method::GET;
+    const METHOD: http::Method = http::Method::POST;
 
     const MAX_REQUEST_BODY_SIZE: u64 = 1024; // 1 KB
     const MAX_RESPONSE_BODY_SIZE: u64 = 1024 * 1024; // 1 MB
