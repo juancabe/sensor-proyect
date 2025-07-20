@@ -1,11 +1,14 @@
+use chrono::TimeZone;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Bytes;
 use hyper::header::HeaderValue;
 use hyper::{Method, Request, Response, StatusCode};
 use sensor_lib::api::ApiEndpoint;
-use sensor_lib::api::endpoints::get_login::{GetLogin, GetLoginRequestBody, GetLoginResponseCode};
 use sensor_lib::api::endpoints::get_sensor_data::{
-    GetSensorData, GetSensorDataRequestBody, GetSensorDataResponseCode,
+    GetSensorData, GetSensorDataRequestBody, GetSensorDataResponseBody, GetSensorDataResponseCode,
+};
+use sensor_lib::api::endpoints::login::{
+    Login, LoginRequestBody, LoginResponseBody, LoginResponseCode,
 };
 use sensor_lib::api::endpoints::post_sensor::{
     PostSensor, PostSensorRequestBody, PostSensorResponseBody,
@@ -13,6 +16,10 @@ use sensor_lib::api::endpoints::post_sensor::{
 use sensor_lib::api::endpoints::post_sensor_data::{
     PostSensorData, PostSensorDataRequestBody, PostSensorResponseCode,
 };
+use sensor_lib::api::endpoints::register::{
+    Register, RegisterRequestBody, RegisterResponseBody, RegisterResponseCode,
+};
+use sensor_lib::api::model::api_id::ApiId;
 use sensor_lib::api::model::sensor_kind::SensorKind;
 
 use crate::db;
@@ -71,10 +78,18 @@ fn post_sensor_data(
     let e = match db::get_sensor_kind_from_id(&body.sensor_api_id.as_str()) {
         Ok(kind) => match kind {
             SensorKind::Aht10 => {
+                let added_at = body
+                    .added_at
+                    .and_then(|secs| (secs as i64).checked_mul(1_000))
+                    .and_then(|millis| {
+                        chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest()
+                    })
+                    .and_then(|dt| Some(dt.naive_utc()));
+
                 let data = models::NewAht10Data {
                     sensor: body.sensor_api_id.to_string(),
                     serialized_data: &serialized_data,
-                    added_at: body.added_at.unwrap_or_else(|| {
+                    added_at: added_at.unwrap_or_else(|| {
                         // Use current time in seconds if not provided
                         chrono::Utc::now().naive_utc()
                     }),
@@ -82,10 +97,18 @@ fn post_sensor_data(
                 db::save_new_aht10_data(data)
             }
             SensorKind::Scd4x => {
+                let added_at = body
+                    .added_at
+                    .and_then(|secs| (secs as i64).checked_mul(1_000))
+                    .and_then(|millis| {
+                        chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest()
+                    })
+                    .and_then(|dt| Some(dt.naive_utc()));
+
                 let data = models::NewScd4xData {
                     sensor: body.sensor_api_id.to_string(),
                     serialized_data: &serialized_data,
-                    added_at: body.added_at.unwrap_or_else(|| {
+                    added_at: added_at.unwrap_or_else(|| {
                         // Use current time in seconds if not provided
                         chrono::Utc::now().naive_utc()
                     }),
@@ -132,30 +155,35 @@ fn get_sensor_data(
 
     let query_result = db::query_sensor_data(body);
 
-    let query_string = match query_result {
-        Ok(data) => serde_json::to_string(&data),
-        Err(err) => {
-            log::error!("[GetSensorData] Error querying Sensor data: {:?}", err);
-            let mut response = Response::new(empty());
-            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(response);
-        }
-    };
+    match query_result {
+        Ok(data) => {
+            let mut vec = Vec::with_capacity(data.0.len());
+            let mut failed_serialize = 0;
+            for datum in data.0 {
+                match serde_json::to_string(&datum) {
+                    Ok(s) => vec.push(s),
+                    Err(_) => failed_serialize += 1,
+                }
+            }
 
-    match query_string {
-        Ok(json_data) => {
+            let resp = GetSensorDataResponseBody {
+                item_count: vec.len(),
+                serialized_data: vec,
+                failed_serialize: failed_serialize,
+                failed_deserialize: data.1,
+            };
+
+            let s = serde_json::to_string(&resp).expect("Should be serializable");
+
             log::info!("[GetSensorData] Returning 200 Status Code");
-            let mut response = Response::new(full(json_data));
+            let mut response = Response::new(full(s));
             response
                 .headers_mut()
                 .append("content-type", HeaderValue::from_static("application/json"));
             return Ok(response);
         }
         Err(err) => {
-            log::error!(
-                "[GetSensorData] Error serializing return Sensor data: {:?}",
-                err
-            );
+            log::error!("[GetSensorData] Error querying Sensor data: {:?}", err);
             let mut response = Response::new(empty());
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             return Ok(response);
@@ -224,32 +252,86 @@ fn post_sensor(
     }
 }
 
-fn get_login(
-    body: GetLoginRequestBody,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+fn login(body: LoginRequestBody) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     match db::get_login(&body.username, &body.hashed_password) {
-        Ok(token) => match token {
-            Some(token) => {
-                log::info!("[GetLogin] Returning 200 Status code");
-                let mut response = Response::new(full(token));
+        Ok(api_id) => match api_id {
+            Some(api_id) => {
+                log::info!("[Login] Returning 200 Status code");
+                let resp_body = LoginResponseBody { api_id };
+                let resp_body = serde_json::to_string(&resp_body).expect("Should be serializable");
+                let mut response = Response::new(full(resp_body));
                 response
                     .headers_mut()
                     .append("content-type", HeaderValue::from_static("application/json"));
                 Ok(response)
             }
             None => {
-                log::warn!("[GetLogin] get_login returned NONE (UNAUTHORIZED)");
+                log::warn!("[Login] login returned NONE (UNAUTHORIZED)");
                 let mut response = Response::new(empty());
-                *response.status_mut() = GetLoginResponseCode::Unauthorized.into();
+                *response.status_mut() = LoginResponseCode::Unauthorized.into();
                 Ok(response)
             }
         },
         Err(err) => {
-            log::error!("[GetLogin] Internal Error during login: {:?}", err);
+            log::error!("[Login] Internal Error during login: {:?}", err);
             let mut response = Response::new(empty());
-            *response.status_mut() = GetLoginResponseCode::InternalServerError.into();
+            *response.status_mut() = LoginResponseCode::InternalServerError.into();
             Ok(response)
         }
+    }
+}
+
+fn register(
+    query: RegisterRequestBody,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    match db::new_user(query) {
+        Ok(api_id) => {
+            log::info!("[Register] Returning 200 Status code");
+            let resp = RegisterResponseBody::Correct(api_id);
+            let mut response = Response::new(full(
+                serde_json::to_string(&resp).expect("Should be serializable"),
+            ));
+            response
+                .headers_mut()
+                .append("content-type", HeaderValue::from_static("application/json"));
+            Ok(response)
+        }
+        Err(err) => match err {
+            db::NewUserError::EmailUsed => {
+                log::warn!("[Register] Returning 200 Status code (EmailUsed)");
+                let resp = RegisterResponseBody::Incorrect(
+                    sensor_lib::api::endpoints::register::RegisterIncorrectReason::EmailUsed,
+                );
+                let mut response = Response::new(full(
+                    serde_json::to_string(&resp).expect("Should be serializable"),
+                ));
+                response
+                    .headers_mut()
+                    .append("content-type", HeaderValue::from_static("application/json"));
+                Ok(response)
+            }
+
+            db::NewUserError::UsernameUsed => {
+                log::warn!("[Register] Returning 200 Status code (UsernameUsed)");
+                let resp = RegisterResponseBody::Incorrect(
+                    sensor_lib::api::endpoints::register::RegisterIncorrectReason::UsernameUsed,
+                );
+                let mut response = Response::new(full(
+                    serde_json::to_string(&resp).expect("Should be serializable"),
+                ));
+                response
+                    .headers_mut()
+                    .append("content-type", HeaderValue::from_static("application/json"));
+                Ok(response)
+            }
+
+            db::NewUserError::OtherError(error) => {
+                log::error!("[Register] Internal Error during login: {:?}", error);
+                let mut response = Response::new(empty());
+                *response.status_mut() = RegisterResponseCode::InternalServerError.into();
+                Ok(response)
+            }
+        },
     }
 }
 
@@ -414,43 +496,79 @@ pub async fn server(
 
             post_sensor(body)
         }
-        (&GetLogin::METHOD, GetLogin::PATH) => {
-            log::info!("[GetLogin] Request matched GetSensorData");
+        (&Login::METHOD, Login::PATH) => {
+            log::info!("[Login] Request matched Login");
             // Handle the login request
-            let max_size = <GetLogin as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
+            let max_size = <Login as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
 
+            let body = match extract_body_and_parse(req, max_size, Some(Login::parse_request_body))
+                .await
+            {
+                Ok(bytes) => bytes,
+                Err(ExtractError::PayloadTooLarge) => {
+                    log::warn!("[Login] Request body too large");
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = LoginResponseCode::PayloadTooLarge.into();
+                    return Ok(response);
+                }
+                Err(ExtractError::ErrorReceiving) => {
+                    log::error!("[Login] Error receiving request body");
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = LoginResponseCode::InternalServerError.into();
+                    return Ok(response);
+                }
+                Err(ExtractError::ParseErrorAsValue(err)) => {
+                    log::warn!("[Login] Failed to parse body as JSON: {}", err);
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = LoginResponseCode::BadRequest.into();
+                    return Ok(response);
+                }
+                Err(ExtractError::ParseErrorAsType) => {
+                    log::warn!("[Login] Failed to parse request body as type");
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = LoginResponseCode::BadRequest.into();
+                    return Ok(response);
+                }
+            };
+
+            login(body)
+        }
+        (&Register::METHOD, Register::PATH) => {
+            log::info!("[Register] Request matched Register");
+            // Handle the login request
+            let max_size = <Register as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
             let body =
-                match extract_body_and_parse(req, max_size, Some(GetLogin::parse_request_body))
+                match extract_body_and_parse(req, max_size, Some(Register::parse_request_body))
                     .await
                 {
                     Ok(bytes) => bytes,
                     Err(ExtractError::PayloadTooLarge) => {
-                        log::warn!("[GetLogin] Request body too large");
+                        log::warn!("[Login] Request body too large");
                         let mut response = Response::new(empty());
-                        *response.status_mut() = GetLoginResponseCode::PayloadTooLarge.into();
+                        *response.status_mut() = LoginResponseCode::PayloadTooLarge.into();
                         return Ok(response);
                     }
                     Err(ExtractError::ErrorReceiving) => {
-                        log::error!("[GetLogin] Error receiving request body");
+                        log::error!("[Login] Error receiving request body");
                         let mut response = Response::new(empty());
-                        *response.status_mut() = GetLoginResponseCode::InternalServerError.into();
+                        *response.status_mut() = LoginResponseCode::InternalServerError.into();
                         return Ok(response);
                     }
                     Err(ExtractError::ParseErrorAsValue(err)) => {
-                        log::warn!("[GetLogin] Failed to parse body as JSON: {}", err);
+                        log::warn!("[Login] Failed to parse body as JSON: {}", err);
                         let mut response = Response::new(empty());
-                        *response.status_mut() = GetLoginResponseCode::BadRequest.into();
+                        *response.status_mut() = LoginResponseCode::BadRequest.into();
                         return Ok(response);
                     }
                     Err(ExtractError::ParseErrorAsType) => {
-                        log::warn!("[GetLogin] Failed to parse request body as type");
+                        log::warn!("[Login] Failed to parse request body as type");
                         let mut response = Response::new(empty());
-                        *response.status_mut() = GetLoginResponseCode::BadRequest.into();
+                        *response.status_mut() = LoginResponseCode::BadRequest.into();
                         return Ok(response);
                     }
                 };
 
-            get_login(body)
+            register(body)
         }
         // Return 404 Not Found for other routes.
         _ => {
@@ -504,6 +622,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "reason: Requires database setup"]
     fn test_post_sensor_data_unexistent_sensor() {
         let body = PostSensorDataRequestBody {
             user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),

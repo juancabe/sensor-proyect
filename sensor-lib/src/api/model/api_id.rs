@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 #[derive(Debug)]
 pub enum Error {
@@ -7,7 +8,8 @@ pub enum Error {
     NotLowercase,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, TS)]
+#[ts(export)]
 pub struct ApiId {
     // ID_LENGTH lowercase hex characters for a unique identifier
     id: String,
@@ -60,7 +62,7 @@ mod tests {
 
     #[test]
     fn test_api_id_creation() {
-        let api_id = ApiId::new();
+        let api_id = ApiId::random();
         assert_eq!(api_id.id.len(), ApiId::ID_LENGTH);
         assert!(api_id.id.chars().all(|c| c.is_ascii_hexdigit()
             && ((c.is_alphabetic() && c.is_lowercase()) || c.is_numeric())));

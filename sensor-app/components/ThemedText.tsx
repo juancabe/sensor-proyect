@@ -1,60 +1,55 @@
+import React from 'react';
 import { StyleSheet, Text, type TextProps } from 'react-native';
-
-import { useThemeColor } from '@/hooks/useThemeColor';
+import { useTheme, type Theme } from '@react-navigation/native';
 
 export type ThemedTextProps = TextProps & {
-  lightColor?: string;
-  darkColor?: string;
-  type?: 'default' | 'title' | 'defaultSemiBold' | 'subtitle' | 'link';
+  theme?: Theme;
+  style?: object;
+  children?: React.ReactNode;
 };
 
 export function ThemedText({
+  theme,
   style,
-  lightColor,
-  darkColor,
-  type = 'default',
-  ...rest
+  children,
+  ...otherProps
 }: ThemedTextProps) {
-  const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
+  // Use provided theme or fallback to current app theme
+  const appTheme = useTheme();
+  const activeTheme = theme ?? appTheme;
+  const color = activeTheme.colors.text;
 
   return (
-    <Text
-      style={[
-        { color },
-        type === 'default' ? styles.default : undefined,
-        type === 'title' ? styles.title : undefined,
-        type === 'defaultSemiBold' ? styles.defaultSemiBold : undefined,
-        type === 'subtitle' ? styles.subtitle : undefined,
-        type === 'link' ? styles.link : undefined,
-        style,
-      ]}
-      {...rest}
-    />
+    <Text style={[{ color }, style]} {...otherProps}>
+      {children}
+    </Text>
   );
 }
 
-const styles = StyleSheet.create({
-  default: {
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  defaultSemiBold: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: '600',
-  },
-  title: {
+export const TEXT_STYLES = StyleSheet.create({
+  heading1: {
     fontSize: 32,
-    fontWeight: 'bold',
+    fontWeight: '700',
+    lineHeight: 40,
+  },
+  heading2: {
+    fontSize: 24,
+    fontWeight: '600',
     lineHeight: 32,
   },
-  subtitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  link: {
-    lineHeight: 30,
+  body: {
     fontSize: 16,
-    color: '#0a7ea4',
+    fontWeight: '400',
+    lineHeight: 24,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 20,
+  },
+  caption: {
+    fontSize: 12,
+    fontWeight: '300',
+    lineHeight: 16,
   },
 });

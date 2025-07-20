@@ -3,8 +3,10 @@ use crate::api::{
     model::{api_id::ApiId, sensor_kind::SensorKind},
 };
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, TS)]
+#[ts(export, export_to = "endpoints/PostSensor.ts")]
 pub struct PostSensorRequestBody {
     pub user_api_id: ApiId,
     pub user_place_id: i32,
@@ -12,14 +14,16 @@ pub struct PostSensorRequestBody {
     pub sensor_kind: SensorKind,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, TS)]
+#[ts(export, export_to = "endpoints/PostSensor.ts")]
 pub struct PostSensorResponseBody {
     pub sensor_api_id: String,
 }
 
 pub struct PostSensor {}
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, TS)]
+#[ts(export, export_to = "endpoints/PostSensor.ts")]
 pub enum PostSensorResponseCode {
     Ok,
     BadRequest,

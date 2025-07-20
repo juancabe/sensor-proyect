@@ -1,8 +1,10 @@
 use crate::api::model::SensorData;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 // Struct that holds the API data for the AHT10 sensor.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Aht10Data {
     pub sensor_id: String,
     // Humidity in percentage (0.0 to 100.0)

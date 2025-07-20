@@ -1,24 +1,29 @@
 use crate::api::{ApiEndpoint, model::api_id::ApiId};
-use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, TS)]
+#[ts(export, export_to = "endpoints/GetSensorData.ts")]
 pub struct GetSensorDataRequestBody {
     pub user_api_id: ApiId,
     pub sensor_api_id: ApiId,
-    pub added_at_upper: Option<NaiveDateTime>,
-    pub added_at_lower: Option<NaiveDateTime>,
+    pub added_at_upper: Option<u32>, // UNIX timestamp seconds
+    pub added_at_lower: Option<u32>, // UNIX timestamp seconds
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, TS)]
+#[ts(export, export_to = "endpoints/GetSensorData.ts")]
 pub struct GetSensorDataResponseBody {
+    pub failed_serialize: usize,
+    pub failed_deserialize: usize,
     pub item_count: usize,
     pub serialized_data: Vec<String>,
 }
 
 pub struct GetSensorData {}
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, TS)]
+#[ts(export, export_to = "endpoints/GetSensorData.ts")]
 pub enum GetSensorDataResponseCode {
     Ok,
     BadRequest,

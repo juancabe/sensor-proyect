@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::api::model::{aht10_data::Aht10Data, scd4x_data::Scd4xData};
 
-#[derive(Deserialize, Serialize, Debug, Clone, Copy)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, TS)]
+#[ts(export)]
 pub enum SensorKind {
     Aht10 = 1,
     Scd4x = 2,

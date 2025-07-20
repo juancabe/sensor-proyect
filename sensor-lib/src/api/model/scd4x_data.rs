@@ -1,8 +1,10 @@
 use crate::api::model::SensorData;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 // Struct that holds the API data for the SCD4X sensor.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Scd4xData {
     pub sensor_id: String,
     // CO2 concentration in ppm

@@ -49,17 +49,4 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[ignore = "main function"]
-    fn run() {
-        let r = main();
-        if let Err(e) = r {
-            eprintln!("Error running the server: {}", e);
-        } else {
-            println!("Server started successfully");
-        }
-    }
-}
+mod tests {}

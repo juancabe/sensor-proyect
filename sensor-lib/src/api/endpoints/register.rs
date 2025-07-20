@@ -1,21 +1,25 @@
 use crate::api::{ApiEndpoint, model::api_id::ApiId};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, TS)]
+#[ts(export, export_to = "endpoints/Register.ts")]
 pub struct RegisterRequestBody {
     pub username: String,
     pub hashed_password: String,
     pub email: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, TS)]
+#[ts(export, export_to = "endpoints/Register.ts")]
 pub enum RegisterIncorrectReason {
     EmailUsed,
     UsernameUsed,
     HashInvalid,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, TS)]
+#[ts(export, export_to = "endpoints/Register.ts")]
 pub enum RegisterResponseBody {
     Correct(ApiId),
     Incorrect(RegisterIncorrectReason),
@@ -23,7 +27,8 @@ pub enum RegisterResponseBody {
 
 pub struct Register {}
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, TS)]
+#[ts(export, export_to = "endpoints/Register.ts")]
 pub enum RegisterResponseCode {
     Ok,
     BadRequest,

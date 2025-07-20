@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, TimeZone};
 use diesel::dsl::count_star;
 use diesel::prelude::*;
 use diesel::r2d2::{self, ConnectionManager};
@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use sensor_lib::api;
 use sensor_lib::api::endpoints::get_sensor_data::GetSensorDataRequestBody;
 use sensor_lib::api::endpoints::register::RegisterRequestBody;
-use sensor_lib::api::model::api_id::ApiId;
+use sensor_lib::api::model::api_id::{self, ApiId};
 use sensor_lib::api::model::sensor_kind::{SensorKind, SensorKindData};
 
 use crate::models::{self};
@@ -24,6 +24,7 @@ pub enum Error {
     SerializationError(serde_json::Error),
     DeviceIdInvalid,
     Inconsistency(String),
+    ApiIdError(api_id::Error),
     NotFound,
 }
 
@@ -122,8 +123,16 @@ pub fn query_aht10_data(
 
     let mut db_conn = get_db_pool()?;
 
-    let max_date = query.added_at_upper;
-    let min_date = query.added_at_lower;
+    let max_date = query
+        .added_at_upper
+        .and_then(|secs| (secs as i64).checked_mul(1_000))
+        .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
+        .and_then(|dt| Some(dt.naive_utc()));
+    let min_date = query
+        .added_at_lower
+        .and_then(|secs| (secs as i64).checked_mul(1_000))
+        .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
+        .and_then(|dt| Some(dt.naive_utc()));
 
     let mut failed_deserialize: usize = 0;
 
@@ -175,8 +184,16 @@ pub fn query_scd4x_data(
 
     let mut db_conn = get_db_pool()?;
 
-    let max_date = query.added_at_upper;
-    let min_date = query.added_at_lower;
+    let max_date = query
+        .added_at_upper
+        .and_then(|secs| (secs as i64).checked_mul(1_000))
+        .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
+        .and_then(|dt| Some(dt.naive_utc()));
+    let min_date = query
+        .added_at_lower
+        .and_then(|secs| (secs as i64).checked_mul(1_000))
+        .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
+        .and_then(|dt| Some(dt.naive_utc()));
 
     let mut failed_deserialize: usize = 0;
 
@@ -435,7 +452,7 @@ pub fn new_sensor(
     Ok(user_sensor_api_id)
 }
 
-pub fn get_login(username: &str, hashed_password: &str) -> Result<Option<String>, Error> {
+pub fn get_login(username: &str, hashed_password: &str) -> Result<Option<ApiId>, Error> {
     use crate::schema::{users::dsl as users, users::dsl::users as users_table};
     let mut db_conn = get_db_pool()?;
     let user_api_id = users_table
@@ -445,7 +462,10 @@ pub fn get_login(username: &str, hashed_password: &str) -> Result<Option<String>
         .first::<String>(&mut db_conn);
 
     match user_api_id {
-        Ok(user_api_id) => Ok(Some(user_api_id)),
+        Ok(user_api_id) => match ApiId::from_string(&user_api_id) {
+            Ok(id) => Ok(Some(id)),
+            Err(e) => Err(Error::ApiIdError(e)),
+        },
         Err(e) => match e {
             diesel::result::Error::NotFound => Ok(None),
             _ => Err(Error::DataBaseError(e)),
@@ -561,8 +581,7 @@ mod tests {
 
         let result = get_login(username, hashed_password);
         assert!(result.is_ok(), "Failed to get login: {:?}", result.err());
-        let user_uuid = result.unwrap().expect("Should be Some");
-        assert!(!user_uuid.is_empty(), "User UUID should not be empty");
+        let _ = result.unwrap().expect("Should be Some");
     }
 
     #[test]

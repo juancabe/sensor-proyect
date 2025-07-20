@@ -2,54 +2,59 @@ import { useState, useEffect, useCallback } from 'react';
 import * as SecureStore from 'expo-secure-store';
 
 export enum SessionKeys {
-  API_USER_ID = 'API_USER_ID',
-  API_SENSOR_ID = 'API_SENSOR_ID',
+  USERNAME = 'USERNAME',
+  HASHED_PASSWORD = 'HASHED_PASSWORD',
+  API_ID = 'API_ID',
 }
 
 export const useSession = () => {
-  const [sessionData, setSessionData] = useState<Record<string, string | null>>(
-    {}
-  );
+  const [sessionData, setSessionData] = useState<
+    Record<string, string> | undefined | null
+  >(undefined);
+
+  const loadSessionData = async () => {
+    const keys = Object.values(SessionKeys);
+    const data: Record<string, string> = {};
+    for (const key of keys) {
+      const dataGot = await SecureStore.getItemAsync(key);
+      if (dataGot !== null) {
+        data[key] = dataGot;
+      } else {
+        setSessionData(null);
+        return;
+      }
+    }
+    setSessionData(data);
+  };
 
   // Load initial session data from SecureStore
   useEffect(() => {
-    const loadSessionData = async () => {
-      const keys = Object.values(SessionKeys);
-      const data: Record<string, string | null> = {};
-      for (const key of keys) {
-        data[key] = await SecureStore.getItemAsync(key);
-      }
-      setSessionData(data);
-    };
-
     loadSessionData();
   }, []);
 
   // Function to update a session key
-  const setItem = useCallback(
-    async (key: SessionKeys, value: string | null) => {
-      if (value === null) {
-        await SecureStore.deleteItemAsync(key);
-      } else {
-        await SecureStore.setItemAsync(key, value);
-      }
+  const setItem = useCallback(async (key: SessionKeys, value: string) => {
+    await SecureStore.setItemAsync(key, value);
+    loadSessionData();
+  }, []);
 
-      // Update the internal state
-      setSessionData((prev) => ({
-        ...prev,
-        [key]: value,
-      }));
-    },
-    []
-  );
+  // Function to delete sessionData
+  const deleteSession = useCallback(async () => {
+    const keys = Object.values(SessionKeys);
+    for (const key of keys) {
+      await SecureStore.deleteItemAsync(key);
+    }
+    setSessionData(null);
+  }, []);
 
-  // Function to get a session key
+  // Function to get a session key if session data is set
   const getItem = useCallback(
-    (key: SessionKeys): string | null => {
-      return sessionData[key] || null;
+    (key: SessionKeys): string | null | undefined => {
+      if (sessionData) return sessionData[key];
+      else return sessionData;
     },
     [sessionData]
   );
 
-  return { sessionData, setItem, getItem };
+  return { sessionData, setItem, getItem, deleteSession };
 };
