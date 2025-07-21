@@ -37,7 +37,7 @@ pub struct NewScd4xData<'a> {
     pub added_at: NaiveDateTime, // UNIX timestamp in seconds
 }
 
-#[derive(Queryable, Selectable)]
+#[derive(Queryable, Selectable, Debug)]
 #[diesel(table_name = crate::schema::user_places)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserPlace {
@@ -59,7 +59,7 @@ pub struct NewUserPlace<'a> {
     pub updated_at: NaiveDateTime, // UNIX timestamp in seconds
 }
 
-#[derive(Queryable, Selectable)]
+#[derive(Queryable, Selectable, Debug)]
 #[diesel(table_name = crate::schema::user_sensors)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserSensor {

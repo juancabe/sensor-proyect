@@ -53,7 +53,7 @@ INSERT INTO users (username, api_id, hashed_password, email, created_at, updated
 VALUES (
     'testuser',
     '94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    'hashedpassword123',
+    'ae5deb822e0d71992900471a7199d0d95b8e7c9d05c40a8245a281fd2c1d6684',
     'testuser@example.com',
     NOW(),
     NOW()

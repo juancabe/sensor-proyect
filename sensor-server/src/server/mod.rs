@@ -1,9 +1,10 @@
+use std::collections::HashMap;
+
 use chrono::TimeZone;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Bytes;
 use hyper::header::HeaderValue;
 use hyper::{Method, Request, Response, StatusCode};
-use sensor_lib::api::ApiEndpoint;
 use sensor_lib::api::endpoints::get_sensor_data::{
     GetSensorData, GetSensorDataRequestBody, GetSensorDataResponseBody, GetSensorDataResponseCode,
 };
@@ -16,11 +17,16 @@ use sensor_lib::api::endpoints::post_sensor::{
 use sensor_lib::api::endpoints::post_sensor_data::{
     PostSensorData, PostSensorDataRequestBody, PostSensorResponseCode,
 };
+use sensor_lib::api::endpoints::post_user_summary::{
+    PostUserSummary, PostUserSummaryRequestBody, PostUserSummaryResponseBody,
+    PostUserSummaryResponseCode,
+};
 use sensor_lib::api::endpoints::register::{
     Register, RegisterRequestBody, RegisterResponseBody, RegisterResponseCode,
 };
 use sensor_lib::api::model::api_id::ApiId;
 use sensor_lib::api::model::sensor_kind::SensorKind;
+use sensor_lib::api::{ApiEndpoint, model};
 
 use crate::db;
 use crate::{helper::*, models};
@@ -335,6 +341,111 @@ fn register(
     }
 }
 
+fn post_user_summary(
+    query: PostUserSummaryRequestBody,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let mut places: HashMap<u32, (String, Option<String>)> = HashMap::new();
+
+    let sensors = match db::get_user_sensors(&query.username, query.user_api_id.as_str()) {
+        Ok(r) => r.into_iter().map(|(sens, place)| {
+            places.insert(place.id as u32, (place.name, place.description));
+
+            let (kind, api_id, device_id) = {
+                let k = match SensorKind::from_i32(sens.kind) {
+                    Some(k) => k,
+                    None => {
+                        log::error!("[PostUserSummary] Error converting DB kind to SensorKind");
+                        return None;
+                    }
+                };
+                let a = match ApiId::from_string(&sens.api_id) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        log::error!(
+                            "[PostUserSummary] Error converting DB api_id to ApiId: {:?}",
+                            e
+                        );
+                        return None;
+                    }
+                };
+                let d = match ApiId::from_string(&sens.device_id) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        log::error!(
+                            "[PostUserSummary] Error converting DB device_id to ApiId: {:?}",
+                            e
+                        );
+                        return None;
+                    }
+                };
+                (k, a, d)
+            };
+
+            let sum = model::user_summary::SensorSummary {
+                kind,
+                api_id,
+                device_id,
+                last_update: sens.last_measurement.and_utc().timestamp() as u32,
+                place: place.id as u32,
+            };
+
+            Some(sum)
+        }),
+        Err(e) => match e {
+            db::Error::NotFound => {
+                log::warn!("[PostUserSummary] get_user_sensors returned NotFound (UNAUTHORIZED)");
+                let mut response = Response::new(empty());
+                *response.status_mut() = LoginResponseCode::Unauthorized.into();
+                return Ok(response);
+            }
+            _ => {
+                log::error!("[PostUserSummary] Error getting user sensors: {:?}", e);
+                let mut response = Response::new(empty());
+                *response.status_mut() = PostUserSummaryResponseCode::InternalServerError.into();
+                return Ok(response);
+            }
+        },
+    }
+    .filter_map(|r| r)
+    .collect();
+
+    let email = match db::get_user_email(&query.username, query.user_api_id.as_str()) {
+        Ok(email) => email,
+        Err(e) => {
+            // If Unauthorized, should have returned earlier
+            log::error!("[PostUserSummary] Error getting user email: {:?}", e);
+            if let db::Error::NotFound = e {
+                log::warn!("[PostUserSummary]        ***** ASSERTION FAILED *****       ");
+                log::warn!("[PostUserSummary] Unauthorized, should have returned earlier");
+                log::warn!("[PostUserSummary]        ***** ASSERTION FAILED *****       ");
+            }
+            let mut response = Response::new(empty());
+            *response.status_mut() = PostUserSummaryResponseCode::InternalServerError.into();
+            return Ok(response);
+        }
+    };
+
+    let iter = places.into_iter().map(|(k, (name, desc))| (k, name, desc));
+    let places = Vec::from_iter(iter);
+
+    let summary = model::user_summary::UserSummary {
+        username: query.username,
+        email,
+        sensors,
+        places,
+    };
+
+    log::info!("[PostUserSummary] Returning 200 Status code");
+    let resp = PostUserSummaryResponseBody { summary };
+    let mut response = Response::new(full(
+        serde_json::to_string(&resp).expect("Should be serializable"),
+    ));
+    response
+        .headers_mut()
+        .append("content-type", HeaderValue::from_static("application/json"));
+    Ok(response)
+}
+
 pub async fn server(
     req: Request<hyper::body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
@@ -570,6 +681,48 @@ pub async fn server(
 
             register(body)
         }
+        (&PostUserSummary::METHOD, PostUserSummary::PATH) => {
+            log::info!("[PostUserSummary] Request matched PostUserSummary");
+            // Handle the login request
+            let max_size = <PostUserSummary as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
+
+            let body = match extract_body_and_parse(
+                req,
+                max_size,
+                Some(PostUserSummary::parse_request_body),
+            )
+            .await
+            {
+                Ok(bytes) => bytes,
+                Err(ExtractError::PayloadTooLarge) => {
+                    log::warn!("[PostUserSummary] Request body too large");
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = PostUserSummaryResponseCode::PayloadTooLarge.into();
+                    return Ok(response);
+                }
+                Err(ExtractError::ErrorReceiving) => {
+                    log::error!("[PostUserSummary] Error receiving request body");
+                    let mut response = Response::new(empty());
+                    *response.status_mut() =
+                        PostUserSummaryResponseCode::InternalServerError.into();
+                    return Ok(response);
+                }
+                Err(ExtractError::ParseErrorAsValue(err)) => {
+                    log::warn!("[PostUserSummary] Failed to parse body as JSON: {}", err);
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = PostUserSummaryResponseCode::BadRequest.into();
+                    return Ok(response);
+                }
+                Err(ExtractError::ParseErrorAsType) => {
+                    log::warn!("[PostUserSummary] Failed to parse request body as type");
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = PostUserSummaryResponseCode::BadRequest.into();
+                    return Ok(response);
+                }
+            };
+
+            post_user_summary(body)
+        }
         // Return 404 Not Found for other routes.
         _ => {
             log::info!("[404 Not Found] Returning 200 Status Code");
@@ -595,7 +748,16 @@ mod test {
     };
 
     #[test]
-    #[ignore = "reason: Requires database setup"]
+    fn test_post_user_summary() {
+        let body = PostUserSummaryRequestBody {
+            username: "testuser".to_string(),
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
+        };
+        let response = post_user_summary(body).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
     fn test_post_sensor_data() {
         let body = PostSensorDataRequestBody {
             user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
@@ -608,7 +770,6 @@ mod test {
     }
 
     #[test]
-    #[ignore = "reason: Requires database setup"]
     fn test_post_sensor_data_unexistent_user() {
         let body = PostSensorDataRequestBody {
             user_api_id: ApiId::random(),
@@ -622,7 +783,6 @@ mod test {
     }
 
     #[test]
-    #[ignore = "reason: Requires database setup"]
     fn test_post_sensor_data_unexistent_sensor() {
         let body = PostSensorDataRequestBody {
             user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),

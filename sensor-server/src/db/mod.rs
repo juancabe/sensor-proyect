@@ -11,7 +11,7 @@ use sensor_lib::api::endpoints::register::RegisterRequestBody;
 use sensor_lib::api::model::api_id::{self, ApiId};
 use sensor_lib::api::model::sensor_kind::{SensorKind, SensorKindData};
 
-use crate::models::{self};
+use crate::models::{self, UserPlace, UserSensor};
 
 use r2d2::Error as DieselPoolError;
 
@@ -440,8 +440,7 @@ pub fn new_sensor(
         api_id: &user_sensor_api_id,
         place: user_place_id,
         kind: sensor_kind as i32,
-        last_measurement: NaiveDateTime::from_timestamp_opt(0, 0)
-            .expect("(secs: 0, nsecs: 0) should be valid timestamp"),
+        last_measurement: NaiveDateTime::from_timestamp(0, 0),
         device_id,
     };
 
@@ -544,6 +543,58 @@ pub fn delete_user(api_id: &str) -> Result<Option<()>, Error> {
     }
 }
 
+pub fn get_user_sensors(
+    username: &str,
+    user_api_id: &str,
+) -> Result<Vec<(UserSensor, UserPlace)>, Error> {
+    use crate::schema::{
+        user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
+    };
+    use crate::schema::{
+        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
+
+    let r = users_table
+        .filter(
+            users::api_id
+                .eq(user_api_id)
+                .and(users::username.eq(username)),
+        )
+        .inner_join(user_places_table)
+        .inner_join(user_sensors_table.on(user_sensors::place.eq(user_places::id)))
+        .select((UserSensor::as_select(), UserPlace::as_select()))
+        .load::<(UserSensor, UserPlace)>(&mut get_db_pool()?);
+
+    match r {
+        Ok(sensors) => Ok(sensors),
+        Err(e) => match e {
+            diesel::result::Error::NotFound => Err(Error::NotFound),
+            e => Err(Error::DataBaseError(e)),
+        },
+    }
+}
+
+pub fn get_user_email(username: &str, user_api_id: &str) -> Result<String, Error> {
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
+
+    match users_table
+        .filter(
+            users::api_id
+                .eq(user_api_id)
+                .and(users::username.eq(username)),
+        )
+        .select(users::email)
+        .first::<String>(&mut get_db_pool()?)
+    {
+        Ok(s) => Ok(s),
+        Err(e) => match e {
+            diesel::result::Error::NotFound => Err(Error::NotFound),
+            _ => Err(Error::DataBaseError(e)),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -554,10 +605,43 @@ mod tests {
     const VALID_SCD41_API_ID: &'static str = "94a990533d762222222222222222222222222222";
 
     #[test]
+    fn test_get_user_email() {
+        let username = "testuser";
+        let user_api_id = VALID_USER_API_ID;
+
+        let result = get_user_email(username, user_api_id);
+        assert!(
+            result.is_ok(),
+            "Failed to get user email: {:?}",
+            result.err()
+        );
+        let email = result.unwrap();
+        println!("User email: {}", email);
+        assert!(!email.is_empty(), "Expected non-empty email");
+    }
+
+    #[test]
+    fn test_get_user_sensors() {
+        let username = "testuser";
+        let user_api_id = VALID_USER_API_ID;
+
+        let result = get_user_sensors(username, user_api_id);
+        assert!(
+            result.is_ok(),
+            "Failed to get user sensors: {:?}",
+            result.err()
+        );
+        let sensors = result.unwrap();
+        println!("User sensors: {:?}", sensors);
+        assert!(!sensors.is_empty(), "Expected non-empty sensor list");
+    }
+
+    #[test]
     fn test_new_user_then_delete() {
         let query = RegisterRequestBody {
             username: "testuser_not_exists".to_string(),
-            hashed_password: "hashedpassword123".to_string(), // Replace with actual hashed password
+            hashed_password: "ae5deb822e0d71992900471a7199d0d95b8e7c9d05c40a8245a281fd2c1d6684"
+                .to_string(),
             email: "testuser_not_exists@example.com".to_string(),
         };
 
@@ -577,7 +661,7 @@ mod tests {
     #[test]
     fn test_get_login() {
         let username = "testuser";
-        let hashed_password = "hashedpassword123"; // Replace with actual hashed password
+        let hashed_password = "ae5deb822e0d71992900471a7199d0d95b8e7c9d05c40a8245a281fd2c1d6684";
 
         let result = get_login(username, hashed_password);
         assert!(result.is_ok(), "Failed to get login: {:?}", result.err());
@@ -587,7 +671,7 @@ mod tests {
     #[test]
     fn test_get_login_nonexistent() {
         let username = "nonexistentuser";
-        let hashed_password = "hashedpassword123"; // Replace with actual hashed password
+        let hashed_password = "ae5deb822e0d71992900471a7199d0d95b8e7c9d05c40a8245a281fd2c1d6684";
 
         let result = get_login(username, hashed_password);
         assert!(
@@ -599,7 +683,7 @@ mod tests {
     #[test]
     fn test_get_login_incorrect_password() {
         let username = "testuser";
-        let hashed_password = "wronghashedpassword"; // Replace with actual hashed password
+        let hashed_password = "wronghashedpassword";
 
         let result = get_login(username, hashed_password);
         assert!(

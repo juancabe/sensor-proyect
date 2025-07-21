@@ -3,6 +3,7 @@ pub mod any_sensor_data;
 pub mod api_id;
 pub mod scd4x_data;
 pub mod sensor_kind;
+pub mod user_summary;
 
 use serde::{Deserialize, Serialize};
 

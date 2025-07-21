@@ -1,9 +1,7 @@
-// filepath: sensor-app/hooks/useAuth.ts
-import { useCallback } from 'react';
 import * as api from '@/api/auth';
-import { useSession, SessionKeys } from './useSession';
 import { ApiId } from '@/bindings/ApiId';
-import { GetLoginResponseCode } from '@/bindings/endpoints/GetLogin';
+import { useCallback } from 'react';
+import { SessionKeys, useSession } from './useSession';
 
 export function useAuth() {
   const { setItem } = useSession();
