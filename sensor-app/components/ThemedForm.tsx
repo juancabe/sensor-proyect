@@ -1,6 +1,6 @@
+import { useTheme } from '@react-navigation/native';
 import React from 'react';
-import { View, TextInput, StyleSheet, type TextInputProps } from 'react-native';
-import { useTheme, type Theme } from '@react-navigation/native';
+import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
 export type FieldConfig = {
   placeholder: string;
@@ -40,6 +40,7 @@ export default function ThemedForm({ fields, style }: ThemedFormProps) {
           value={f.value}
           onChangeText={f.onChangeText}
           secureTextEntry={f.secureTextEntry}
+          autoCapitalize="none"
           {...f.inputProps}
         />
       ))}

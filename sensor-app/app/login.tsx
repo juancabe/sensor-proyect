@@ -1,20 +1,16 @@
-import LoadingScreen from '@/components/LoadingScreen';
 import ThemedForm, { FieldConfig } from '@/components/ThemedForm';
 import { TEXT_STYLES, ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/hooks/useAuth';
-import { useSession } from '@/hooks/useSession';
-import { useTheme } from '@react-navigation/native';
-import { Redirect } from 'expo-router';
-import { useState } from 'react';
-import { Button } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as Crypto from 'expo-crypto';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { Button, Keyboard } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function Login() {
-  const { sessionData } = useSession();
-  const theme = useTheme();
   const auth = useAuth();
+  const router = useRouter();
 
   const [type, setType] = useState<'register' | 'login'>('login');
   const [username, setUsername] = useState<string>('');
@@ -86,9 +82,15 @@ export default function Login() {
     return await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, password);
   }
 
+  const redirectToIndex = () => {
+    router.replace('/');
+  };
+
   const handleSubmission = async () => {
     if (working) return;
     else setWorking(true);
+
+    Keyboard.dismiss();
 
     const hashed_password = await hash_password(password);
 
@@ -97,7 +99,7 @@ export default function Login() {
       let res = await auth.login(username, hashed_password);
       console.log('returned login');
       if (res === 'Ok') {
-        // Index should handle this
+        redirectToIndex();
       } else {
         console.log('login error: ', res);
         setWorkingError(res);
@@ -107,8 +109,8 @@ export default function Login() {
     if (type === 'register') {
       let res = await auth.register(username, email, hashed_password);
       if (res === 'Ok') {
-        // Index should handle this
-      } else if (res == 'Connection Error') {
+        redirectToIndex();
+      } else if (res === 'Connection Error') {
         setWorkingError(res);
       } else {
         switch (res) {
@@ -155,6 +157,21 @@ export default function Login() {
             disabled={isSubmissionDisabled()}
             onPress={handleSubmission}
           />
+        </ThemedView>
+        <ThemedView
+          style={{
+            borderStyle: 'solid',
+            borderColor: '#ff0000',
+            borderWidth: 4,
+            borderRadius: 4,
+            backgroundColor: '#ff000066',
+            padding: 40,
+            opacity: workingError ? 100 : 0,
+          }}
+        >
+          {workingError ? (
+            <ThemedText style={TEXT_STYLES.body}>{workingError}</ThemedText>
+          ) : null}
         </ThemedView>
         <Button title={oppositeType()} onPress={() => setType(oppositeType())} />
       </ThemedView>

@@ -1,9 +1,9 @@
 import { ApiId } from '@/bindings/ApiId';
 import {
-  GetLoginRequestBody,
-  GetLoginResponseBody,
-  GetLoginResponseCode,
-} from '@/bindings/endpoints/GetLogin';
+  LoginRequestBody,
+  LoginResponseBody,
+  LoginResponseCode,
+} from '@/bindings/endpoints/Login';
 import {
   RegisterIncorrectReason,
   RegisterRequestBody,
@@ -39,7 +39,7 @@ export type UnexpectedCode = number;
 
 function matchResponseCodeNotOk(
   resp_code: number
-): GetLoginResponseCode | RegisterResponseCode | UnexpectedCode {
+): LoginResponseCode | RegisterResponseCode | UnexpectedCode {
   switch (resp_code) {
     case 400:
       return 'BadRequest';
@@ -90,9 +90,9 @@ async function callApi<RequestBody, ResponseBody, ResponseOk, ResponseCode>(
 }
 
 export async function login(
-  props: GetLoginRequestBody
+  props: LoginRequestBody
 ): Promise<
-  ApiId | GetLoginResponseCode | UnexpectedCode | UnexpectedBodyError | FetchError
+  ApiId | LoginResponseCode | UnexpectedCode | UnexpectedBodyError | FetchError
 > {
   const PATH = '/api/v0/login';
   const INIT: FetchRequestInit = {
@@ -102,7 +102,7 @@ export async function login(
     },
     body: JSON.stringify(props),
   };
-  const returnResponseOk = (resp_json: GetLoginResponseBody) => {
+  const returnResponseOk = (resp_json: LoginResponseBody) => {
     if (resp_json && resp_json.api_id) {
       return resp_json.api_id;
     } else {
