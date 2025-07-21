@@ -1,4 +1,7 @@
-use crate::api::{ApiEndpoint, model::api_id::ApiId};
+use crate::api::{
+    ApiEndpoint,
+    model::{api_id::ApiId, sensor_kind::SensorKind},
+};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -14,10 +17,9 @@ pub struct GetSensorDataRequestBody {
 #[derive(Deserialize, Serialize, Debug, Clone, TS)]
 #[ts(export, export_to = "endpoints/GetSensorData.ts")]
 pub struct GetSensorDataResponseBody {
-    pub failed_serialize: usize,
-    pub failed_deserialize: usize,
     pub item_count: usize,
     pub serialized_data: Vec<String>,
+    pub sensor_kind: SensorKind,
 }
 
 pub struct GetSensorData {}

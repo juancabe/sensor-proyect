@@ -2,9 +2,9 @@ use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
 #[derive(Queryable, Selectable, Clone)]
-#[diesel(table_name = crate::schema::aht10data)]
+#[diesel(table_name = crate::schema::sensor_data)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct Aht10Data {
+pub struct SensorData {
     pub id: i32,
     pub sensor: String,
     pub serialized_data: String,
@@ -12,26 +12,8 @@ pub struct Aht10Data {
 }
 
 #[derive(Insertable, Clone, Debug)]
-#[diesel(table_name = crate::schema::aht10data)]
-pub struct NewAht10Data<'a> {
-    pub sensor: String,
-    pub serialized_data: &'a str,
-    pub added_at: NaiveDateTime, // UNIX timestamp in seconds
-}
-
-#[derive(Queryable, Selectable, Clone)]
-#[diesel(table_name = crate::schema::scd4xdata)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct Scd4xData {
-    pub id: i32,
-    pub sensor: String,
-    pub serialized_data: String,
-    pub added_at: NaiveDateTime,
-}
-
-#[derive(Insertable, Clone, Debug)]
-#[diesel(table_name = crate::schema::scd4xdata)]
-pub struct NewScd4xData<'a> {
+#[diesel(table_name = crate::schema::sensor_data)]
+pub struct NewSensorData<'a> {
     pub sensor: String,
     pub serialized_data: &'a str,
     pub added_at: NaiveDateTime, // UNIX timestamp in seconds

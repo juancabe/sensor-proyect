@@ -9,9 +9,9 @@ use sensor_lib::api;
 use sensor_lib::api::endpoints::get_sensor_data::GetSensorDataRequestBody;
 use sensor_lib::api::endpoints::register::RegisterRequestBody;
 use sensor_lib::api::model::api_id::{self, ApiId};
-use sensor_lib::api::model::sensor_kind::{SensorKind, SensorKindData};
+use sensor_lib::api::model::sensor_kind::SensorKind;
 
-use crate::models::{self, UserPlace, UserSensor};
+use crate::models::{self, SensorData, UserPlace, UserSensor};
 
 use r2d2::Error as DieselPoolError;
 
@@ -74,7 +74,10 @@ pub fn test_db_pool() -> Result<(), ()> {
 
 pub fn query_sensor_data(
     query: GetSensorDataRequestBody,
-) -> Result<(Vec<SensorKindData>, FailedDeserialize), Error> {
+) -> Result<(SensorKind, Vec<SensorData>), Error> {
+    use crate::schema::{
+        sensor_data::dsl as sensor_data, sensor_data::dsl::sensor_data as sensor_data_table,
+    };
     use crate::schema::{
         user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
     };
@@ -93,35 +96,15 @@ pub fn query_sensor_data(
         .select(models::UserSensor::as_select())
         .load::<models::UserSensor>(&mut db_conn)?;
 
-    match r.first() {
+    let kind = match r.first() {
         Some(s) => match SensorKind::from_i32(s.kind) {
-            Some(k) => match k {
-                SensorKind::Aht10 => Ok(query_aht10_data(query)?),
-                SensorKind::Scd4x => Ok(query_scd4x_data(query)?),
-            },
+            Some(k) => k,
             None => Err(Error::Inconsistency(String::from(
                 "SensorKind in DB is wrong",
             )))?,
         },
         None => Err(Error::NotFound)?,
-    }
-}
-
-pub fn query_aht10_data(
-    query: GetSensorDataRequestBody,
-) -> Result<(Vec<SensorKindData>, FailedDeserialize), Error> {
-    use crate::schema::{
-        aht10data::dsl as aht10data, aht10data::dsl::aht10data as aht10data_table,
     };
-    use crate::schema::{
-        user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
-    };
-    use crate::schema::{
-        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
-    };
-    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
-
-    let mut db_conn = get_db_pool()?;
 
     let max_date = query
         .added_at_upper
@@ -134,100 +117,23 @@ pub fn query_aht10_data(
         .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
         .and_then(|dt| Some(dt.naive_utc()));
 
-    let mut failed_deserialize: usize = 0;
-
-    let vec = aht10data_table
-        .filter(aht10data::sensor.eq(query.sensor_api_id.as_str()))
+    let vec = sensor_data_table
+        .filter(sensor_data::sensor.eq(query.sensor_api_id.as_str()))
         .inner_join(user_sensors_table)
         .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
         .filter(users::api_id.eq(query.user_api_id.as_str()))
-        .filter(aht10data::added_at.le(max_date.unwrap_or(NaiveDateTime::MAX)))
-        .filter(aht10data::added_at.ge(min_date.unwrap_or(NaiveDateTime::from_timestamp_opt(0, 0).expect("(secs: 0, nsecs: 0) should be valid timestamp"))))
-        .select(models::Aht10Data::as_select())
-        .load::<models::Aht10Data>(&mut db_conn)?
-        .into_iter()
-        .map(|data| {
-            let deserialized = serde_json::from_str::<api::model::aht10_data::Aht10Data>(&data.serialized_data);
+        .filter(sensor_data::added_at.le(max_date.unwrap_or(NaiveDateTime::MAX)))
+        .filter(
+            sensor_data::added_at.ge(min_date.unwrap_or(
+                NaiveDateTime::from_timestamp_opt(0, 0)
+                    .expect("(secs: 0, nsecs: 0) should be valid timestamp"),
+            )),
+        )
+        .select(models::SensorData::as_select())
+        .load::<models::SensorData>(&mut db_conn)?;
 
-            match deserialized {
-                Ok(value) => Some(SensorKindData::Aht10(value)),
-                Err(err) => {
-                    failed_deserialize += 1;
-                    log::error!(
-                        "INCONSISTENCY -> Failed to deserialize previously serialized AHT10 data: {}",
-                        err
-                    );
-                    None
-                }
-            }
-        })
-        .filter_map(|x| x)
-        .collect();
-
-    Ok((vec, failed_deserialize))
-}
-
-pub fn query_scd4x_data(
-    query: GetSensorDataRequestBody,
-) -> Result<(Vec<SensorKindData>, FailedDeserialize), Error> {
-    use crate::schema::{
-        scd4xdata::dsl as scd4xdata, scd4xdata::dsl::scd4xdata as scd4xdata_table,
-    };
-    use crate::schema::{
-        user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
-    };
-    use crate::schema::{
-        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
-    };
-    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
-
-    let mut db_conn = get_db_pool()?;
-
-    let max_date = query
-        .added_at_upper
-        .and_then(|secs| (secs as i64).checked_mul(1_000))
-        .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
-        .and_then(|dt| Some(dt.naive_utc()));
-    let min_date = query
-        .added_at_lower
-        .and_then(|secs| (secs as i64).checked_mul(1_000))
-        .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
-        .and_then(|dt| Some(dt.naive_utc()));
-
-    let mut failed_deserialize: usize = 0;
-
-    let vec = scd4xdata_table
-        .filter(scd4xdata::sensor.eq(query.sensor_api_id.as_str()))
-        .inner_join(user_sensors_table)
-        .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
-        .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::api_id.eq(query.user_api_id.as_str()))
-        .filter(scd4xdata::added_at.le(max_date.unwrap_or(NaiveDateTime::MAX)))
-        .filter(scd4xdata::added_at.ge(min_date.unwrap_or(NaiveDateTime::from_timestamp_opt(0, 0).expect("(secs: 0, nsecs: 0) should be valid timestamp"))))
-        .select(models::Scd4xData::as_select())
-        .load::<models::Scd4xData>(&mut db_conn)?
-        .into_iter()
-        .map(|data| {
-            let deserialized =
-                serde_json::from_str::<api::model::scd4x_data::Scd4xData>(&data.serialized_data);
-
-            match deserialized {
-                Ok(value) => Some(SensorKindData::Scd4x(value)),
-                Err(err) => {
-                    failed_deserialize += 1;
-                    log::error!(
-                        "INCONSISTENCY -> Failed to deserialize previously serialized SCD4X data: {}",
-                        err
-                    );
-                    None
-                }
-            }
-        })
-        .filter_map(|x| x)
-        .collect();
-
-    Ok((vec, failed_deserialize))
+    Ok((kind, vec))
 }
 
 pub fn get_user_from_sensor(sensor_api_id: &str) -> Result<String, crate::db::Error> {
@@ -327,27 +233,14 @@ pub fn get_sensor_kind_from_id(sensor_api_id: &str) -> Result<SensorKind, crate:
         .ok_or_else(|| crate::db::Error::DataBaseError(diesel::result::Error::NotFound))?)
 }
 
-pub fn save_new_aht10_data(data: models::NewAht10Data<'_>) -> Result<(), Error> {
-    use crate::schema::aht10data;
+pub fn save_new_sensor_data(data: models::NewSensorData<'_>) -> Result<(), Error> {
+    use crate::schema::sensor_data;
 
     log::info!("Saving new AHT10 data: {:?}", data);
 
     let mut db_conn: r2d2::PooledConnection<ConnectionManager<PgConnection>> = get_db_pool()?;
 
-    diesel::insert_into(aht10data::table)
-        .values(data)
-        .execute(&mut db_conn)?;
-    Ok(())
-}
-
-pub fn save_new_scd4x_data(data: models::NewScd4xData<'_>) -> Result<(), Error> {
-    use crate::schema::scd4xdata;
-
-    log::info!("Saving new SCD4X data: {:?}", data);
-
-    let mut db_conn: r2d2::PooledConnection<ConnectionManager<PgConnection>> = get_db_pool()?;
-
-    diesel::insert_into(scd4xdata::table)
+    diesel::insert_into(sensor_data::table)
         .values(data)
         .execute(&mut db_conn)?;
     Ok(())
@@ -886,20 +779,20 @@ mod tests {
     fn test_insert_aht10data_then_delete() {
         let now = chrono::Utc::now().naive_utc();
 
-        let new_data = models::NewAht10Data {
+        let new_data = models::NewSensorData {
             sensor: VALID_AHT10_API_ID.into(),
             serialized_data: "{\"temperature\": 22.5, \"humidity\": 45.0}",
             added_at: now, // Example timestamp
         };
 
         println!("INSERTING DATA");
-        save_new_aht10_data(new_data).expect("Data should be inserted correctly");
+        save_new_sensor_data(new_data).expect("Data should be inserted correctly");
         println!("DATA INSERTED");
 
         let mut db_conn = get_db_pool().expect("Failed to get database connection");
 
-        use crate::schema::aht10data::dsl::*;
-        let count = diesel::delete(aht10data.filter(added_at.eq(now)))
+        use crate::schema::sensor_data::dsl::*;
+        let count = diesel::delete(sensor_data.filter(added_at.eq(now)))
             .execute(&mut db_conn)
             .expect("Failed to delete AHT10 data");
 
@@ -912,13 +805,13 @@ mod tests {
 
     #[test]
     fn test_insert_aht10data_unexistent_sensor() {
-        let new_data = models::NewAht10Data {
+        let new_data = models::NewSensorData {
             sensor: "94a990533d761111111111111111111111111111e".into(),
             serialized_data: "{\"temperature\": 22.5, \"humidity\": 45.0}",
             added_at: chrono::Utc::now().naive_utc(),
         };
 
-        let result = save_new_aht10_data(new_data);
+        let result = save_new_sensor_data(new_data);
         assert!(
             result.is_err(),
             "Expected error when inserting data for a nonexistent user"
@@ -942,16 +835,14 @@ mod tests {
             added_at_lower: None,
         };
 
-        let result = query_aht10_data(query).expect("Failed to query AHT10 data for existing user");
-        assert_eq!(
-            result.1, 0,
-            "Expected no deserialization errors, found {}",
-            result.1
-        );
+        let result =
+            query_sensor_data(query).expect("Failed to query AHT10 data for existing user");
+
+        assert_eq!(result.0, SensorKind::Aht10, "Sensor kind must be the same");
         assert!(
-            result.0.len() == 10,
+            result.1.len() == 10,
             "Expected 10 records, found {}",
-            result.0.len()
+            result.1.len()
         );
     }
 
@@ -964,36 +855,32 @@ mod tests {
             added_at_upper: None,
             added_at_lower: None,
         };
-        let result =
-            query_aht10_data(query).expect("Failed to query AHT10 data for nonexistent user");
-        assert!(
-            result.0.is_empty(),
-            "Expected no records for nonexistent user, found {}",
-            result.0.len()
-        );
-        assert_eq!(
-            result.1, 0,
-            "Expected no deserialization errors, found {}",
-            result.1
-        );
+        let result = query_sensor_data(query);
+        match result {
+            Ok(_) => assert!(false, "Unexpected result"),
+            Err(e) => match e {
+                Error::NotFound => assert!(true),
+                _ => assert!(false, "Unexpected result"),
+            },
+        }
     }
 
     #[test]
     fn test_insert_scd4xdata_then_delete() {
         let now = chrono::Utc::now().naive_utc();
 
-        let new_data = models::NewScd4xData {
+        let new_data = models::NewSensorData {
             sensor: VALID_SCD41_API_ID.into(),
             serialized_data: "{\"co2\": 420, \"temperature\": 21.5, \"humidity\": 40.2}",
             added_at: now, // Example timestamp
         };
 
-        save_new_scd4x_data(new_data).expect("Data should be inserted correctly");
+        save_new_sensor_data(new_data).expect("Data should be inserted correctly");
 
         let mut db_conn = get_db_pool().expect("Failed to get database connection");
 
-        use crate::schema::scd4xdata::dsl::*;
-        let count = diesel::delete(scd4xdata.filter(added_at.eq(now)))
+        use crate::schema::sensor_data::dsl::*;
+        let count = diesel::delete(sensor_data.filter(added_at.eq(now)))
             .execute(&mut db_conn)
             .expect("Failed to delete SCD4X data");
 
@@ -1006,13 +893,13 @@ mod tests {
 
     #[test]
     fn test_insert_scd4xdata_unexistent_sensor() {
-        let new_data = models::NewScd4xData {
+        let new_data = models::NewSensorData {
             sensor: "94a990533d762222222222222222222222222222e".into(),
             serialized_data: "{\"co2\": 420, \"temperature\": 21.5, \"humidity\": 40.2}",
             added_at: chrono::Utc::now().naive_utc(),
         };
 
-        let result = save_new_scd4x_data(new_data);
+        let result = save_new_sensor_data(new_data);
         assert!(
             result.is_err(),
             "Expected error when inserting data for a nonexistent user"
@@ -1040,16 +927,13 @@ mod tests {
             added_at_lower: None,
         };
 
-        let result = query_scd4x_data(query).expect("Failed to query SCD4X data for existing user");
-        assert_eq!(
-            result.1, 0,
-            "Expected no deserialization errors, found {}",
-            result.1
-        );
+        let result =
+            query_sensor_data(query).expect("Failed to query SCD4X data for existing user");
+        assert_eq!(result.0, SensorKind::Scd4x,);
         assert!(
-            result.0.len() == 10,
+            result.1.len() == 10,
             "Expected 10 records, found {}",
-            result.0.len()
+            result.1.len()
         );
     }
 
@@ -1062,17 +946,14 @@ mod tests {
             added_at_upper: None,
             added_at_lower: None,
         };
-        let result =
-            query_aht10_data(query).expect("Failed to query SCD4X data for nonexistent user");
-        assert!(
-            result.0.is_empty(),
-            "Expected no records for nonexistent user, found {}",
-            result.0.len()
-        );
-        assert_eq!(
-            result.1, 0,
-            "Expected no deserialization errors, found {}",
-            result.1
-        );
+        let result = query_sensor_data(query);
+
+        match result {
+            Ok(_) => assert!(false, "Unexpected result"),
+            Err(e) => match e {
+                Error::NotFound => assert!(true),
+                _ => assert!(false, "Unexpected result"),
+            },
+        }
     }
 }

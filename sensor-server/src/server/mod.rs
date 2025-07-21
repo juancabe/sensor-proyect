@@ -81,56 +81,22 @@ fn post_sensor_data(
         Ok(_) => (),
     }
 
-    let e = match db::get_sensor_kind_from_id(&body.sensor_api_id.as_str()) {
-        Ok(kind) => match kind {
-            SensorKind::Aht10 => {
-                let added_at = body
-                    .added_at
-                    .and_then(|secs| (secs as i64).checked_mul(1_000))
-                    .and_then(|millis| {
-                        chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest()
-                    })
-                    .and_then(|dt| Some(dt.naive_utc()));
+    let added_at = body
+        .added_at
+        .and_then(|secs| (secs as i64).checked_mul(1_000))
+        .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
+        .and_then(|dt| Some(dt.naive_utc()));
 
-                let data = models::NewAht10Data {
-                    sensor: body.sensor_api_id.to_string(),
-                    serialized_data: &serialized_data,
-                    added_at: added_at.unwrap_or_else(|| {
-                        // Use current time in seconds if not provided
-                        chrono::Utc::now().naive_utc()
-                    }),
-                };
-                db::save_new_aht10_data(data)
-            }
-            SensorKind::Scd4x => {
-                let added_at = body
-                    .added_at
-                    .and_then(|secs| (secs as i64).checked_mul(1_000))
-                    .and_then(|millis| {
-                        chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest()
-                    })
-                    .and_then(|dt| Some(dt.naive_utc()));
-
-                let data = models::NewScd4xData {
-                    sensor: body.sensor_api_id.to_string(),
-                    serialized_data: &serialized_data,
-                    added_at: added_at.unwrap_or_else(|| {
-                        // Use current time in seconds if not provided
-                        chrono::Utc::now().naive_utc()
-                    }),
-                };
-                db::save_new_scd4x_data(data)
-            }
-        },
-        Err(err) => {
-            log::error!("[PostSensorData] Error getting sensor kind: {:?}", err);
-            let mut response = Response::new(empty());
-            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(response);
-        }
+    let data = models::NewSensorData {
+        sensor: body.sensor_api_id.to_string(),
+        serialized_data: &serialized_data,
+        added_at: added_at.unwrap_or_else(|| {
+            // Use current time in seconds if not provided
+            chrono::Utc::now().naive_utc()
+        }),
     };
 
-    match e {
+    match db::save_new_sensor_data(data) {
         Err(e) => {
             log::error!("[PostSensorData] Error saving new sensor data: {:?}", e);
             let mut response = Response::new(empty());
@@ -162,21 +128,13 @@ fn get_sensor_data(
     let query_result = db::query_sensor_data(body);
 
     match query_result {
-        Ok(data) => {
-            let mut vec = Vec::with_capacity(data.0.len());
-            let mut failed_serialize = 0;
-            for datum in data.0 {
-                match serde_json::to_string(&datum) {
-                    Ok(s) => vec.push(s),
-                    Err(_) => failed_serialize += 1,
-                }
-            }
+        Ok((kind, data)) => {
+            let data: Vec<String> = data.into_iter().map(|d| d.serialized_data).collect();
 
             let resp = GetSensorDataResponseBody {
-                item_count: vec.len(),
-                serialized_data: vec,
-                failed_serialize: failed_serialize,
-                failed_deserialize: data.1,
+                item_count: data.len(),
+                serialized_data: data,
+                sensor_kind: kind,
             };
 
             let s = serde_json::to_string(&resp).expect("Should be serializable");
@@ -190,6 +148,9 @@ fn get_sensor_data(
         }
         Err(err) => {
             log::error!("[GetSensorData] Error querying Sensor data: {:?}", err);
+            if let db::Error::NotFound = err {
+                log::error!("INCONSISTENCY, SHOULD HAVE ALREADY CHECK WETHER UNAUTHORIZED")
+            };
             let mut response = Response::new(empty());
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             return Ok(response);

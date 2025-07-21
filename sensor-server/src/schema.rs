@@ -1,16 +1,7 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    aht10data (id) {
-        id -> Int4,
-        sensor -> Text,
-        serialized_data -> Text,
-        added_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    scd4xdata (id) {
+    sensor_data (id) {
         id -> Int4,
         sensor -> Text,
         serialized_data -> Text,
@@ -58,15 +49,13 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(aht10data -> user_sensors (sensor));
-diesel::joinable!(scd4xdata -> user_sensors (sensor));
+diesel::joinable!(sensor_data -> user_sensors (sensor));
 diesel::joinable!(user_places -> users (user));
 diesel::joinable!(user_sensors -> sensor_kinds (kind));
 diesel::joinable!(user_sensors -> user_places (place));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    aht10data,
-    scd4xdata,
+    sensor_data,
     sensor_kinds,
     user_places,
     user_sensors,

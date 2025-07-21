@@ -65,7 +65,7 @@ struct I2CPeripherals {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-enum SendAht10DataError {
+enum SendSensorDataError {
     SerializationError(serde_json::Error),
     RequestCreationError(esp_idf_svc::io::EspIOError),
     RequestWriteError(esp_idf_svc::io::EspIOError),
@@ -77,7 +77,7 @@ fn send_sensor_data(
     (user_api, sensor_api): (&str, &str),
     client: &mut Client<EspHttpConnection>,
     data: AnySensorData,
-) -> Result<PostSensorResponseCode, SendAht10DataError> {
+) -> Result<PostSensorResponseCode, SendSensorDataError> {
     let url: String = format!("{}{}", BASE_URL, PostSensorData::PATH);
 
     let body = PostSensorDataRequestBody {
@@ -90,28 +90,28 @@ fn send_sensor_data(
 
     let request_body = match serde_json::to_string(&body) {
         Ok(body) => body,
-        Err(e) => Err(SendAht10DataError::SerializationError(e))?,
+        Err(e) => Err(SendSensorDataError::SerializationError(e))?,
     };
 
     let resp = match client.post(&url, &[("accept", "application/json")]) {
         Ok(mut req) => {
             if let Err(e) = req.write_all(request_body.as_bytes()) {
-                Err(SendAht10DataError::RequestWriteError(e))?
+                Err(SendSensorDataError::RequestWriteError(e))?
             } else {
                 req.submit()
             }
         }
-        Err(e) => Err(SendAht10DataError::RequestCreationError(e))?,
+        Err(e) => Err(SendSensorDataError::RequestCreationError(e))?,
     };
 
     let resp_status = match resp {
         Ok(response) => response,
-        Err(e) => Err(SendAht10DataError::RequestSubmissionError(e))?,
+        Err(e) => Err(SendSensorDataError::RequestSubmissionError(e))?,
     }
     .status();
 
     let r = PostSensorResponseCode::from_u16(resp_status)
-        .map_err(|e| SendAht10DataError::UnexpectedResponseError(e))?;
+        .map_err(|e| SendSensorDataError::UnexpectedResponseError(e))?;
 
     Ok(r)
 }

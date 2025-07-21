@@ -3,7 +3,7 @@ use ts_rs::TS;
 
 use crate::api::model::{aht10_data::Aht10Data, scd4x_data::Scd4xData};
 
-#[derive(Deserialize, Serialize, Debug, Clone, Copy, TS)]
+#[derive(PartialEq, Eq, Deserialize, Serialize, Debug, Clone, Copy, TS)]
 #[ts(export)]
 pub enum SensorKind {
     Aht10 = 1,
@@ -43,17 +43,17 @@ impl SensorKind {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone)]
-pub enum SensorKindData {
-    Aht10(Aht10Data),
-    Scd4x(Scd4xData),
-}
+// #[derive(Deserialize, Serialize, Clone)]
+// pub enum SensorKindData {
+//     Aht10(Aht10Data),
+//     Scd4x(Scd4xData),
+// }
 
-impl SensorKindData {
-    pub fn as_sensor_kind(&self) -> SensorKind {
-        match self {
-            SensorKindData::Aht10(_) => SensorKind::Aht10,
-            SensorKindData::Scd4x(_) => SensorKind::Scd4x,
-        }
-    }
-}
+// impl SensorKindData {
+//     pub fn as_sensor_kind(&self) -> SensorKind {
+//         match self {
+//             SensorKindData::Aht10(_) => SensorKind::Aht10,
+//             SensorKindData::Scd4x(_) => SensorKind::Scd4x,
+//         }
+//     }
+// }
