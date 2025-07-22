@@ -86,14 +86,15 @@ fn post_sensor_data(
         .and_then(|secs| (secs as i64).checked_mul(1_000))
         .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
         .and_then(|dt| Some(dt.naive_utc()));
+    let added_at = match added_at {
+        Some(t) => t,
+        None => chrono::Utc::now().naive_utc(),
+    };
 
     let data = models::NewSensorData {
         sensor: body.sensor_api_id.to_string(),
         serialized_data: &serialized_data,
-        added_at: added_at.unwrap_or_else(|| {
-            // Use current time in seconds if not provided
-            chrono::Utc::now().naive_utc()
-        }),
+        added_at: added_at,
     };
 
     match db::save_new_sensor_data(data) {
@@ -103,9 +104,19 @@ fn post_sensor_data(
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             return Ok(response);
         }
+        Ok(()) => (),
+    }
+
+    match db::update_sensor_last_measurement(added_at, &body.sensor_api_id.as_str()) {
         Ok(()) => {
             log::info!("[PostSensorData] Returning 200 Status Code");
             Ok(Response::new(empty()))
+        }
+        Err(e) => {
+            log::error!("[PostSensorData] Error updating last_measurement: {:?}", e);
+            let mut response = Response::new(empty());
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(response);
         }
     }
 }
@@ -210,12 +221,23 @@ fn post_sensor(
         Ok(user_sensor_api_id) => {
             return Ok(return_found_ok(user_sensor_api_id));
         }
-        Err(err) => {
-            log::error!("[PostSensor] Error creating new sensor: {:?}", err);
-            let mut response = Response::new(empty());
-            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(response);
-        }
+        Err(err) => match err {
+            db::Error::NotFound => {
+                log::warn!(
+                    "[PostSensor] Error creating new sensor (UNAUTHORIZED): {:?}",
+                    err
+                );
+                let mut response = Response::new(empty());
+                *response.status_mut() = StatusCode::UNAUTHORIZED;
+                return Ok(response);
+            }
+            _ => {
+                log::error!("[PostSensor] Error creating new sensor: {:?}", err);
+                let mut response = Response::new(empty());
+                *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                return Ok(response);
+            }
+        },
     }
 }
 
@@ -307,6 +329,30 @@ fn post_user_summary(
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let mut places: HashMap<u32, (String, Option<String>)> = HashMap::new();
 
+    // check if user exists and get email
+    let email = match db::get_user_email(&query.username, query.user_api_id.as_str()) {
+        Ok(email) => email,
+        Err(e) => match e {
+            db::Error::NotFound => {
+                // If Unauthorized, should have returned earlier
+                log::warn!(
+                    "[PostUserSummary] Error getting user email (UNAUTHORIZED): {:?}",
+                    e
+                );
+                let mut response = Response::new(empty());
+                *response.status_mut() = PostUserSummaryResponseCode::Unauthorized.into();
+                return Ok(response);
+            }
+            _ => {
+                // If Unauthorized, should have returned earlier
+                log::error!("[PostUserSummary] Error getting user email: {:?}", e);
+                let mut response = Response::new(empty());
+                *response.status_mut() = PostUserSummaryResponseCode::InternalServerError.into();
+                return Ok(response);
+            }
+        },
+    };
+
     let sensors = match db::get_user_sensors(&query.username, query.user_api_id.as_str()) {
         Ok(r) => r.into_iter().map(|(sens, place)| {
             places.insert(place.id as u32, (place.name, place.description));
@@ -352,26 +398,6 @@ fn post_user_summary(
 
             Some(sum)
         }),
-        Err(e) => match e {
-            db::Error::NotFound => {
-                log::warn!("[PostUserSummary] get_user_sensors returned NotFound (UNAUTHORIZED)");
-                let mut response = Response::new(empty());
-                *response.status_mut() = LoginResponseCode::Unauthorized.into();
-                return Ok(response);
-            }
-            _ => {
-                log::error!("[PostUserSummary] Error getting user sensors: {:?}", e);
-                let mut response = Response::new(empty());
-                *response.status_mut() = PostUserSummaryResponseCode::InternalServerError.into();
-                return Ok(response);
-            }
-        },
-    }
-    .filter_map(|r| r)
-    .collect();
-
-    let email = match db::get_user_email(&query.username, query.user_api_id.as_str()) {
-        Ok(email) => email,
         Err(e) => {
             // If Unauthorized, should have returned earlier
             log::error!("[PostUserSummary] Error getting user email: {:?}", e);
@@ -384,7 +410,9 @@ fn post_user_summary(
             *response.status_mut() = PostUserSummaryResponseCode::InternalServerError.into();
             return Ok(response);
         }
-    };
+    }
+    .filter_map(|r| r)
+    .collect();
 
     let iter = places.into_iter().map(|(k, (name, desc))| (k, name, desc));
     let places = Vec::from_iter(iter);
@@ -709,12 +737,104 @@ mod test {
     };
 
     #[test]
+    fn init() {
+        env_logger::init();
+        log::info!("Logger initialized for tests");
+    }
+
+    #[test]
     fn test_post_user_summary() {
         let body = PostUserSummaryRequestBody {
             username: "testuser".to_string(),
             user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
         };
         let response = post_user_summary(body).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_post_user_summary_unexistent_user() {
+        let body = PostUserSummaryRequestBody {
+            username: "unexistentuser".to_string(),
+            user_api_id: ApiId::random(),
+        };
+        let response = post_user_summary(body).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_post_sensor() {
+        let body = PostSensorRequestBody {
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
+            user_place_id: 1,
+            sensor_kind: SensorKind::Scd4x,
+            device_id: ApiId::random(),
+        };
+        let response = post_sensor(body).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_post_sensor_unexistent_user() {
+        let body = PostSensorRequestBody {
+            user_api_id: ApiId::random(),
+            user_place_id: 1,
+            sensor_kind: SensorKind::Scd4x,
+            device_id: ApiId::random(),
+        };
+        let response = post_sensor(body).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_post_sensor_unexistent_place() {
+        let body = PostSensorRequestBody {
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
+            user_place_id: 999, // Non-existent place ID
+            sensor_kind: SensorKind::Scd4x,
+            device_id: ApiId::random(),
+        };
+        let response = post_sensor(body).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_register() {
+        let body = RegisterRequestBody {
+            username: "newuser".to_string(),
+            email: "newuser@example.com".to_string(),
+            hashed_password: "hashed_password".to_string(),
+        };
+        let response = register(body).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_register_existing_username() {
+        let body = RegisterRequestBody {
+            username: "testuser".to_string(),
+            email: "existinguser@example.com".to_string(),
+            hashed_password: "hashed_password".to_string(),
+        };
+        let response = register(body).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_register_then_login() {
+        let register_body = RegisterRequestBody {
+            username: "loginuser".to_string(),
+            email: "loginuser@example.com".to_string(),
+            hashed_password: "hashed_password".to_string(),
+        };
+        let response = register(register_body).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let login_body = LoginRequestBody {
+            username: "loginuser".to_string(),
+            hashed_password: "hashed_password".to_string(),
+        };
+        let response = login(login_body).unwrap();
         assert_eq!(response.status(), StatusCode::OK);
     }
 
@@ -727,7 +847,8 @@ mod test {
             added_at: None,
         };
         let serialized_data = serde_json::to_string(&body.data).unwrap();
-        post_sensor_data(body, &serialized_data).unwrap();
+        let response = post_sensor_data(body, &serialized_data).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[test]

@@ -320,7 +320,7 @@ pub fn new_sensor(
     let user_api_id = user_api_id;
 
     if !user_api_id_matches_place_id(&user_api_id, user_place_id)? {
-        return Err(Error::DataBaseError(diesel::result::Error::NotFound));
+        return Err(Error::NotFound);
     }
 
     let mut db_conn = get_db_pool()?;
@@ -485,6 +485,28 @@ pub fn get_user_email(username: &str, user_api_id: &str) -> Result<String, Error
             diesel::result::Error::NotFound => Err(Error::NotFound),
             _ => Err(Error::DataBaseError(e)),
         },
+    }
+}
+
+pub fn update_sensor_last_measurement(
+    updated_at: NaiveDateTime,
+    sensor_api_id: &str,
+) -> Result<(), Error> {
+    use crate::schema::{
+        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
+    match diesel::update(user_sensors_table.find(sensor_api_id))
+        .set(user_sensors::last_measurement.eq(updated_at))
+        .execute(&mut get_db_pool()?)
+    {
+        Ok(n) => match n {
+            0 => Err(Error::NotFound),
+            1 => Ok(()),
+            _ => Err(Error::Inconsistency(
+                "Many user_sensors affected by update on single api_id".to_string(),
+            )),
+        },
+        Err(e) => Err(Error::DataBaseError(e)),
     }
 }
 
