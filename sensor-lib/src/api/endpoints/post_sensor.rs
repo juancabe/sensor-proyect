@@ -1,17 +1,26 @@
 use crate::api::{
     ApiEndpoint,
-    model::{api_id::ApiId, sensor_kind::SensorKind},
+    model::{api_id::ApiId, color_palette::SensorColor, sensor_kind::SensorKind},
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 #[derive(Deserialize, Serialize, Debug, Clone, TS)]
 #[ts(export, export_to = "endpoints/PostSensor.ts")]
-pub struct PostSensorRequestBody {
-    pub user_api_id: ApiId,
-    pub user_place_id: i32,
-    pub device_id: ApiId,
-    pub sensor_kind: SensorKind,
+pub enum PostSensorRequestBody {
+    CreateSensor {
+        user_api_id: ApiId,
+        user_place_id: ApiId,
+        device_id: ApiId,
+        sensor_kind: SensorKind,
+        sensor_name: String,
+        sensor_description: Option<String>,
+        sensor_color: SensorColor,
+    },
+    DeleteSensor {
+        user_api_id: ApiId,
+        sensor_api_id: ApiId,
+    },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, TS)]

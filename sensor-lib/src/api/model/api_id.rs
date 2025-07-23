@@ -8,7 +8,7 @@ pub enum Error {
     NotLowercase,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, TS)]
+#[derive(Deserialize, Serialize, Debug, Clone, TS, Eq, PartialEq, Hash)]
 #[ts(export)]
 pub struct ApiId {
     // ID_LENGTH lowercase hex characters for a unique identifier

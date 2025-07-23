@@ -1,6 +1,7 @@
 pub mod aht10_data;
 pub mod any_sensor_data;
 pub mod api_id;
+pub mod color_palette;
 pub mod scd4x_data;
 pub mod sensor_kind;
 pub mod user_summary;

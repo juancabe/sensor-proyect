@@ -1,6 +1,18 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    place_color (hex_value) {
+        hex_value -> Text,
+    }
+}
+
+diesel::table! {
+    sensor_color (hex_value) {
+        hex_value -> Text,
+    }
+}
+
+diesel::table! {
     sensor_data (id) {
         id -> Int4,
         sensor -> Text,
@@ -18,11 +30,12 @@ diesel::table! {
 }
 
 diesel::table! {
-    user_places (id) {
-        id -> Int4,
+    user_places (api_id) {
+        api_id -> Text,
         user -> Text,
         name -> Text,
         description -> Nullable<Text>,
+        color -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -31,10 +44,13 @@ diesel::table! {
 diesel::table! {
     user_sensors (api_id) {
         api_id -> Text,
-        place -> Int4,
+        place -> Text,
         kind -> Int4,
         last_measurement -> Timestamp,
         device_id -> Text,
+        name -> Text,
+        description -> Nullable<Text>,
+        color -> Text,
     }
 }
 
@@ -50,11 +66,15 @@ diesel::table! {
 }
 
 diesel::joinable!(sensor_data -> user_sensors (sensor));
+diesel::joinable!(user_places -> place_color (color));
 diesel::joinable!(user_places -> users (user));
+diesel::joinable!(user_sensors -> sensor_color (color));
 diesel::joinable!(user_sensors -> sensor_kinds (kind));
 diesel::joinable!(user_sensors -> user_places (place));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    place_color,
+    sensor_color,
     sensor_data,
     sensor_kinds,
     user_places,

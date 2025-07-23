@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::TimeZone;
 use http_body_util::combinators::BoxBody;
@@ -10,6 +10,9 @@ use sensor_lib::api::endpoints::get_sensor_data::{
 };
 use sensor_lib::api::endpoints::login::{
     Login, LoginRequestBody, LoginResponseBody, LoginResponseCode,
+};
+use sensor_lib::api::endpoints::post_place::{
+    PostPlace, PostPlaceRequestBody, PostPlaceResponseBody, PostPlaceResponseCode,
 };
 use sensor_lib::api::endpoints::post_sensor::{
     PostSensor, PostSensorRequestBody, PostSensorResponseBody,
@@ -25,22 +28,24 @@ use sensor_lib::api::endpoints::register::{
     Register, RegisterRequestBody, RegisterResponseBody, RegisterResponseCode,
 };
 use sensor_lib::api::model::api_id::ApiId;
+use sensor_lib::api::model::color_palette::{PlaceColor, SensorColor};
 use sensor_lib::api::model::sensor_kind::SensorKind;
+use sensor_lib::api::model::user_summary::PlaceSummary;
 use sensor_lib::api::{ApiEndpoint, model};
 
-use crate::db;
+use crate::db::{self, delete_place, delete_sensor};
 use crate::{helper::*, models};
 
 fn user_n_sensor_api_ids_check(
     endpoint_name: &str,
-    user_api_id: &str,
-    sensor_api_id: &str,
+    user_api_id: &ApiId,
+    sensor_api_id: &ApiId,
     unauthorized_code: http::StatusCode,
 ) -> Result<(), Response<BoxBody<Bytes, hyper::Error>>> {
-    match db::user_api_id_matches_sensor_api_id(&user_api_id, &sensor_api_id) {
+    match db::user_api_id_matches_sensor_api_id(user_api_id, sensor_api_id) {
         Ok(false) => {
             log::warn!(
-                "[{}] [User API ID] does not match [Sensor API ID]: [{}] != [{}]",
+                "[{}] [User API ID] does not match [Sensor API ID]: [{:?}] != [{:?}]",
                 endpoint_name,
                 user_api_id,
                 sensor_api_id
@@ -52,7 +57,7 @@ fn user_n_sensor_api_ids_check(
         Ok(true) => Ok(()),
         Err(e) => {
             log::error!(
-                "[{}] Calling user_api_id_matches_sensor_api_id(\nuser_api_id:{},\nsensor_api_id:{}\nERROR: {:?})",
+                "[{}] Calling user_api_id_matches_sensor_api_id(\nuser_api_id:{:?},\nsensor_api_id:{:?}\nERROR: {:?})",
                 endpoint_name,
                 user_api_id,
                 sensor_api_id,
@@ -73,8 +78,8 @@ fn post_sensor_data(
 
     match user_n_sensor_api_ids_check(
         "[PostSensorData]",
-        &body.user_api_id.as_str(),
-        &body.sensor_api_id.as_str(),
+        &body.user_api_id,
+        &body.sensor_api_id,
         PostSensorResponseCode::Unauthorized.into(),
     ) {
         Err(r) => return Ok(r),
@@ -128,8 +133,8 @@ fn get_sensor_data(
 
     match user_n_sensor_api_ids_check(
         "[GetSensorData]",
-        body.user_api_id.as_str(),
-        body.sensor_api_id.as_str(),
+        &body.user_api_id,
+        &body.sensor_api_id,
         GetSensorDataResponseCode::Unauthorized.into(),
     ) {
         Err(r) => return Ok(r),
@@ -192,51 +197,172 @@ fn post_sensor(
         return response;
     };
 
-    let user_api_id = &body.user_api_id;
-    let user_place_id = body.user_place_id;
-    let sensor_kind = body.sensor_kind;
-    let device_id = &body.device_id;
-
-    match db::sensor_exists(user_api_id.as_str(), user_place_id, device_id.as_str()) {
-        Ok(opt) => match opt {
-            Some(api_id) => return Ok(return_found_ok(api_id)),
-            None => {
-                log::info!("[PostSensor] sensor_exists -> None (sensor doesnt exist)")
+    match body {
+        PostSensorRequestBody::CreateSensor {
+            user_api_id,
+            user_place_id,
+            device_id,
+            sensor_kind,
+            sensor_name,
+            sensor_description,
+            sensor_color,
+        } => {
+            match db::sensor_exists(&user_api_id, &user_place_id, &device_id) {
+                Ok(opt) => match opt {
+                    Some(api_id) => return Ok(return_found_ok(api_id)),
+                    None => {
+                        log::info!("[PostSensor] sensor_exists -> None (sensor doesnt exist)")
+                    }
+                },
+                Err(e) => {
+                    log::error!(
+                        "[PostSensor] on sensor_exists, continuing to new_sensor: {:?}",
+                        e
+                    )
+                }
             }
+
+            match db::new_sensor(
+                &user_api_id,
+                sensor_kind,
+                &user_place_id,
+                &device_id,
+                &sensor_name,
+                sensor_description.as_deref(),
+                sensor_color,
+            ) {
+                Ok(user_sensor_api_id) => {
+                    return Ok(return_found_ok(user_sensor_api_id));
+                }
+                Err(err) => match err {
+                    db::Error::NotFound => {
+                        log::warn!(
+                            "[PostSensor] Error creating new sensor (UNAUTHORIZED): {:?}",
+                            err
+                        );
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = StatusCode::UNAUTHORIZED;
+                        return Ok(response);
+                    }
+                    _ => {
+                        log::error!("[PostSensor] Error creating new sensor: {:?}", err);
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                        return Ok(response);
+                    }
+                },
+            }
+        }
+        PostSensorRequestBody::DeleteSensor {
+            user_api_id,
+            sensor_api_id,
+        } => match delete_sensor(&user_api_id, &sensor_api_id) {
+            Ok(()) => {
+                log::info!("[PostSensor] Returning 200 Status Code: Sensor deleted");
+                let mut response = Response::new(empty());
+                *response.status_mut() = StatusCode::OK;
+                return Ok(response);
+            }
+            Err(e) => match e {
+                db::Error::NotFound => {
+                    log::warn!("[PostSensor] Error deleting sensor (UNAUTHORIZED): {:?}", e);
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = StatusCode::UNAUTHORIZED;
+                    return Ok(response);
+                }
+                _ => {
+                    log::error!("[PostSensor] Error deleting sensor: {:?}", e);
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    return Ok(response);
+                }
+            },
         },
-        Err(e) => {
-            log::error!(
-                "[PostSensor] on sensor_exists, continuing to new_sensor: {:?}",
-                e
-            )
-        }
     }
+}
 
-    match db::new_sensor(
-        user_api_id.as_str(),
-        sensor_kind,
-        user_place_id,
-        device_id.as_str(),
-    ) {
-        Ok(user_sensor_api_id) => {
-            return Ok(return_found_ok(user_sensor_api_id));
+fn post_place(
+    body: PostPlaceRequestBody,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    log::debug!("[PostPlace] Received body: {:?}", body);
+
+    match body {
+        PostPlaceRequestBody::Create {
+            username,
+            user_api_id,
+            place_name,
+            place_description,
+            place_color,
+        } => {
+            match db::new_place(
+                &user_api_id,
+                &username,
+                &place_name,
+                place_description.as_deref(),
+                place_color,
+            ) {
+                Ok(place_id) => {
+                    log::info!(
+                        "[PostPlace] Returning 200 Status Code: New place created with ID: {:?}",
+                        place_id
+                    );
+                    let response_body = PostPlaceResponseBody::Created {
+                        place_id: place_id,
+                        place_name: place_name,
+                        place_description: place_description,
+                    };
+                    let response_body_json = serde_json::to_string(&response_body)
+                        .expect("Failed to serialize response body");
+
+                    let mut response = Response::new(full(response_body_json));
+                    response
+                        .headers_mut()
+                        .append("content-type", HeaderValue::from_static("application/json"));
+                    Ok(response)
+                }
+                Err(err) => match err {
+                    db::Error::NotFound => {
+                        log::warn!(
+                            "[PostPlace] Error creating new place (UNAUTHORIZED): {:?}",
+                            err
+                        );
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = StatusCode::UNAUTHORIZED;
+                        Ok(response)
+                    }
+                    _ => {
+                        log::error!("[PostPlace] Error creating new place: {:?}", err);
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                        Ok(response)
+                    }
+                },
+            }
         }
-        Err(err) => match err {
-            db::Error::NotFound => {
-                log::warn!(
-                    "[PostSensor] Error creating new sensor (UNAUTHORIZED): {:?}",
-                    err
-                );
+        PostPlaceRequestBody::Delete {
+            user_api_id,
+            place_id,
+        } => match delete_place(&user_api_id, &place_id) {
+            Ok(()) => {
+                log::info!("[PostPlace] Successfully deleted place");
                 let mut response = Response::new(empty());
-                *response.status_mut() = StatusCode::UNAUTHORIZED;
-                return Ok(response);
+                *response.status_mut() = StatusCode::NO_CONTENT;
+                Ok(response)
             }
-            _ => {
-                log::error!("[PostSensor] Error creating new sensor: {:?}", err);
-                let mut response = Response::new(empty());
-                *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                return Ok(response);
-            }
+            Err(e) => match e {
+                db::Error::NotFound => {
+                    log::warn!("[PostPlace] Error deleting place (UNAUTHORIZED): {:?}", e);
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = StatusCode::UNAUTHORIZED;
+                    Ok(response)
+                }
+                _ => {
+                    log::error!("[PostPlace] Error deleting place: {:?}", e);
+                    let mut response = Response::new(empty());
+                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    Ok(response)
+                }
+            },
         },
     }
 }
@@ -327,7 +453,7 @@ fn register(
 fn post_user_summary(
     query: PostUserSummaryRequestBody,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    let mut places: HashMap<u32, (String, Option<String>)> = HashMap::new();
+    let mut places: HashSet<PlaceSummary> = HashSet::new();
 
     // check if user exists and get email
     let email = match db::get_user_email(&query.username, query.user_api_id.as_str()) {
@@ -355,45 +481,73 @@ fn post_user_summary(
 
     let sensors = match db::get_user_sensors(&query.username, query.user_api_id.as_str()) {
         Ok(r) => r.into_iter().map(|(sens, place)| {
-            places.insert(place.id as u32, (place.name, place.description));
-
-            let (kind, api_id, device_id) = {
-                let k = match SensorKind::from_i32(sens.kind) {
-                    Some(k) => k,
-                    None => {
-                        log::error!("[PostUserSummary] Error converting DB kind to SensorKind");
-                        return None;
-                    }
-                };
-                let a = match ApiId::from_string(&sens.api_id) {
-                    Ok(a) => a,
-                    Err(e) => {
-                        log::error!(
-                            "[PostUserSummary] Error converting DB api_id to ApiId: {:?}",
-                            e
-                        );
-                        return None;
-                    }
-                };
-                let d = match ApiId::from_string(&sens.device_id) {
-                    Ok(a) => a,
-                    Err(e) => {
-                        log::error!(
-                            "[PostUserSummary] Error converting DB device_id to ApiId: {:?}",
-                            e
-                        );
-                        return None;
-                    }
-                };
-                (k, a, d)
+            let (place_api_id, place_color, kind, sensor_api_id, device_id, sensor_color) = match (
+                ApiId::from_string(&place.api_id),
+                PlaceColor::from_str(&place.color),
+                SensorKind::from_i32(sens.kind),
+                ApiId::from_string(&sens.api_id),
+                ApiId::from_string(&sens.device_id),
+                SensorColor::from_str(&sens.color),
+            ) {
+                (
+                    Ok(place_api_id),
+                    Some(place_color),
+                    Some(kind),
+                    Ok(sensor_api_id),
+                    Ok(device_id),
+                    Some(sensor_color),
+                ) => (
+                    place_api_id,
+                    place_color,
+                    kind,
+                    sensor_api_id,
+                    device_id,
+                    sensor_color,
+                ),
+                _ => {
+                    log::error!(
+                        "[PostUserSummary] INCONSISTENCY Error converting DB values to API types:
+                    ApiId::from_string({}), -> {:?}
+                    PlaceColor::from_str({}), -> {:?}
+                    SensorKind::from_i32({}), -> {:?}
+                    ApiId::from_string({}), -> {:?}
+                    ApiId::from_string({}), -> {:?}
+                    SensorColor::from_str({}), -> {:?}
+                    ",
+                        &place.api_id,
+                        ApiId::from_string(&place.api_id),
+                        &place.color,
+                        PlaceColor::from_str(&place.color),
+                        sens.kind,
+                        SensorKind::from_i32(sens.kind),
+                        &sens.api_id,
+                        ApiId::from_string(&sens.api_id),
+                        &sens.device_id,
+                        ApiId::from_string(&sens.device_id),
+                        &sens.color,
+                        SensorColor::from_str(&sens.color),
+                    );
+                    return None; // Skip this sensor if any conversion fails
+                }
             };
+
+            places.insert(PlaceSummary {
+                place_id: place_api_id.clone(),
+                last_update: place.updated_at.timestamp() as u32,
+                name: place.name,
+                description: place.description,
+                color: place_color,
+            });
 
             let sum = model::user_summary::SensorSummary {
                 kind,
-                api_id,
+                api_id: sensor_api_id,
                 device_id,
                 last_update: sens.last_measurement.and_utc().timestamp() as u32,
-                place: place.id as u32,
+                place_id: place_api_id,
+                name: sens.name,
+                description: sens.description,
+                color: sensor_color,
             };
 
             Some(sum)
@@ -414,14 +568,11 @@ fn post_user_summary(
     .filter_map(|r| r)
     .collect();
 
-    let iter = places.into_iter().map(|(k, (name, desc))| (k, name, desc));
-    let places = Vec::from_iter(iter);
-
     let summary = model::user_summary::UserSummary {
         username: query.username,
         email,
         sensors,
-        places,
+        places: places.into_iter().collect(),
     };
 
     log::info!("[PostUserSummary] Returning 200 Status code");
@@ -712,6 +863,44 @@ pub async fn server(
 
             post_user_summary(body)
         }
+        (&PostPlace::METHOD, PostPlace::PATH) => {
+            log::info!("[PostPlace] Request matched PostPlace");
+            // Handle the login request
+            let max_size = <PostPlace as ApiEndpoint<'_, '_>>::MAX_REQUEST_BODY_SIZE;
+
+            let body =
+                match extract_body_and_parse(req, max_size, Some(PostPlace::parse_request_body))
+                    .await
+                {
+                    Ok(bytes) => bytes,
+                    Err(ExtractError::PayloadTooLarge) => {
+                        log::warn!("[PostPlace] Request body too large");
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = PostPlaceResponseCode::PayloadTooLarge.into();
+                        return Ok(response);
+                    }
+                    Err(ExtractError::ErrorReceiving) => {
+                        log::error!("[PostPlace] Error receiving request body");
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = PostPlaceResponseCode::InternalServerError.into();
+                        return Ok(response);
+                    }
+                    Err(ExtractError::ParseErrorAsValue(err)) => {
+                        log::warn!("[PostPlace] Failed to parse body as JSON: {}", err);
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = PostPlaceResponseCode::BadRequest.into();
+                        return Ok(response);
+                    }
+                    Err(ExtractError::ParseErrorAsType) => {
+                        log::warn!("[PostPlace] Failed to parse request body as type");
+                        let mut response = Response::new(empty());
+                        *response.status_mut() = PostPlaceResponseCode::BadRequest.into();
+                        return Ok(response);
+                    }
+                };
+
+            post_place(body)
+        }
         // Return 404 Not Found for other routes.
         _ => {
             log::info!("[404 Not Found] Returning 200 Status Code");
@@ -730,6 +919,8 @@ mod test {
     const VALID_USER_API_ID: &'static str = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const VALID_AHT10_API_ID: &'static str = "94a990533d761111111111111111111111111111";
     const VALID_SCD41_API_ID: &'static str = "94a990533d762222222222222222222222222222";
+    const VALID_PLACE_ID_1: &'static str = "94a990533d76ffaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const VALID_PLACE_ID_2: &'static str = "94a990533d76fffaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     use super::*;
     use sensor_lib::api::model::{
@@ -740,6 +931,32 @@ mod test {
     fn init() {
         env_logger::init();
         log::info!("Logger initialized for tests");
+    }
+
+    #[test]
+    fn test_post_place() {
+        let body = PostPlaceRequestBody::Create {
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
+            username: "testuser".to_string(),
+            place_name: "Test Place".to_string(),
+            place_description: Some("A place for testing".to_string()),
+            place_color: PlaceColor::HEX_402E2A,
+        };
+        let response = post_place(body).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_post_place_unexistent_user() {
+        let body = PostPlaceRequestBody::Create {
+            user_api_id: ApiId::random(),
+            username: "unexistentuser".to_string(),
+            place_name: "Test Place".to_string(),
+            place_description: Some("A place for testing".to_string()),
+            place_color: PlaceColor::HEX_957E78,
+        };
+        let response = post_place(body).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]
@@ -764,11 +981,14 @@ mod test {
 
     #[test]
     fn test_post_sensor() {
-        let body = PostSensorRequestBody {
+        let body = PostSensorRequestBody::CreateSensor {
             user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
-            user_place_id: 1,
+            user_place_id: ApiId::from_string(VALID_PLACE_ID_1).unwrap(),
             sensor_kind: SensorKind::Scd4x,
             device_id: ApiId::random(),
+            sensor_name: "Sensor Server 3".to_string(),
+            sensor_description: Some("A sensor for testing".to_string()),
+            sensor_color: SensorColor::HEX_6FF0D1,
         };
         let response = post_sensor(body).unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -776,11 +996,14 @@ mod test {
 
     #[test]
     fn test_post_sensor_unexistent_user() {
-        let body = PostSensorRequestBody {
+        let body = PostSensorRequestBody::CreateSensor {
             user_api_id: ApiId::random(),
-            user_place_id: 1,
+            user_place_id: ApiId::from_string(VALID_PLACE_ID_2).unwrap(),
             sensor_kind: SensorKind::Scd4x,
             device_id: ApiId::random(),
+            sensor_name: "Sensor Server 2".to_string(),
+            sensor_description: Some("A sensor for testing".to_string()),
+            sensor_color: SensorColor::HEX_6FF0D1,
         };
         let response = post_sensor(body).unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -788,11 +1011,14 @@ mod test {
 
     #[test]
     fn test_post_sensor_unexistent_place() {
-        let body = PostSensorRequestBody {
+        let body = PostSensorRequestBody::CreateSensor {
             user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
-            user_place_id: 999, // Non-existent place ID
+            user_place_id: ApiId::random(), // Non-existent place ID
             sensor_kind: SensorKind::Scd4x,
             device_id: ApiId::random(),
+            sensor_name: "Sensor Server 1".to_string(),
+            sensor_description: None,
+            sensor_color: SensorColor::HEX_6FF0D1,
         };
         let response = post_sensor(body).unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -839,6 +1065,27 @@ mod test {
     }
 
     #[test]
+    fn test_login() {
+        let body = LoginRequestBody {
+            username: "testuser".to_string(),
+            hashed_password: "ae5deb822e0d71992900471a7199d0d95b8e7c9d05c40a8245a281fd2c1d6684"
+                .to_string(),
+        };
+        let response = login(body).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_login_invalid_credentials() {
+        let body = LoginRequestBody {
+            username: "testuser".to_string(),
+            hashed_password: "invalid_password".to_string(),
+        };
+        let response = login(body).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
     fn test_post_sensor_data() {
         let body = PostSensorDataRequestBody {
             user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
@@ -864,6 +1111,7 @@ mod test {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
+    // AI
     #[test]
     fn test_post_sensor_data_unexistent_sensor() {
         let body = PostSensorDataRequestBody {
@@ -874,6 +1122,84 @@ mod test {
         };
         let serialized_data = serde_json::to_string(&body.data).unwrap();
         let response = post_sensor_data(body, &serialized_data).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_get_sensor_data() {
+        let body = GetSensorDataRequestBody {
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
+            sensor_api_id: ApiId::from_string(VALID_SCD41_API_ID).unwrap(),
+            added_at_upper: None,
+            added_at_lower: None,
+        };
+        let response = get_sensor_data(body).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_get_sensor_data_unexistent_user() {
+        let body = GetSensorDataRequestBody {
+            user_api_id: ApiId::random(),
+            sensor_api_id: ApiId::from_string(VALID_SCD41_API_ID).unwrap(),
+            added_at_upper: None,
+            added_at_lower: None,
+        };
+        let response = get_sensor_data(body).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_register_existing_email() {
+        let body = RegisterRequestBody {
+            username: "anotheruser".to_string(),
+            email: "testuser@example.com".to_string(), // Existing email
+            hashed_password: "hashed_password".to_string(),
+        };
+        let response = register(body).unwrap();
+        // The server responds with OK, but the body indicates the error.
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_delete_sensor_unauthorized() {
+        let body = PostSensorRequestBody::DeleteSensor {
+            user_api_id: ApiId::random(), // Unauthorized user
+            sensor_api_id: ApiId::from_string(VALID_AHT10_API_ID).unwrap(),
+        };
+        let response = post_sensor(body).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_delete_sensor_not_found() {
+        let body = PostSensorRequestBody::DeleteSensor {
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
+            sensor_api_id: ApiId::random(), // Non-existent sensor
+        };
+        let response = post_sensor(body).unwrap();
+        // The authorization check fails for a non-existent sensor, returning UNAUTHORIZED.
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_delete_place_unauthorized() {
+        let body = PostPlaceRequestBody::Delete {
+            user_api_id: ApiId::random(), // Unauthorized user
+            place_id: ApiId::from_string(VALID_PLACE_ID_1).unwrap(),
+        };
+        let response = post_place(body).unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_delete_place_not_found() {
+        let body = PostPlaceRequestBody::Delete {
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
+            place_id: ApiId::random(), // Non-existent place
+        };
+        let response = post_place(body).unwrap();
+        // The handler maps a database NotFound error to UNAUTHORIZED.
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 }

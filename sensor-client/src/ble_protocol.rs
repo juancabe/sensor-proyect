@@ -45,7 +45,7 @@ pub struct BleProtocol<'a> {
 const SENSOR_CONFIG_SERVICE_UUID: BleUuid = uuid128!(CFG_SERVICE_UUID);
 const SENSOR_CONFIG_SENSOR_API_ID_CHAR_UUID: BleUuid = uuid128!(SENSOR_API_ID_CHAR_UUID);
 const SENSOR_CONFIG_API_ACCOUNT_ID_CHAR_UUID: BleUuid = uuid128!(API_ACCOUNT_ID_CHAR_UUID);
-const SENSOR_CONFIG_SENSOR_UUID_CHAR_UUID: BleUuid = uuid128!(SENSOR_UUID_CHAR_UUID);
+const SENSOR_CONFIG_SENSOR_DEV_ID_CHAR_UUID: BleUuid = uuid128!(SENSOR_UUID_CHAR_UUID);
 const SENSOR_CONFIG_WIFI_SSID_CHAR_UUID: BleUuid = uuid128!(WIFI_SSID_CHAR_UUID);
 const SENSOR_CONFIG_PASS_CHAR_UUID: BleUuid = uuid128!(WIFI_PASS_CHAR_UUID);
 
@@ -67,7 +67,7 @@ impl<'a> BleProtocol<'a> {
                     notify: None,
                 },
                 BleCharacteristic {
-                    uuid: &SENSOR_CONFIG_SENSOR_UUID_CHAR_UUID,
+                    uuid: &SENSOR_CONFIG_SENSOR_DEV_ID_CHAR_UUID,
                     read: Some(sensor_id),
                     write: None,
                     notify: None,

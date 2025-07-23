@@ -9,6 +9,7 @@ use sensor_lib::api;
 use sensor_lib::api::endpoints::get_sensor_data::GetSensorDataRequestBody;
 use sensor_lib::api::endpoints::register::RegisterRequestBody;
 use sensor_lib::api::model::api_id::{self, ApiId};
+use sensor_lib::api::model::color_palette::{PlaceColor, SensorColor};
 use sensor_lib::api::model::sensor_kind::SensorKind;
 
 use crate::models::{self, SensorData, UserPlace, UserSensor};
@@ -91,7 +92,7 @@ pub fn query_sensor_data(
     let r = users_table
         .filter(users::api_id.eq(&query.user_api_id.as_str()))
         .inner_join(user_places_table)
-        .inner_join(user_sensors_table.on(user_places::id.eq(user_sensors::place)))
+        .inner_join(user_sensors_table.on(user_places::api_id.eq(user_sensors::place)))
         .filter(user_sensors::api_id.eq(&query.sensor_api_id.as_str()))
         .select(models::UserSensor::as_select())
         .load::<models::UserSensor>(&mut db_conn)?;
@@ -120,7 +121,7 @@ pub fn query_sensor_data(
     let vec = sensor_data_table
         .filter(sensor_data::sensor.eq(query.sensor_api_id.as_str()))
         .inner_join(user_sensors_table)
-        .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
+        .inner_join(user_places_table.on(user_places::api_id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
         .filter(users::api_id.eq(query.user_api_id.as_str()))
         .filter(sensor_data::added_at.le(max_date.unwrap_or(NaiveDateTime::MAX)))
@@ -171,8 +172,8 @@ pub fn get_user_from_sensor(sensor_api_id: &str) -> Result<String, crate::db::Er
 }
 
 pub fn user_api_id_matches_sensor_api_id(
-    user_api_id: &str,
-    sensor_api_id: &str,
+    user_api_id: &ApiId,
+    sensor_api_id: &ApiId,
 ) -> Result<bool, Error> {
     use crate::schema::{
         user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
@@ -185,10 +186,10 @@ pub fn user_api_id_matches_sensor_api_id(
     let mut db_conn = get_db_pool()?;
 
     let count = user_sensors_table
-        .inner_join(user_places_table.on(user_places::id.eq(user_sensors::place)))
+        .inner_join(user_places_table.on(user_places::api_id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::api_id.eq(user_api_id))
-        .filter(user_sensors::api_id.eq(sensor_api_id))
+        .filter(users::api_id.eq(user_api_id.to_string()))
+        .filter(user_sensors::api_id.eq(sensor_api_id.to_string()))
         .select(count_star())
         .first::<i64>(&mut db_conn)?;
 
@@ -196,8 +197,8 @@ pub fn user_api_id_matches_sensor_api_id(
 }
 
 pub fn user_api_id_matches_place_id(
-    user_api_id: &str,
-    user_place_id: i32,
+    user_api_id: &ApiId,
+    user_place_id: &ApiId,
 ) -> Result<bool, crate::db::Error> {
     use crate::schema::{
         user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
@@ -208,8 +209,8 @@ pub fn user_api_id_matches_place_id(
 
     let count = user_places_table
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::api_id.eq(user_api_id))
-        .filter(user_places::id.eq(user_place_id))
+        .filter(users::api_id.eq(user_api_id.as_str()))
+        .filter(user_places::api_id.eq(user_place_id.as_str()))
         .select(count_star())
         .first::<i64>(&mut db_conn)?;
 
@@ -247,29 +248,19 @@ pub fn save_new_sensor_data(data: models::NewSensorData<'_>) -> Result<(), Error
 }
 
 pub fn generate_sensor_api_id(
-    user_uuid: &str,
+    user_api_id: &ApiId,
     sensor_kind: &SensorKind,
-    user_place_id: i32,
-    device_id: &str,
+    user_place_api_id: &ApiId,
+    device_id: &ApiId,
 ) -> Result<[u8; 20], Error> {
     let device_id = device_id;
 
-    // Check device_id format
-    if device_id.len() != 40
-        || device_id
-            .chars()
-            .into_iter()
-            .any(|c| !c.is_ascii_hexdigit())
-    {
-        return Err(Error::DeviceIdInvalid);
-    }
-
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    hasher.update(user_uuid.as_bytes());
+    hasher.update(user_api_id.as_str().as_bytes());
     hasher.update(sensor_kind.as_str().as_bytes());
-    hasher.update(user_place_id.to_string().as_bytes());
-    hasher.update(device_id.as_bytes());
+    hasher.update(user_place_api_id.as_str().as_bytes());
+    hasher.update(device_id.as_str().as_bytes());
     let hash = hasher.finalize();
     let mut sensor_id = [0u8; 20];
     sensor_id.copy_from_slice(&hash[..20]);
@@ -278,9 +269,9 @@ pub fn generate_sensor_api_id(
 
 // Returns sensor api id if already present on DB
 pub fn sensor_exists(
-    user_api_id: &str,
-    user_place_id: i32,
-    device_id: &str,
+    user_api_id: &ApiId,
+    user_place_id: &ApiId,
+    device_id: &ApiId,
 ) -> Result<Option<String>, Error> {
     use crate::schema::{
         user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
@@ -293,10 +284,10 @@ pub fn sensor_exists(
     let mut db_conn = get_db_pool()?;
 
     let res = users_table
-        .filter(users::api_id.eq(user_api_id))
+        .filter(users::api_id.eq(user_api_id.as_str()))
         .inner_join(user_places_table)
-        .filter(user_places::id.eq(user_place_id))
-        .inner_join(user_sensors_table.on(user_sensors::device_id.eq(device_id)))
+        .filter(user_places::api_id.eq(user_place_id.as_str()))
+        .inner_join(user_sensors_table.on(user_sensors::device_id.eq(device_id.as_str())))
         .select(user_sensors::api_id)
         .first::<String>(&mut db_conn);
 
@@ -310,31 +301,37 @@ pub fn sensor_exists(
 }
 
 pub fn new_sensor(
-    user_api_id: &str,
+    user_api_id: &ApiId,
     sensor_kind: SensorKind,
-    user_place_id: i32,
-    device_id: &str,
+    user_place_api_id: &ApiId,
+    device_id: &ApiId,
+    name: &str,
+    description: Option<&str>,
+    color: SensorColor,
 ) -> Result<String, Error> {
     use crate::schema::user_sensors;
 
     let user_api_id = user_api_id;
 
-    if !user_api_id_matches_place_id(&user_api_id, user_place_id)? {
+    if !user_api_id_matches_place_id(&user_api_id, &user_place_api_id)? {
         return Err(Error::NotFound);
     }
 
     let mut db_conn = get_db_pool()?;
 
     let user_sensor_api_id =
-        generate_sensor_api_id(&user_api_id, &sensor_kind, user_place_id, device_id);
+        generate_sensor_api_id(&user_api_id, &sensor_kind, &user_place_api_id, device_id);
     let user_sensor_api_id = hex::encode(user_sensor_api_id?);
 
     let new_sensor = models::NewUserSensor {
         api_id: &user_sensor_api_id,
-        place: user_place_id,
+        place: user_place_api_id.as_str().to_string(),
         kind: sensor_kind as i32,
         last_measurement: NaiveDateTime::from_timestamp(0, 0),
-        device_id,
+        device_id: device_id.as_str(),
+        name,
+        description,
+        color: color.as_str(),
     };
 
     diesel::insert_into(user_sensors::table)
@@ -342,6 +339,42 @@ pub fn new_sensor(
         .execute(&mut db_conn)?;
 
     Ok(user_sensor_api_id)
+}
+
+pub fn new_place(
+    user_api_id: &ApiId,
+    username: &str,
+    place_name: &str,
+    place_description: Option<&str>,
+    color: PlaceColor,
+) -> Result<ApiId, Error> {
+    use crate::schema::user_places;
+
+    let user_api_id = user_api_id;
+
+    // Check for user existence
+    get_user(username, user_api_id.as_str())?;
+
+    let mut db_conn = get_db_pool()?;
+
+    let now = chrono::Utc::now().naive_utc();
+    let api_id = ApiId::random();
+
+    let new_place = models::NewUserPlace {
+        api_id: api_id.as_str(),
+        user: username,
+        name: place_name,
+        description: place_description,
+        created_at: now,
+        updated_at: now,
+        color: color.as_str(),
+    };
+
+    diesel::insert_into(user_places::table)
+        .values(new_place)
+        .execute(&mut db_conn)?;
+
+    Ok(api_id)
 }
 
 pub fn get_login(username: &str, hashed_password: &str) -> Result<Option<ApiId>, Error> {
@@ -421,17 +454,96 @@ pub fn new_user(query: RegisterRequestBody) -> Result<ApiId, NewUserError> {
     Ok(api_id)
 }
 
-// Returns NONE if user does not exist, Some(()) if user was deleted successfully
-pub fn delete_user(api_id: &str) -> Result<Option<()>, Error> {
+pub fn delete_sensor(user_api_id: &ApiId, sensor_api_id: &ApiId) -> Result<(), Error> {
+    use crate::schema::{
+        user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
+
+    // check for it
+    if !user_api_id_matches_sensor_api_id(user_api_id, sensor_api_id)? {
+        return Err(Error::NotFound);
+    }
+
+    match diesel::delete(user_sensors_table.filter(user_sensors::api_id.eq(sensor_api_id.as_str())))
+        .execute(&mut get_db_pool()?)
+    {
+        Ok(s) => {
+            if s > 1 {
+                log::error!("Many sensors affected by delete on single api_id");
+                Ok(())
+            } else if s == 0 {
+                log::warn!("No user found to delete after we checked for it");
+                Err(Error::NotFound)
+            } else {
+                Ok(()) // User was deleted successfully
+            }
+        }
+        Err(e) => match e {
+            diesel::result::Error::NotFound => {
+                log::warn!("No user_sensor found to delete after we checked for it");
+                Err(Error::NotFound)
+            }
+            e => Err(Error::DataBaseError(e)),
+        },
+    }
+}
+
+pub fn delete_user(api_id: &ApiId) -> Result<(), Error> {
     use crate::schema::{users::dsl as users, users::dsl::users as users_table};
 
     let mut db_conn = get_db_pool()?;
 
-    match diesel::delete(users_table.filter(users::api_id.eq(api_id))).execute(&mut db_conn) {
-        Ok(_) => Ok(Some(())),
+    match diesel::delete(users_table.filter(users::api_id.eq(api_id.as_str())))
+        .execute(&mut db_conn)
+    {
+        Ok(s) => {
+            if s > 1 {
+                log::error!("Many users affected by delete on single api_id");
+                Ok(())
+            } else if s == 0 {
+                log::warn!("No user found to delete after we checked for it");
+                Err(Error::NotFound)
+            } else {
+                Ok(()) // User was deleted successfully
+            }
+        }
         Err(e) => match e {
-            diesel::result::Error::NotFound => Ok(None),
+            diesel::result::Error::NotFound => Err(Error::NotFound),
             _ => Err(Error::DataBaseError(e)),
+        },
+    }
+}
+
+pub fn delete_place(user_api_id: &ApiId, place_api_id: &ApiId) -> Result<(), Error> {
+    use crate::schema::{
+        user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
+    };
+
+    // check for it
+    if !user_api_id_matches_place_id(user_api_id, place_api_id)? {
+        return Err(Error::NotFound);
+    }
+
+    match diesel::delete(user_places_table.filter(user_places::api_id.eq(place_api_id.as_str())))
+        .execute(&mut get_db_pool()?)
+    {
+        Ok(s) => {
+            if s > 1 {
+                log::error!("Many places affected by delete on single api_id");
+                Ok(())
+            } else if s == 0 {
+                log::warn!("No place found to delete after we checked for it");
+                Err(Error::NotFound)
+            } else {
+                Ok(()) // Place was deleted successfully
+            }
+        }
+        Err(e) => match e {
+            diesel::result::Error::NotFound => {
+                log::warn!("No user_place found to delete after we checked for it");
+                Err(Error::NotFound)
+            }
+            e => Err(Error::DataBaseError(e)),
         },
     }
 }
@@ -455,7 +567,7 @@ pub fn get_user_sensors(
                 .and(users::username.eq(username)),
         )
         .inner_join(user_places_table)
-        .inner_join(user_sensors_table.on(user_sensors::place.eq(user_places::id)))
+        .inner_join(user_sensors_table.on(user_sensors::place.eq(user_places::api_id)))
         .select((UserSensor::as_select(), UserPlace::as_select()))
         .load::<(UserSensor, UserPlace)>(&mut get_db_pool()?);
 
@@ -468,7 +580,7 @@ pub fn get_user_sensors(
     }
 }
 
-pub fn get_user_email(username: &str, user_api_id: &str) -> Result<String, Error> {
+pub fn get_user(username: &str, user_api_id: &str) -> Result<models::User, Error> {
     use crate::schema::{users::dsl as users, users::dsl::users as users_table};
 
     match users_table
@@ -477,8 +589,8 @@ pub fn get_user_email(username: &str, user_api_id: &str) -> Result<String, Error
                 .eq(user_api_id)
                 .and(users::username.eq(username)),
         )
-        .select(users::email)
-        .first::<String>(&mut get_db_pool()?)
+        .select(models::User::as_select())
+        .first::<models::User>(&mut get_db_pool()?)
     {
         Ok(s) => Ok(s),
         Err(e) => match e {
@@ -486,6 +598,10 @@ pub fn get_user_email(username: &str, user_api_id: &str) -> Result<String, Error
             _ => Err(Error::DataBaseError(e)),
         },
     }
+}
+
+pub fn get_user_email(username: &str, user_api_id: &str) -> Result<String, Error> {
+    get_user(username, user_api_id).map(|u| u.email)
 }
 
 pub fn update_sensor_last_measurement(
@@ -513,11 +629,79 @@ pub fn update_sensor_last_measurement(
 #[cfg(test)]
 mod tests {
 
+    use chrono::SubsecRound;
+
     use super::*;
 
     const VALID_USER_API_ID: &'static str = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const VALID_AHT10_API_ID: &'static str = "94a990533d761111111111111111111111111111";
     const VALID_SCD41_API_ID: &'static str = "94a990533d762222222222222222222222222222";
+    const VALID_PLACE_ID_1: &'static str = "94a990533d76ffaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const VALID_PLACE_ID_2: &'static str = "94a990533d76fffaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[test]
+    fn test_sensor_exists() {
+        let user_api_id = ApiId::from_string(VALID_USER_API_ID).unwrap();
+        let user_place_id = ApiId::from_string(VALID_PLACE_ID_2).unwrap();
+        let device_id = ApiId::from_string("94a990533d770000000000000000000000000000").unwrap();
+
+        let result = sensor_exists(&user_api_id, &user_place_id, &device_id);
+        assert!(
+            result.is_ok(),
+            "Failed to check if sensor exists: {:?}",
+            result.err()
+        );
+        let exists = result.unwrap();
+        assert!(exists.is_some(), "Expected sensor to exist");
+    }
+
+    #[test]
+    fn test_sensor_exists_unexistent() {
+        let user_api_id = ApiId::from_string(VALID_USER_API_ID).unwrap();
+        let user_place_id = ApiId::from_string(VALID_PLACE_ID_2).unwrap();
+        let device_id = ApiId::random();
+
+        let result = sensor_exists(&user_api_id, &user_place_id, &device_id);
+        assert!(
+            result.is_ok(),
+            "Failed to check if sensor exists: {:?}",
+            result.err()
+        );
+        let exists = result.unwrap();
+        assert!(exists.is_none(), "Expected sensor to not exist");
+    }
+
+    #[test]
+    fn test_sensor_exists_unexistent_place() {
+        let user_api_id = ApiId::from_string(VALID_USER_API_ID).unwrap();
+        let user_place_id = ApiId::random();
+        let device_id = ApiId::from_string(VALID_SCD41_API_ID).unwrap();
+
+        let result = sensor_exists(&user_api_id, &user_place_id, &device_id);
+        assert!(
+            result.is_ok(),
+            "Failed to check if sensor exists: {:?}",
+            result.err()
+        );
+        let exists = result.unwrap();
+        assert!(exists.is_none(), "Expected sensor to not exist");
+    }
+
+    #[test]
+    fn test_sensor_exists_unexistent_user() {
+        let user_api_id = ApiId::random();
+        let user_place_id = ApiId::from_string(VALID_USER_API_ID).unwrap();
+        let device_id = ApiId::from_string(VALID_SCD41_API_ID).unwrap();
+
+        let result = sensor_exists(&user_api_id, &user_place_id, &device_id);
+        assert!(
+            result.is_ok(),
+            "Failed to check if sensor exists: {:?}",
+            result.err()
+        );
+        let exists = result.unwrap();
+        assert!(exists.is_none(), "Expected sensor to not exist");
+    }
 
     #[test]
     fn test_get_user_email() {
@@ -564,11 +748,8 @@ mod tests {
         let user_api_id = r.expect("Should be able to create new user with DB");
 
         // Delete
-        match delete_user(&user_api_id.to_string()) {
-            Ok(opt) => assert!(
-                opt.is_some(),
-                "User should be deleted successfully, it isn't"
-            ),
+        match delete_user(&user_api_id) {
+            Ok(()) => assert!(true, "User should be deleted successfully"),
             Err(_) => panic!("Should be able to delete user with DB"),
         }
     }
@@ -609,25 +790,23 @@ mod tests {
 
     #[test]
     fn test_generate_sensor_id() {
-        let user_uuid = VALID_USER_API_ID;
+        let user_api_id = VALID_USER_API_ID;
         let sensor_kind = SensorKind::Aht10;
-        let user_place_id = 1; // Assuming this is a valid place ID for the test user
+        let user_place_id = VALID_PLACE_ID_1; // Assuming this is a valid place ID for the test user
         let device_ids_ok = [
             "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaab",
             "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaac",
             "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaad",
         ];
-        let device_ids_invalid = [
-            "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaabhola", // Too long invalid
-            "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaahola",     // Invalid chars
-            "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaa",         // Too short
-            "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaabaaaa", // Too long valid
-        ];
 
         for device_id in device_ids_ok {
-            let sensor_api_id =
-                generate_sensor_api_id(user_uuid, &sensor_kind, user_place_id, device_id)
-                    .expect("Failed to generate sensor ID");
+            let sensor_api_id = generate_sensor_api_id(
+                &ApiId::from_string(user_api_id).unwrap(),
+                &sensor_kind,
+                &ApiId::from_string(user_place_id).unwrap(),
+                &ApiId::from_string(device_id).unwrap(),
+            )
+            .expect("Failed to generate sensor ID");
             assert_eq!(
                 sensor_api_id.len(),
                 20,
@@ -636,45 +815,49 @@ mod tests {
                 sensor_api_id
             );
         }
-
-        for device_id in device_ids_invalid {
-            let result = generate_sensor_api_id(user_uuid, &sensor_kind, user_place_id, device_id);
-            assert!(
-                result.is_err(),
-                "Expected error for invalid device_id: {}",
-                device_id
-            );
-            if let Err(Error::DeviceIdInvalid) = result {
-                // Expected error for invalid device_id
-            } else {
-                panic!("Expected a DeviceIdInvalid error, but got: {:?}", result);
-            }
-        }
     }
 
     #[test]
     fn test_new_sensor_then_delete() {
-        let user_uuid = VALID_USER_API_ID;
+        let user_api_id = &ApiId::from_string(VALID_USER_API_ID).unwrap();
         let sensor_kind = SensorKind::Aht10;
-        let user_place_id = 1; // Assuming this is a valid place ID for the test user
-        let device_id = "94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaab";
+        let user_place_id = &ApiId::from_string(VALID_PLACE_ID_1).unwrap(); // Assuming this is a valid place ID for the test user
+        let device_id = &ApiId::from_string("94a990533d76aaaaaaaaaaaaaaaaaaaaaaaaaaab").unwrap();
 
-        let result = new_sensor(user_uuid, sensor_kind, user_place_id, device_id)
-            .expect("Should be able to create new sensor with DB");
-
-        assert!(!result.is_empty(), "Sensor API ID should not be empty");
-
-        let errored_result = new_sensor(user_uuid, sensor_kind, user_place_id, device_id);
-        assert!(
-            errored_result.is_err(),
-            "Expected error when creating sensor with existing API ID"
-        );
-
-        let errored_result = new_sensor(
-            "nonexistent-user-uuid",
+        let result = new_sensor(
+            user_api_id,
             sensor_kind,
             user_place_id,
             device_id,
+            "Sensor 1",
+            None,
+            SensorColor::HEX_2132DB,
+        )
+        .expect("Should be able to create new sensor with DB");
+        assert!(!result.is_empty(), "Sensor API ID should not be empty");
+
+        let errored_result = new_sensor(
+            user_api_id,
+            sensor_kind,
+            user_place_id,
+            device_id,
+            "Sensor 1",
+            None,
+            SensorColor::HEX_2132DB,
+        );
+        assert!(
+            errored_result.is_err(),
+            "Expected error when creating sensor with existing DEVICE ID"
+        );
+
+        let errored_result = new_sensor(
+            &ApiId::random(),
+            sensor_kind,
+            user_place_id,
+            &ApiId::random(),
+            "Sensor 2",
+            None,
+            SensorColor::HEX_2132DB,
         );
         assert!(
             errored_result.is_err(),
@@ -682,10 +865,13 @@ mod tests {
         );
 
         let errored_result = new_sensor(
-            user_uuid,
-            sensor_kind, // Assuming this is an invalid sensor kind
-            123,         // Assuming this is an invalid place ID
-            device_id,
+            user_api_id,
+            sensor_kind,
+            &ApiId::random(), // Assuming this is an invalid place ID
+            &ApiId::random(),
+            "Sensor 3",
+            None,
+            SensorColor::HEX_2132DB,
         );
         assert!(
             errored_result.is_err(),
@@ -709,8 +895,11 @@ mod tests {
     fn test_user_api_id_matches_sensor_api_id() {
         let user_api_id = VALID_USER_API_ID;
         let sensor_api_id = "abc36768cf4d927e267a72ac1cb8108693bdafd1";
-        let matches = user_api_id_matches_sensor_api_id(user_api_id, sensor_api_id)
-            .expect("Failed to check if user UUID matches sensor API ID");
+        let matches = user_api_id_matches_sensor_api_id(
+            &ApiId::from_string(user_api_id).unwrap(),
+            &ApiId::from_string(sensor_api_id).unwrap(),
+        )
+        .expect("Failed to check if user UUID matches sensor API ID");
         assert!(
             matches,
             "Expected user UUID to match sensor API ID, but it did not"
@@ -718,22 +907,10 @@ mod tests {
     }
 
     #[test]
-    fn test_user_uuid_matches_sensor_api_id_nonexistent() {
-        let user_uuid = VALID_USER_API_ID;
-        let sensor_api_id = "nonexistent-sensor";
-        let result = user_api_id_matches_sensor_api_id(user_uuid, sensor_api_id)
-            .expect("Failed to check if user UUID matches nonexistent sensor API ID");
-        assert!(
-            !result,
-            "Expected user UUID to not match nonexistent sensor API ID, but it did"
-        );
-    }
-
-    #[test]
     fn test_user_uuid_matches_place_id() {
-        let user_uuid = VALID_USER_API_ID;
-        let user_place_id = 1; // Assuming this is a valid place ID for the test user
-        let result = user_api_id_matches_place_id(user_uuid, user_place_id);
+        let uaser_api_id = &ApiId::from_string(VALID_USER_API_ID).unwrap();
+        let user_place_id = &ApiId::from_string(VALID_PLACE_ID_1).unwrap();
+        let result = user_api_id_matches_place_id(uaser_api_id, user_place_id);
         assert!(
             result.is_ok(),
             "Failed to check if user UUID matches place ID: {:?}",
@@ -747,9 +924,9 @@ mod tests {
 
     #[test]
     fn test_user_uuid_matches_place_id_nonexistent() {
-        let user_uuid = VALID_USER_API_ID;
-        let user_place_id = 999; // Assuming this is an invalid place ID
-        let result = user_api_id_matches_place_id(user_uuid, user_place_id).expect("no error");
+        let user_api_id = &ApiId::from_string(VALID_USER_API_ID).unwrap();
+        let user_place_id = &ApiId::random(); // Assuming this is an invalid place ID
+        let result = user_api_id_matches_place_id(user_api_id, user_place_id).expect("no error");
         assert!(
             !result,
             "Expected user UUID to not match nonexistent place ID, but it did"
@@ -977,5 +1154,133 @@ mod tests {
                 _ => assert!(false, "Unexpected result"),
             },
         }
+    }
+
+    // AI
+    #[test]
+    fn test_new_place_then_delete() {
+        let user_api_id = ApiId::from_string(VALID_USER_API_ID).unwrap();
+        let username = "testuser";
+        let place_name = "Test Place";
+        let place_description = Some("A place for testing");
+        let color = PlaceColor::HEX_2A4039;
+
+        // Create a new place
+        let new_place_result =
+            new_place(&user_api_id, username, place_name, place_description, color);
+        assert!(
+            new_place_result.is_ok(),
+            "Failed to create new place: {:?}",
+            new_place_result.err()
+        );
+        let place_api_id = new_place_result.unwrap();
+
+        // Clean up by deleting the place
+        let delete_result = delete_place(&user_api_id, &place_api_id);
+        assert!(
+            delete_result.is_ok(),
+            "Failed to delete place: {:?}",
+            delete_result.err()
+        );
+    }
+
+    #[test]
+    fn test_delete_place_unauthorized() {
+        let unauthorized_user_api_id = ApiId::random();
+        let place_api_id = ApiId::from_string(VALID_PLACE_ID_1).unwrap();
+
+        let result = delete_place(&unauthorized_user_api_id, &place_api_id);
+        assert!(matches!(result, Err(Error::NotFound)));
+    }
+
+    #[test]
+    fn test_update_sensor_last_measurement() {
+        let sensor_api_id = VALID_AHT10_API_ID;
+        let new_time = chrono::Utc::now().naive_utc();
+
+        // Update the last measurement
+        let update_result = update_sensor_last_measurement(new_time, sensor_api_id);
+        assert!(
+            update_result.is_ok(),
+            "Update failed: {:?}",
+            update_result.err()
+        );
+
+        // Verify the update
+        use crate::schema::user_sensors::dsl::*;
+        let mut db_conn = get_db_pool().unwrap();
+        let updated_time = user_sensors
+            .find(sensor_api_id)
+            .select(last_measurement)
+            .first::<NaiveDateTime>(&mut db_conn)
+            .unwrap();
+
+        // Timestamps can have precision differences, so we check if they are very close
+        assert!((updated_time - new_time).num_milliseconds() < 10);
+    }
+
+    #[test]
+    fn test_update_sensor_last_measurement_not_found() {
+        let sensor_api_id = "nonexistent-sensor-id";
+        let new_time = chrono::Utc::now().naive_utc();
+        let result = update_sensor_last_measurement(new_time, sensor_api_id);
+        assert!(matches!(result, Err(Error::NotFound)));
+    }
+
+    #[test]
+    fn test_get_sensor_kind_from_id() {
+        let kind = get_sensor_kind_from_id(VALID_AHT10_API_ID).unwrap();
+        assert_eq!(kind, SensorKind::Aht10);
+
+        let kind = get_sensor_kind_from_id(VALID_SCD41_API_ID).unwrap();
+        assert_eq!(kind, SensorKind::Scd4x);
+    }
+
+    #[test]
+    fn test_get_sensor_kind_from_id_not_found() {
+        let result = get_sensor_kind_from_id("nonexistent-sensor-id");
+        assert!(matches!(
+            result,
+            Err(Error::DataBaseError(diesel::result::Error::NotFound))
+        ));
+    }
+
+    #[test]
+    fn test_query_sensor_data_with_date_range() {
+        // Insert test data with specific timestamps
+        let now = chrono::Utc::now();
+        let data_points = [
+            (now - chrono::Duration::days(4)).naive_utc(),
+            (now - chrono::Duration::days(3)).naive_utc(),
+            (now - chrono::Duration::days(1)).naive_utc(),
+        ];
+
+        for &ts in &data_points {
+            let new_data = models::NewSensorData {
+                sensor: VALID_AHT10_API_ID.into(),
+                serialized_data: "{}",
+                added_at: ts,
+            };
+            save_new_sensor_data(new_data).unwrap();
+        }
+
+        // Query for a specific date range
+        let query = GetSensorDataRequestBody {
+            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
+            sensor_api_id: ApiId::from_string(VALID_AHT10_API_ID).unwrap(),
+            added_at_lower: Some((now - chrono::Duration::days(5)).timestamp() as u32),
+            added_at_upper: Some((now - chrono::Duration::days(2)).timestamp() as u32),
+        };
+
+        let result = query_sensor_data(query).unwrap();
+        // Should find the points at T-3 days and T-2 days.
+        assert_eq!(result.1.len(), 2);
+
+        // Clean up inserted data
+        use crate::schema::sensor_data::dsl::*;
+        let mut db_conn = get_db_pool().unwrap();
+        diesel::delete(sensor_data.filter(added_at.eq_any(&data_points)))
+            .execute(&mut db_conn)
+            .unwrap();
     }
 }

@@ -50,7 +50,7 @@ export default function Home() {
     return (
         <BackgroundView secondaryColor="#ff00003f">
             <ThemedView style={{ backgroundColor: 'transparent' }}>
-                <Button title="Add Sensor" />
+                <Button title="Add Place" />
 
                 {summary === undefined && <ThemedText>Loading summary…</ThemedText>}
                 {typeof summary === 'object' &&

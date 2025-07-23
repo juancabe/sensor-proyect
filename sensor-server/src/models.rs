@@ -23,10 +23,11 @@ pub struct NewSensorData<'a> {
 #[diesel(table_name = crate::schema::user_places)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserPlace {
-    pub id: i32,
+    pub api_id: String,
     pub user: String,
     pub name: String,
     pub description: Option<String>,
+    pub color: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -34,9 +35,11 @@ pub struct UserPlace {
 #[derive(Insertable, Clone)]
 #[diesel(table_name = crate::schema::user_places)]
 pub struct NewUserPlace<'a> {
+    pub api_id: &'a str,
     pub user: &'a str,
     pub name: &'a str,
     pub description: Option<&'a str>,
+    pub color: &'a str,
     pub created_at: NaiveDateTime, // UNIX timestamp in seconds
     pub updated_at: NaiveDateTime, // UNIX timestamp in seconds
 }
@@ -46,20 +49,26 @@ pub struct NewUserPlace<'a> {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserSensor {
     pub api_id: String,
-    pub place: i32,                      // Foreign key to UserPlace
+    pub place: String,                   // Foreign key to UserPlace
     pub kind: i32,                       // Foreign key to SensorKind
     pub last_measurement: NaiveDateTime, // UNIX timestamp in seconds
     pub device_id: String,               // 20 bytes HEX String -> Generated at the sensor runtime
+    pub name: String,
+    pub description: Option<String>,
+    pub color: String,
 }
 
 #[derive(Insertable, Clone)]
 #[diesel(table_name = crate::schema::user_sensors)]
 pub struct NewUserSensor<'a> {
     pub api_id: &'a str, // 20 bytes HEX String -> Generated at the server
-    pub place: i32,      // Foreign key to UserPlace
+    pub place: String,   // Foreign key to UserPlace
     pub kind: i32,       // Foreign key to SensorKind
     pub last_measurement: NaiveDateTime, // UNIX timestamp in seconds
     pub device_id: &'a str,
+    pub name: &'a str,
+    pub description: Option<&'a str>,
+    pub color: &'a str,
 }
 
 #[derive(Queryable, Selectable)]

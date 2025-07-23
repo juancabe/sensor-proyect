@@ -1,4 +1,6 @@
 -- This file should undo anything in `up.sql`
+DROP TABLE IF EXISTS sensor_color CASCADE;
+DROP TABLE IF EXISTS place_color CASCADE;
 DROP TABLE IF EXISTS sensor_data CASCADE;
 DROP TABLE IF EXISTS user_sensors CASCADE;
 DROP TABLE IF EXISTS sensor_kinds CASCADE;

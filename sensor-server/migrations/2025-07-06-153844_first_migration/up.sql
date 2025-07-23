@@ -1,3 +1,30 @@
+CREATE TABLE sensor_color (
+    hex_value TEXT NOT NULL PRIMARY KEY
+);
+INSERT INTO sensor_color (hex_value) VALUES
+('#DB2122'), -- Red
+('#F0D16F'), -- Yellow
+('#21DB55'), -- Green
+('#2132DB'), -- Blue
+('#6FF0D1'), -- Cyan
+('#DB21A0'), -- Magenta
+('#DB8F21'); -- Orange
+
+CREATE TABLE place_color (
+    hex_value TEXT NOT NULL PRIMARY KEY
+);
+INSERT INTO place_color (hex_value) VALUES
+('#403E2A'), -- Olive
+('#807895'), -- Lavender
+('#2A4039'), -- Dark Green
+('#402E2A'), -- Brown
+('#957E78'), -- Taupe
+('#302A40'), -- Dark Purple
+('#807E71'), -- Grayish Green
+('#78958B'), -- Sage
+('#BFBA7A'), -- Light Olive
+('#EA937D'); -- Salmon
+
 CREATE TABLE users (
     username TEXT NOT NULL PRIMARY KEY,
     api_id TEXT NOT NULL UNIQUE, -- 20 bytes of data represented as HEX on a String
@@ -8,10 +35,11 @@ CREATE TABLE users (
 );
 
 CREATE TABLE user_places (
-    id SERIAL PRIMARY KEY,
+    api_id TEXT PRIMARY KEY, -- 20 bytes of data represented as HEX on a String
     "user" TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
+    color TEXT NOT NULL REFERENCES place_color(hex_value) ON DELETE RESTRICT,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
@@ -24,10 +52,13 @@ CREATE TABLE sensor_kinds (
 
 CREATE TABLE user_sensors (
     api_id TEXT NOT NULL PRIMARY KEY, -- 20 bytes of data represented as HEX on a String
-    place INTEGER NOT NULL REFERENCES user_places(id) ON DELETE CASCADE,
-    kind INTEGER NOT NULL REFERENCES sensor_kinds(id) ON DELETE CASCADE,
+    place TEXT NOT NULL REFERENCES user_places(api_id) ON DELETE CASCADE,
+    kind INTEGER NOT NULL REFERENCES sensor_kinds(id) ON DELETE RESTRICT,
     last_measurement TIMESTAMP NOT NULL,
-    device_id TEXT NOT NULL -- 20 bytes of data represented as HEX on a String
+    device_id TEXT NOT NULL, -- 20 bytes of data represented as HEX on a String
+    name TEXT NOT NULL,
+    description TEXT,
+    color TEXT NOT NULL REFERENCES sensor_color(hex_value) ON DELETE RESTRICT
 );
 
 CREATE TABLE sensor_data (
@@ -52,16 +83,16 @@ VALUES (
     NOW()
 );
 
-INSERT INTO user_places ("user", name, description, created_at, updated_at)
+INSERT INTO user_places (api_id, "user", name, description, color, created_at, updated_at)
 VALUES
-('testuser', 'Home', 'Primary residence', NOW(), NOW()),
-('testuser', 'Office', 'Workplace location', NOW(), NOW());
+('94a990533d76ffaaaaaaaaaaaaaaaaaaaaaaaaaa', 'testuser', 'Home', 'Primary residence', '#403E2A', NOW(), NOW()),
+('94a990533d76fffaaaaaaaaaaaaaaaaaaaaaaaaa', 'testuser', 'Office', 'Workplace location', '#807895', NOW(), NOW());
 
-INSERT INTO user_sensors (api_id, place, kind, last_measurement, device_id)
+INSERT INTO user_sensors (api_id, place, kind, last_measurement, device_id, name, description, color)
 VALUES
-('94a990533d761111111111111111111111111111', 1, 1, NOW(), '94a990533d760000000000000000000000000000'),
-('94a990533d762222222222222222222222222222', 2, 2, NOW(), '94a990533d770000000000000000000000000000'),
-('abc36768cf4d927e267a72ac1cb8108693bdafd1', 1, 2, NOW(), '94a990533d760000000000000000000000000000');
+('94a990533d761111111111111111111111111111', '94a990533d76ffaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, NOW(), '94a990533d760000000000000000000000000000', 'Living Room Sensor', 'Temperature and humidity sensor in the living room', '#DB2122'),
+('94a990533d762222222222222222222222222222', '94a990533d76fffaaaaaaaaaaaaaaaaaaaaaaaaa', 2, NOW(), '94a990533d770000000000000000000000000000', 'Office Sensor', 'CO2 sensor in the office', '#F0D16F'),
+('abc36768cf4d927e267a72ac1cb8108693bdafd1', '94a990533d76ffaaaaaaaaaaaaaaaaaaaaaaaaaa', 2, NOW(), '94a990533d760000000000000000000000000000', 'Kitchen Sensor', 'CO2 sensor in the kitchen', '#21DB55');
 
 INSERT INTO sensor_data (sensor, serialized_data, added_at) VALUES
 ('94a990533d761111111111111111111111111111', '{"temperature":22.5,"humidity":45.2,"sensor_id":"94a990533d760000000000000000000000000000"}', NOW()),
