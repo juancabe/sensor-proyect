@@ -1,30 +1,49 @@
+import { PlaceSummary } from '@/bindings/PlaceSummary';
 import { SensorSummary } from '@/bindings/SensorSummary';
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { Button, StyleSheet, View } from 'react-native';
+import { useAppContext } from './AppProvider';
+import { TEXT_STYLES, ThemedText } from './ui-elements/ThemedText';
 import SensorCard from './SensorCard';
-import { TEXT_STYLES, ThemedText } from './ThemedText';
-import { ThemedView } from './ThemedView';
+import { ThemedView } from './ui-elements/ThemedView';
 
 export interface PlaceCardProps {
-    place: [string, string | null];
+    place: PlaceSummary;
     sensors: SensorSummary[];
-    placeColor: string;
 }
 
-export default function PlaceCard({ place, sensors, placeColor }: PlaceCardProps) {
-    console.log('placeColor: ', placeColor);
+export default function PlaceCard({ place, sensors }: PlaceCardProps) {
+    const router = useRouter();
+    const ctx = useAppContext();
+
+    const handleAddSensorPress = () => {
+        if (ctx.setActivePlace(place.place_id.id)) {
+            console.warn('TODO: navigate to AddSensorScreen');
+            // router.navigate('/AddSensorScreen');
+        } else {
+            // TODO: Display error
+        }
+    };
 
     return (
-        <ThemedView style={styles.container}>
-            <ThemedText style={TEXT_STYLES.heading2}>{place[0]}</ThemedText>
-            <Button title="Add Sensor" />
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        <ThemedView
+            style={[
+                styles.container,
+                { backgroundColor: place.color.replace('HEX_', '#') },
+            ]}
+        >
+            <ThemedText style={TEXT_STYLES.heading2}>{place.name}</ThemedText>
+            <Button title="Add Sensor" onPress={handleAddSensorPress} />
+            <View
+                style={{
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    justifyContent: 'center',
+                }}
+            >
                 {sensors.map((sensor) => (
-                    <SensorCard
-                        key={sensor.api_id.id}
-                        sensor={sensor}
-                        placeColor={placeColor}
-                    />
+                    <SensorCard key={sensor.api_id.id} sensor={sensor} />
                 ))}
             </View>
         </ThemedView>

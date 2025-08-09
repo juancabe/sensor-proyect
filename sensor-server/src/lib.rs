@@ -16,7 +16,11 @@ use crate::db::test_db_pool;
 
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    env_logger::init();
+    // Sets default log level to Debug
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Debug)
+        .init();
+
     log::info!("Starting sensor server...");
     test_db_pool().unwrap();
 

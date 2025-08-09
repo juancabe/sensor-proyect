@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 use chrono::TimeZone;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Bytes;
@@ -32,6 +30,7 @@ use sensor_lib::api::model::color_palette::{PlaceColor, SensorColor};
 use sensor_lib::api::model::sensor_kind::SensorKind;
 use sensor_lib::api::model::user_summary::PlaceSummary;
 use sensor_lib::api::{ApiEndpoint, model};
+use serde_json::de;
 
 use crate::db::{self, delete_place, delete_sensor};
 use crate::{helper::*, models};
@@ -368,6 +367,11 @@ fn post_place(
 }
 
 fn login(body: LoginRequestBody) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    log::debug!(
+        "[Login] called with username ({}) and hashed password ({})",
+        &body.username,
+        &body.hashed_password
+    );
     match db::get_login(&body.username, &body.hashed_password) {
         Ok(api_id) => match api_id {
             Some(api_id) => {
@@ -453,7 +457,10 @@ fn register(
 fn post_user_summary(
     query: PostUserSummaryRequestBody,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    let mut places: HashSet<PlaceSummary> = HashSet::new();
+    log::debug!(
+        "post_user_summary called with username: {}",
+        &query.username
+    );
 
     // check if user exists and get email
     let email = match db::get_user_email(&query.username, query.user_api_id.as_str()) {
@@ -479,11 +486,55 @@ fn post_user_summary(
         },
     };
 
+    let mut places: Vec<PlaceSummary> = Vec::new();
+
+    match db::get_user_places(&query.username, &query.user_api_id.as_str()) {
+        Ok(vector) => {
+            for place in vector {
+                let place_id = match ApiId::from_string(&place.api_id) {
+                    Ok(api_id) => api_id,
+                    Err(e) => {
+                        log::error!(
+                            "[PostUserSummary] Inconsistent PLACE API_ID found in DB, place.api_id: {}, error: {:?}",
+                            place.api_id,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+                let color = match PlaceColor::from_str(&place.color) {
+                    Some(c) => c,
+                    None => {
+                        log::error!(
+                            "[PostUserSummary] Inconsistent PLACE COLOR found in DB, place.color: {}",
+                            place.color
+                        );
+                        continue;
+                    }
+                };
+
+                places.push(PlaceSummary {
+                    place_id,
+                    last_update: place.updated_at.timestamp() as u32,
+                    name: place.name,
+                    description: place.description,
+                    color,
+                });
+            }
+        }
+        Err(e) => {
+            log::error!("[PostUserSummary] Error getting user places: {:?}", e);
+            let mut response = Response::new(empty());
+            *response.status_mut() = PostUserSummaryResponseCode::InternalServerError.into();
+            return Ok(response);
+        }
+    }
+
     let sensors = match db::get_user_sensors(&query.username, query.user_api_id.as_str()) {
         Ok(r) => r.into_iter().map(|(sens, place)| {
-            let (place_api_id, place_color, kind, sensor_api_id, device_id, sensor_color) = match (
+            let (place_api_id, kind, sensor_api_id, device_id, sensor_color) = match (
                 ApiId::from_string(&place.api_id),
-                PlaceColor::from_str(&place.color),
                 SensorKind::from_i32(sens.kind),
                 ApiId::from_string(&sens.api_id),
                 ApiId::from_string(&sens.device_id),
@@ -491,24 +542,15 @@ fn post_user_summary(
             ) {
                 (
                     Ok(place_api_id),
-                    Some(place_color),
                     Some(kind),
                     Ok(sensor_api_id),
                     Ok(device_id),
                     Some(sensor_color),
-                ) => (
-                    place_api_id,
-                    place_color,
-                    kind,
-                    sensor_api_id,
-                    device_id,
-                    sensor_color,
-                ),
+                ) => (place_api_id, kind, sensor_api_id, device_id, sensor_color),
                 _ => {
                     log::error!(
                         "[PostUserSummary] INCONSISTENCY Error converting DB values to API types:
                     ApiId::from_string({}), -> {:?}
-                    PlaceColor::from_str({}), -> {:?}
                     SensorKind::from_i32({}), -> {:?}
                     ApiId::from_string({}), -> {:?}
                     ApiId::from_string({}), -> {:?}
@@ -516,8 +558,6 @@ fn post_user_summary(
                     ",
                         &place.api_id,
                         ApiId::from_string(&place.api_id),
-                        &place.color,
-                        PlaceColor::from_str(&place.color),
                         sens.kind,
                         SensorKind::from_i32(sens.kind),
                         &sens.api_id,
@@ -530,14 +570,6 @@ fn post_user_summary(
                     return None; // Skip this sensor if any conversion fails
                 }
             };
-
-            places.insert(PlaceSummary {
-                place_id: place_api_id.clone(),
-                last_update: place.updated_at.timestamp() as u32,
-                name: place.name,
-                description: place.description,
-                color: place_color,
-            });
 
             let sum = model::user_summary::SensorSummary {
                 kind,
@@ -572,8 +604,10 @@ fn post_user_summary(
         username: query.username,
         email,
         sensors,
-        places: places.into_iter().collect(),
+        places,
     };
+
+    log::debug!("Summary created: {:?}", summary);
 
     log::info!("[PostUserSummary] Returning 200 Status code");
     let resp = PostUserSummaryResponseBody { summary };

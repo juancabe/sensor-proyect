@@ -580,6 +580,29 @@ pub fn get_user_sensors(
     }
 }
 
+pub fn get_user_places(username: &str, user_api_id: &str) -> Result<Vec<UserPlace>, Error> {
+    use crate::schema::user_places::dsl::user_places as user_places_table;
+    use crate::schema::{users::dsl as users, users::dsl::users as users_table};
+
+    let r = users_table
+        .filter(
+            users::api_id
+                .eq(user_api_id)
+                .and(users::username.eq(username)),
+        )
+        .inner_join(user_places_table)
+        .select(UserPlace::as_select())
+        .load::<UserPlace>(&mut get_db_pool()?);
+
+    match r {
+        Ok(places) => Ok(places),
+        Err(e) => match e {
+            diesel::result::Error::NotFound => Err(Error::NotFound),
+            e => Err(Error::DataBaseError(e)),
+        },
+    }
+}
+
 pub fn get_user(username: &str, user_api_id: &str) -> Result<models::User, Error> {
     use crate::schema::{users::dsl as users, users::dsl::users as users_table};
 

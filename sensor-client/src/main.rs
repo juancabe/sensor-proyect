@@ -41,7 +41,7 @@ mod persistence;
 mod private;
 mod sensors;
 
-const BASE_URL: &'static str = "http://sensor-server.juancb.ftp.sh:3000";
+const BASE_URL: &'static str = "http://192.168.1.134:3000";
 const READS_DELAY_MS: u32 = 1000 * 60; // 1 minute
 
 const HTTP_POST_TRIES: u32 = 10;
@@ -488,6 +488,9 @@ fn main() {
         if !(a && b) {
             panic!("NVS Keys-Values were not there after they were set")
         }
+
+        // Now we just panic to Correctly disable BLE
+        panic!("Correctly set up BLE")
     }
 
     let user_api =
