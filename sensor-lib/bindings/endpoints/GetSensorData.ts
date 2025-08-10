@@ -4,6 +4,6 @@ import type { SensorKind } from "../SensorKind";
 
 export type GetSensorDataRequestBody = { user_api_id: ApiId, sensor_api_id: ApiId, added_at_upper: number | null, added_at_lower: number | null, };
 
-export type GetSensorDataResponseBody = { item_count: number, serialized_data: Array<string>, sensor_kind: SensorKind, };
+export type GetSensorDataResponseBody = { item_count: number, serialized_data: Array<[string, number]>, sensor_kind: SensorKind, };
 
 export type GetSensorDataResponseCode = "Ok" | "BadRequest" | "PayloadTooLarge" | "Unauthorized" | "InternalServerError";

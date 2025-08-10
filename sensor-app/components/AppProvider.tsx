@@ -10,7 +10,6 @@ import {
     useState,
 } from 'react';
 import { SessionData } from '@/persistence/SessionData';
-import { reload } from 'expo-router/build/global-state/routing';
 
 export type SummaryMap = Map<string, [PlaceSummary, SensorSummary[]]>;
 type SummaryState = SummaryMap | 'Unauthorized' | 'Connection Error' | undefined;
@@ -20,7 +19,9 @@ interface AppContextType {
     reloadSummary: () => Promise<void>;
     sessionData: SessionData | undefined;
     activePlace: PlaceSummary | undefined;
+    activeSensor: SensorSummary | undefined;
     setActivePlace: (place_id: string) => boolean | undefined;
+    setActiveSensor: (sensor: SensorSummary | undefined) => void;
     logOut: () => Promise<void>;
 }
 
@@ -30,6 +31,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const [summary, setSummary] = useState<SummaryState>(undefined);
     const [activePlace, setActivePlace] = useState<PlaceSummary | undefined>(undefined);
+    const [activeSensor, setActiveSensor] = useState<SensorSummary | undefined>(
+        undefined,
+    );
     const [sessionData, setSessionData] = useState<SessionData | undefined>(undefined);
 
     useEffect(() => {
@@ -130,6 +134,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await reloadSummary();
     };
 
+    function publicSetActiveSensor(sensor: SensorSummary | undefined) {
+        setActiveSensor(sensor);
+    }
+
     return (
         <AppContext.Provider
             value={{
@@ -137,7 +145,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 reloadSummary,
                 sessionData: sessionData,
                 activePlace,
+                activeSensor,
                 setActivePlace: publicSetActivePlace,
+                setActiveSensor: publicSetActiveSensor,
                 logOut,
             }}
         >

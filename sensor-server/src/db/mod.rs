@@ -5,7 +5,6 @@ use diesel::r2d2::{self, ConnectionManager};
 use dotenvy::dotenv;
 
 use once_cell::sync::Lazy;
-use sensor_lib::api;
 use sensor_lib::api::endpoints::get_sensor_data::GetSensorDataRequestBody;
 use sensor_lib::api::endpoints::register::RegisterRequestBody;
 use sensor_lib::api::model::api_id::{self, ApiId};
@@ -15,8 +14,6 @@ use sensor_lib::api::model::sensor_kind::SensorKind;
 use crate::models::{self, SensorData, UserPlace, UserSensor};
 
 use r2d2::Error as DieselPoolError;
-
-type FailedDeserialize = usize;
 
 #[derive(Debug)]
 pub enum Error {
@@ -651,8 +648,6 @@ pub fn update_sensor_last_measurement(
 
 #[cfg(test)]
 mod tests {
-
-    use chrono::SubsecRound;
 
     use super::*;
 

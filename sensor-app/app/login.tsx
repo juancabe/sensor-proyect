@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { Button, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as auth from '@/helpers/auth';
+import ErrorBox from '@/components/ui-elements/ErrorBox';
 
 export default function Login() {
     const router = useRouter();
@@ -169,21 +170,7 @@ export default function Login() {
                         onPress={handleSubmission}
                     />
                 </ThemedView>
-                <ThemedView
-                    style={{
-                        borderStyle: 'solid',
-                        borderColor: '#ff0000',
-                        borderWidth: 4,
-                        borderRadius: 4,
-                        backgroundColor: '#ff000066',
-                        padding: 40,
-                        opacity: workingError ? 100 : 0,
-                    }}
-                >
-                    {workingError ? (
-                        <ThemedText style={TEXT_STYLES.body}>{workingError}</ThemedText>
-                    ) : null}
-                </ThemedView>
+                <ErrorBox error={workingError}></ErrorBox>
                 <Button title={oppositeType()} onPress={() => setType(oppositeType())} />
             </ThemedView>
         </SafeAreaView>

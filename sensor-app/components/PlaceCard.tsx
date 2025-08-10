@@ -19,8 +19,7 @@ export default function PlaceCard({ place, sensors }: PlaceCardProps) {
 
     const handleAddSensorPress = () => {
         if (ctx.setActivePlace(place.place_id.id)) {
-            console.warn('TODO: navigate to AddSensorScreen');
-            // router.navigate('/AddSensorScreen');
+            router.navigate('/AddSensorScreen');
         } else {
             // TODO: Display error
         }

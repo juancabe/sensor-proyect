@@ -10,6 +10,7 @@ export default function Index() {
     useEffect(() => {
         const loadSession = async () => {
             const sd = await SessionData.create();
+            console.debug('SessionData created: ', sd);
             setSessionData(sd);
         };
 

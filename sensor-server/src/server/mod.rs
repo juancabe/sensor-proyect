@@ -30,7 +30,6 @@ use sensor_lib::api::model::color_palette::{PlaceColor, SensorColor};
 use sensor_lib::api::model::sensor_kind::SensorKind;
 use sensor_lib::api::model::user_summary::PlaceSummary;
 use sensor_lib::api::{ApiEndpoint, model};
-use serde_json::de;
 
 use crate::db::{self, delete_place, delete_sensor};
 use crate::{helper::*, models};
@@ -144,7 +143,10 @@ fn get_sensor_data(
 
     match query_result {
         Ok((kind, data)) => {
-            let data: Vec<String> = data.into_iter().map(|d| d.serialized_data).collect();
+            let data: Vec<(String, u32)> = data
+                .into_iter()
+                .map(|d| (d.serialized_data, d.added_at.and_utc().timestamp() as u32))
+                .collect();
 
             let resp = GetSensorDataResponseBody {
                 item_count: data.len(),
@@ -516,7 +518,7 @@ fn post_user_summary(
 
                 places.push(PlaceSummary {
                     place_id,
-                    last_update: place.updated_at.timestamp() as u32,
+                    last_update: place.updated_at.and_utc().timestamp() as u32,
                     name: place.name,
                     description: place.description,
                     color,

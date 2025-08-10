@@ -40,6 +40,7 @@ pub async fn extract_body_and_parse<T, E>(
                 ExtractError::ParseErrorAsValue(format!("Failed to parse body as JSON: {}", err))
             })
             .and_then(|json_value| {
+                log::debug!("Parsing the Value: {json_value:?}");
                 parse_fn(&json_value).map_err(|_| ExtractError::ParseErrorAsType)
             })?;
         Ok(r)

@@ -11,6 +11,7 @@ import { newUserPlace } from '@/api/place_crud';
 import { PlaceColor } from '@/bindings/PlaceColor';
 import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import { useRouter } from 'expo-router';
+import ErrorBox from '@/components/ui-elements/ErrorBox';
 
 const placeColorValues: Record<PlaceColor, string> = {
     HEX_403E2A: '#403E2A',
@@ -41,6 +42,8 @@ export default function AddPlaceScreen() {
     const [placeDescription, setPlaceDescription] = useState<string | null>(null);
     const [placeColor, setPlaceColor] = useState<PlaceColor | undefined>(undefined);
 
+    const [errorText, setErrorText] = useState<null | string>(null);
+
     const isAddable = placeName && placeColor;
 
     const redirectToIndex = () => {
@@ -51,14 +54,21 @@ export default function AddPlaceScreen() {
     const handleAdd = async () => {
         if (!ctx.sessionData?.all_set()) {
             console.warn('[AddPlaceScreen] sessionData was not set');
+            setErrorText(
+                'Your login data is incorrectly set somehow, please log out and try again!',
+            );
             return;
         }
 
         if (!placeName) {
+            setErrorText(
+                'You should have set a place name before clicking the add button',
+            );
             return; // TODO Better error return
         }
 
         if (!placeColor) {
+            setErrorText('You should have set a color before clicking the add button');
             return; // TODO Better error return
         }
 
@@ -75,7 +85,9 @@ export default function AddPlaceScreen() {
         if (response && !(typeof response === 'number')) {
             redirectToIndex();
         } else {
-            throw 'Error from newUserPlace: ' + response;
+            setErrorText(
+                'There was an error when sending the place to the server, please log out and try again',
+            );
         }
     };
 
@@ -105,6 +117,7 @@ export default function AddPlaceScreen() {
                         }}
                         colorValues={placeColorValues}
                     ></BindedColorPicker>
+                    <ErrorBox error={errorText}></ErrorBox>
 
                     <Button
                         title="Add Place"

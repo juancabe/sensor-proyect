@@ -1,8 +1,11 @@
 import { SensorSummary } from '@/bindings/SensorSummary';
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, TouchableOpacity } from 'react-native';
 import { ThemedText } from './ui-elements/ThemedText';
 import { ThemedView } from './ui-elements/ThemedView';
+import { useAppContext } from './AppProvider';
+import { useRouter } from 'expo-router';
+import { timeDisplay } from '@/helpers/timeDisplay';
 
 export interface SensorCardProps {
     sensor: SensorSummary;
@@ -22,41 +25,32 @@ function LabelValue(props: LabelValueProps) {
     );
 }
 
-function getFormattedLastUpdate(date: Date) {
-    const diff = new Date().getTime() - date.getTime();
-    const MILLIS = 1000;
-    const SECONDS = 60;
-    const MINUTES_30 = MILLIS * SECONDS * 30;
-    const MINUTES_2 = MILLIS * SECONDS * 2;
-
-    if (Math.abs(diff) > MINUTES_30) {
-        return date.toUTCString();
-    } else {
-        if (diff > MINUTES_2) {
-            return `${~~(diff / (MILLIS / SECONDS))} minutes ago`;
-        } else {
-            return `${~~(diff / MILLIS)} seconds ago`;
-        }
-    }
-}
-
 export default function SensorCard(props: SensorCardProps) {
     const sensor = props.sensor;
+    const ctx = useAppContext();
+    const router = useRouter();
 
     return (
-        <ThemedView
-            style={[
-                { backgroundColor: props.sensor.color.replace('HEX_', '#') },
-                styles.mainContainer,
-            ]}
+        <TouchableOpacity
+            onPress={() => {
+                ctx.setActiveSensor(sensor);
+                router.navigate('/SensorDetail');
+            }}
         >
-            <ThemedText style={styles.sensorName}>{sensor.name}</ThemedText>
-            <LabelValue
-                label="Last Update"
-                value={getFormattedLastUpdate(new Date(sensor.last_update * 1000))}
-            />
-            <LabelValue label="Sensor Kind" value={sensor.kind} />
-        </ThemedView>
+            <ThemedView
+                style={[
+                    { backgroundColor: props.sensor.color.replace('HEX_', '#') },
+                    styles.mainContainer,
+                ]}
+            >
+                <ThemedText style={styles.sensorName}>{sensor.name}</ThemedText>
+                <LabelValue
+                    label="Last Update"
+                    value={timeDisplay(new Date(sensor.last_update * 1000))}
+                />
+                <LabelValue label="Sensor Kind" value={sensor.kind} />
+            </ThemedView>
+        </TouchableOpacity>
     );
 }
 

@@ -5,20 +5,22 @@ use crate::api::{
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+type UNIXTimestamp = u32;
+
 #[derive(Deserialize, Serialize, Debug, Clone, TS)]
 #[ts(export, export_to = "endpoints/GetSensorData.ts")]
 pub struct GetSensorDataRequestBody {
     pub user_api_id: ApiId,
     pub sensor_api_id: ApiId,
-    pub added_at_upper: Option<u32>, // UNIX timestamp seconds
-    pub added_at_lower: Option<u32>, // UNIX timestamp seconds
+    pub added_at_upper: Option<UNIXTimestamp>, // UNIX timestamp seconds
+    pub added_at_lower: Option<UNIXTimestamp>, // UNIX timestamp seconds
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, TS)]
 #[ts(export, export_to = "endpoints/GetSensorData.ts")]
 pub struct GetSensorDataResponseBody {
     pub item_count: usize,
-    pub serialized_data: Vec<String>,
+    pub serialized_data: Vec<(String, UNIXTimestamp)>,
     pub sensor_kind: SensorKind,
 }
 
@@ -54,7 +56,7 @@ impl<'a, 'b> ApiEndpoint<'a, 'b> for GetSensorData {
     type ResponseCode = GetSensorDataResponseCode;
 
     const PATH: &'static str = "/api/v0/get_sensor_data";
-    const METHOD: http::Method = http::Method::GET;
+    const METHOD: http::Method = http::Method::POST;
 
     const MAX_REQUEST_BODY_SIZE: u64 = 1024; // 1 KB
     const MAX_RESPONSE_BODY_SIZE: u64 = 1024 * 1024; // 1 MB
