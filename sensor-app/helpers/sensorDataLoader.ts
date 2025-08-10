@@ -74,7 +74,7 @@ export interface DataInsights {
 
 export class SensorDataLoader {
     private _data: TimestampedData;
-    private _numerical_keys: string[] | undefined;
+    private _numerical_keys: string[];
     private _data_shape: DataShape;
     private _shaped_data: ShapedData;
 
@@ -91,8 +91,10 @@ export class SensorDataLoader {
     }
 
     private createShapedData(): ShapedData {
+        console.log('creating shaped data');
+
         const maxPoints = this._data_shape.maxPoints;
-        // const maxLabels = this._data_shape.maxLabels;
+        const maxLabels = this._data_shape.maxLabels;
         const workingIndices = equidistantIndices(this._data.length, maxPoints);
         const keys = this._numerical_keys!;
 
@@ -106,6 +108,7 @@ export class SensorDataLoader {
         }
 
         const datumArraysNum = Math.min(MAX_DATUM_ARRAYS, keys.length);
+        let labeledIndices = equidistantIndices(workingData.length, maxLabels);
 
         let shapedData: ShapedData = {
             data: Array.from({ length: datumArraysNum }, (_, index) => {
@@ -118,7 +121,17 @@ export class SensorDataLoader {
             }),
         };
 
-        for (const datum of workingData) {
+        labeledIndices = labeledIndices.reverse();
+
+        for (const [index, datum] of workingData.entries()) {
+            const nextLabeled = labeledIndices.at(labeledIndices.length - 1);
+
+            let labeled = false;
+            if (nextLabeled === index) {
+                labeledIndices.pop();
+                labeled = true;
+            }
+
             for (let i = 0; i < datumArraysNum; i++) {
                 const newDatum = safeGet(datum[0], keys[i]);
                 if (!newDatum) {
@@ -128,17 +141,19 @@ export class SensorDataLoader {
                     throw 'newDatum should be a number';
                 }
 
-                console.debug(
-                    `datum[1]: ${datum[1]}, typeof datum[1]: ${typeof datum[1]}`,
-                );
+                const label =
+                    labeled && typeof datum[1] === 'number'
+                        ? timeDisplay(new Date(datum[1] * 1000))
+                        : undefined;
+
+                if (label) {
+                    console.log('label for ', datum[1], ': ', label);
+                }
 
                 const shapedDatum: ShapedDatum = {
                     value: newDatum,
-                    label:
-                        typeof datum[1] === 'number'
-                            ? timeDisplay(new Date(datum[1] * 1000))
-                            : undefined,
-                    showXAxisIndex: true,
+                    label,
+                    showXAxisIndex: labeled,
                 };
 
                 shapedData.data[i].array.push(shapedDatum);
@@ -160,6 +175,10 @@ export class SensorDataLoader {
 
     getData(): ShapedData {
         return this._shaped_data;
+    }
+
+    getKeys(): string[] {
+        return this._numerical_keys;
     }
 
     // Will throw string describing error

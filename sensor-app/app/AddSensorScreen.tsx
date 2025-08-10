@@ -154,7 +154,7 @@ export default function AddSensorScreen() {
                     <ErrorBox error={errorText}></ErrorBox>
                     {ble.allDevices.map((dev) => {
                         return (
-                            <ThemedView style={styles.deviceContainer} key={dev.id}>
+                            <ThemedView style={[styles.deviceContainer]} key={dev.id}>
                                 <ThemedText>{dev.id}</ThemedText>
                                 <Button
                                     disabled={!allSet}
