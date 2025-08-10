@@ -9,6 +9,7 @@ use crate::api::model::{
 
 pub type Name = String;
 pub type Description = String;
+pub type UNIXTimestampSeconds = u32;
 
 #[derive(Debug, Serialize, Deserialize, Clone, TS)]
 #[ts(export)]
@@ -21,6 +22,7 @@ pub struct SensorSummary {
     pub name: Name,
     pub description: Option<Description>,
     pub color: SensorColor,
+    pub last_serialized_data: Option<(String, UNIXTimestampSeconds)>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, TS, PartialEq, Eq, Hash)]

@@ -71,7 +71,10 @@ pub fn test_db_pool() -> Result<(), ()> {
 }
 
 pub fn query_sensor_data(
-    query: GetSensorDataRequestBody,
+    user_api_id: &ApiId,
+    sensor_api_id: &ApiId,
+    added_at_upper: Option<u32>,
+    added_at_lower: Option<u32>,
 ) -> Result<(SensorKind, Vec<SensorData>), Error> {
     use crate::schema::{
         sensor_data::dsl as sensor_data, sensor_data::dsl::sensor_data as sensor_data_table,
@@ -87,10 +90,10 @@ pub fn query_sensor_data(
     let mut db_conn = get_db_pool()?;
 
     let r = users_table
-        .filter(users::api_id.eq(&query.user_api_id.as_str()))
+        .filter(users::api_id.eq(&user_api_id.as_str()))
         .inner_join(user_places_table)
         .inner_join(user_sensors_table.on(user_places::api_id.eq(user_sensors::place)))
-        .filter(user_sensors::api_id.eq(&query.sensor_api_id.as_str()))
+        .filter(user_sensors::api_id.eq(&sensor_api_id.as_str()))
         .select(models::UserSensor::as_select())
         .load::<models::UserSensor>(&mut db_conn)?;
 
@@ -104,23 +107,21 @@ pub fn query_sensor_data(
         None => Err(Error::NotFound)?,
     };
 
-    let max_date = query
-        .added_at_upper
+    let max_date = added_at_upper
         .and_then(|secs| (secs as i64).checked_mul(1_000))
         .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
         .and_then(|dt| Some(dt.naive_utc()));
-    let min_date = query
-        .added_at_lower
+    let min_date = added_at_lower
         .and_then(|secs| (secs as i64).checked_mul(1_000))
         .and_then(|millis| chrono::Utc::timestamp_millis_opt(&chrono::Utc, millis).earliest())
         .and_then(|dt| Some(dt.naive_utc()));
 
     let vec = sensor_data_table
-        .filter(sensor_data::sensor.eq(query.sensor_api_id.as_str()))
+        .filter(sensor_data::sensor.eq(sensor_api_id.as_str()))
         .inner_join(user_sensors_table)
         .inner_join(user_places_table.on(user_places::api_id.eq(user_sensors::place)))
         .inner_join(users_table.on(users::username.eq(user_places::user)))
-        .filter(users::api_id.eq(query.user_api_id.as_str()))
+        .filter(users::api_id.eq(user_api_id.as_str()))
         .filter(sensor_data::added_at.le(max_date.unwrap_or(NaiveDateTime::MAX)))
         .filter(
             sensor_data::added_at.ge(min_date.unwrap_or(
@@ -552,12 +553,13 @@ pub fn get_user_sensors(
     use crate::schema::{
         user_places::dsl as user_places, user_places::dsl::user_places as user_places_table,
     };
+
     use crate::schema::{
         user_sensors::dsl as user_sensors, user_sensors::dsl::user_sensors as user_sensors_table,
     };
     use crate::schema::{users::dsl as users, users::dsl::users as users_table};
 
-    let r = users_table
+    let sensors_places = users_table
         .filter(
             users::api_id
                 .eq(user_api_id)
@@ -568,7 +570,7 @@ pub fn get_user_sensors(
         .select((UserSensor::as_select(), UserPlace::as_select()))
         .load::<(UserSensor, UserPlace)>(&mut get_db_pool()?);
 
-    match r {
+    match sensors_places {
         Ok(sensors) => Ok(sensors),
         Err(e) => match e {
             diesel::result::Error::NotFound => Err(Error::NotFound),
@@ -1045,15 +1047,13 @@ mod tests {
     }
     #[test]
     fn test_query_aht10_data() {
-        let query = GetSensorDataRequestBody {
-            user_api_id: ApiId::from_string(VALID_USER_API_ID).expect("Valid API ID"),
-            sensor_api_id: ApiId::from_string(VALID_AHT10_API_ID).expect("Valid API ID"),
-            added_at_upper: None,
-            added_at_lower: None,
-        };
-
-        let result =
-            query_sensor_data(query).expect("Failed to query AHT10 data for existing user");
+        let result = query_sensor_data(
+            &ApiId::from_string(VALID_USER_API_ID).expect("Valid API ID"),
+            &ApiId::from_string(VALID_AHT10_API_ID).expect("Valid API ID"),
+            None,
+            None,
+        )
+        .expect("Failed to query AHT10 data for existing user");
 
         assert_eq!(result.0, SensorKind::Aht10, "Sensor kind must be the same");
         assert!(
@@ -1072,7 +1072,12 @@ mod tests {
             added_at_upper: None,
             added_at_lower: None,
         };
-        let result = query_sensor_data(query);
+        let result = query_sensor_data(
+            &ApiId::from_string("abcdef9999abcdef9999abcdef9999abcdef9999").expect("Valid API ID"),
+            &ApiId::from_string(VALID_SCD41_API_ID).expect("Valid API ID"),
+            None,
+            None,
+        );
         match result {
             Ok(_) => assert!(false, "Unexpected result"),
             Err(e) => match e {
@@ -1144,8 +1149,13 @@ mod tests {
             added_at_lower: None,
         };
 
-        let result =
-            query_sensor_data(query).expect("Failed to query SCD4X data for existing user");
+        let result = query_sensor_data(
+            &ApiId::from_string(VALID_USER_API_ID).expect("Valid API ID"),
+            &ApiId::from_string(VALID_SCD41_API_ID).expect("Valid API ID"),
+            None,
+            None,
+        )
+        .expect("Failed to query SCD4X data for existing user");
         assert_eq!(result.0, SensorKind::Scd4x,);
         assert!(
             result.1.len() == 10,
@@ -1156,14 +1166,12 @@ mod tests {
 
     #[test]
     fn test_query_scd4x_data_nonexistent_user() {
-        let query = GetSensorDataRequestBody {
-            user_api_id: ApiId::from_string("abcdef9999abcdef9999abcdef9999abcdef9999")
-                .expect("Valid API ID"),
-            sensor_api_id: ApiId::from_string(VALID_SCD41_API_ID).expect("Valid API ID"),
-            added_at_upper: None,
-            added_at_lower: None,
-        };
-        let result = query_sensor_data(query);
+        let result = query_sensor_data(
+            &ApiId::from_string("abcdef9999abcdef9999abcdef9999abcdef9999").expect("Valid API ID"),
+            &ApiId::from_string(VALID_SCD41_API_ID).expect("valid api id"),
+            None,
+            None,
+        );
 
         match result {
             Ok(_) => assert!(false, "Unexpected result"),
@@ -1283,14 +1291,13 @@ mod tests {
         }
 
         // Query for a specific date range
-        let query = GetSensorDataRequestBody {
-            user_api_id: ApiId::from_string(VALID_USER_API_ID).unwrap(),
-            sensor_api_id: ApiId::from_string(VALID_AHT10_API_ID).unwrap(),
-            added_at_lower: Some((now - chrono::Duration::days(5)).timestamp() as u32),
-            added_at_upper: Some((now - chrono::Duration::days(2)).timestamp() as u32),
-        };
-
-        let result = query_sensor_data(query).unwrap();
+        let result = query_sensor_data(
+            &ApiId::from_string(VALID_USER_API_ID).unwrap(),
+            &ApiId::from_string(VALID_AHT10_API_ID).unwrap(),
+            Some((now - chrono::Duration::days(2)).timestamp() as u32),
+            Some((now - chrono::Duration::days(5)).timestamp() as u32),
+        )
+        .unwrap();
         // Should find the points at T-3 days and T-2 days.
         assert_eq!(result.1.len(), 2);
 

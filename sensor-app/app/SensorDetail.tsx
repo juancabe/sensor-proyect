@@ -120,7 +120,7 @@ export default function SensorDetail() {
                             &apos;{sensor!.name}&apos;
                         </ThemedText>
                     </ThemedView>
-                    {availableKeys ? (
+                    {availableKeys && availableKeys.length > 0 ? (
                         <ThemedView style={styles.checkBoxesContainer}>
                             <CheckboxesSelector
                                 selectedValue={selectedKey}

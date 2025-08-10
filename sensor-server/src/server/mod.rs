@@ -139,7 +139,7 @@ fn get_sensor_data(
         Ok(_) => (),
     }
 
-    let query_result = db::query_sensor_data(body);
+    let query_result = db::query_sensor_data(&body.user_api_id, &body.sensor_api_id, body.added_at_upper, body.added_at_lower);
 
     match query_result {
         Ok((kind, data)) => {
@@ -573,6 +573,16 @@ fn post_user_summary(
                 }
             };
 
+            let data = match db::query_sensor_data(&query.user_api_id, &sensor_api_id, None, None) {
+                Ok((_, data)) => {
+                    data.iter().max_by(|d1, d2| d1.added_at.cmp(&d2.added_at) ).map(|d| (d.serialized_data.clone(), d.added_at.and_utc().timestamp() as u32)) 
+                }
+                Err(e) => {
+                    log::warn!("Possible DB error in [PostUserSummary] calling [db::query_sensor_data]: {e:?}");
+                    None
+                }
+            };
+
             let sum = model::user_summary::SensorSummary {
                 kind,
                 api_id: sensor_api_id,
@@ -582,6 +592,7 @@ fn post_user_summary(
                 name: sens.name,
                 description: sens.description,
                 color: sensor_color,
+                last_serialized_data: data,
             };
 
             Some(sum)

@@ -2,6 +2,7 @@ import { getSensorData } from '@/api/get_sensor_data';
 import { ApiId } from '@/bindings/ApiId';
 import { GetSensorDataResponseBody } from '@/bindings/endpoints/GetSensorData';
 import { timeDisplay } from './timeDisplay';
+import { safeGet } from './objectWork';
 
 function equidistantIndices(len: number, max: number): number[] {
     if (max <= 0 || len <= 0) {
@@ -27,10 +28,6 @@ function equidistantIndices(len: number, max: number): number[] {
     }
 
     return indices;
-}
-
-function safeGet<T extends object>(obj: T, key: string): T[keyof T] | undefined {
-    return key in obj ? obj[key as keyof T] : undefined;
 }
 
 type UNIXTimestampSeconds = number;

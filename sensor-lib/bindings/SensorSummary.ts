@@ -3,4 +3,4 @@ import type { ApiId } from "./ApiId";
 import type { SensorColor } from "./SensorColor";
 import type { SensorKind } from "./SensorKind";
 
-export type SensorSummary = { kind: SensorKind, api_id: ApiId, device_id: ApiId, last_update: number, place_id: ApiId, name: string, description: string | null, color: SensorColor, };
+export type SensorSummary = { kind: SensorKind, api_id: ApiId, device_id: ApiId, last_update: number, place_id: ApiId, name: string, description: string | null, color: SensorColor, last_serialized_data: [string, number] | null, };

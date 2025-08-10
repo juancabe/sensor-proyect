@@ -89,18 +89,13 @@ export default function AddSensorScreen() {
                 user_api_id!,
                 sensorApiIdFetch,
             );
-            if (res) {
-                redirectToIndex();
-            } else {
-                console.error(
-                    '[handleConnect] connectToDeviceAndConfigure returned false',
-                );
-            }
+            redirectToIndex();
         } catch (e) {
             console.error(
                 '[handleConnect] connectToDeviceAndConfigure threw and error: ',
                 e,
             );
+            setErrorText('Error while connecting to device, try again');
         }
     };
 
