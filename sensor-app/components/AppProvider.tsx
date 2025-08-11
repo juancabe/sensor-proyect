@@ -27,8 +27,6 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
-    console.debug('[AppContext] mounted');
-
     const [summary, setSummary] = useState<SummaryState>(undefined);
     const [activePlace, setActivePlace] = useState<PlaceSummary | undefined>(undefined);
     const [activeSensor, setActiveSensor] = useState<SensorSummary | undefined>(
@@ -91,7 +89,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     console.warn('sensor: ', sensor);
                     return;
                 }
-                let [_place, sens_arr] = opt;
+                let [, sens_arr] = opt;
                 sens_arr.push(sensor);
             });
 
@@ -102,9 +100,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
     }, [sessionData]);
 
+    const RELOAD_TIMEOUT = 1_000; // ms
+
     useEffect(() => {
         reloadSummary();
+        const id = setInterval(() => {
+            reloadSummary();
+        }, RELOAD_TIMEOUT);
+        return () => clearInterval(id);
     }, [reloadSummary]);
+
+    // useEffect(() => {
+    //     reloadSummary();
+    // }, [reloadSummary]);
 
     const publicSetActivePlace = (place_id: string): boolean | undefined => {
         if (typeof summary !== 'object') {

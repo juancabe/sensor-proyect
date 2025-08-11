@@ -6,6 +6,7 @@ import { ThemedScrollView } from '@/components/ui-elements/ThemedScrollView';
 import { useTheme } from '@react-navigation/native';
 import { Button, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { ThemedView } from '@/components/ui-elements/ThemedView';
 
 export default function Home() {
     const theme = useTheme();
@@ -14,13 +15,19 @@ export default function Home() {
 
     return (
         <BackgroundView secondaryColor="#ff00003f">
-            <ThemedScrollView style={{ backgroundColor: 'transparent' }}>
+            <ThemedView style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <Button
                     title="Add Place"
                     onPress={() => {
                         router.navigate('/AddPlaceScreen');
                     }}
                 />
+            </ThemedView>
+            <ThemedScrollView
+                style={{
+                    backgroundColor: 'transparent',
+                }}
+            >
                 {ctx.summary === undefined && <ThemedText>Loading summary…</ThemedText>}
                 {typeof ctx.summary === 'object' &&
                     Array.from(ctx.summary.entries()).map(

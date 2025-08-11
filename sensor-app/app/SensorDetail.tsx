@@ -5,15 +5,10 @@ import BackgroundView from '@/components/ui-elements/BackgroundView';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
 import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
-import {
-    ApiArgs,
-    DataShape,
-    SensorDataLoader,
-    ShapedData,
-    ShapedDatumArray,
-} from '@/helpers/sensorDataLoader';
+import { ApiArgs, SensorDataLoader } from '@/helpers/sensorDataLoader';
+import { DataShape, ShapedDatumArray } from '@/model/ShapedData';
 import { useCallback, useEffect, useState } from 'react';
-import { Button, SafeAreaView, StyleSheet } from 'react-native';
+import { SafeAreaView, StyleSheet } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
 import { Rect, useSafeAreaFrame } from 'react-native-safe-area-context';
 
@@ -43,6 +38,16 @@ function calculateParams(keyData: ShapedDatumArray, frame: Rect): ChartParams {
     };
 }
 
+enum TimeInterval {
+    HalfHour = '30m',
+    Hour = '1h',
+    FourHour = '4h',
+    TwelveHour = '12h',
+    Day = '1D',
+    Week = '1W',
+    Month = '1M',
+}
+
 export default function SensorDetail() {
     const ctx = useAppContext();
     const frame = useSafeAreaFrame();
@@ -53,6 +58,9 @@ export default function SensorDetail() {
     const [dataLoader, setDataLoader] = useState<SensorDataLoader | undefined>(undefined);
     const [availableKeys, setAvailableKeys] = useState<string[] | undefined>(undefined);
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
+    const [selectedInterval, setSelectedInterval] = useState<string>(
+        TimeInterval.HalfHour,
+    );
 
     const getData = useCallback(async () => {
         if (!session?.all_set() || !sensor) {
@@ -62,7 +70,36 @@ export default function SensorDetail() {
 
         try {
             const last = new Date();
-            const first = new Date(last.getTime() - 20_000 * 60);
+
+            let diff;
+
+            switch (selectedInterval) {
+                case TimeInterval.HalfHour:
+                    diff = 30 * 60 * 1000;
+                    break;
+                case TimeInterval.Hour:
+                    diff = 60 * 60 * 1000;
+                    break;
+                case TimeInterval.FourHour:
+                    diff = 4 * 60 * 60 * 1000;
+                    break;
+                case TimeInterval.TwelveHour:
+                    diff = 12 * 60 * 60 * 1000;
+                    break;
+                case TimeInterval.Day:
+                    diff = 24 * 60 * 60 * 1000;
+                    break;
+                case TimeInterval.Week:
+                    diff = 7 * 24 * 60 * 60 * 1000;
+                    break;
+                case TimeInterval.Month:
+                    diff = 30 * 24 * 60 * 60 * 1000;
+                    break;
+                default:
+                    throw 'Impossible!';
+            }
+
+            const first = new Date(last.getTime() - diff);
 
             const apiArgs: ApiArgs = {
                 user_api_id: { id: session.api_id! },
@@ -87,10 +124,16 @@ export default function SensorDetail() {
             console.warn('[SensorDetail] error on getData: ', e);
             if (typeof e === 'string') setErrorText(e);
         }
-    }, [sensor, session]);
+    }, [sensor, session, selectedInterval]);
 
     useEffect(() => {
         getData();
+        const id = setInterval(() => {
+            console.warn('getting data');
+            getData();
+        }, 1000);
+
+        return () => clearInterval(id);
     }, [getData]);
 
     const data = dataLoader?.getData().data;
@@ -104,32 +147,23 @@ export default function SensorDetail() {
     return (
         <BackgroundView secondaryColor={sensor!.color}>
             <SafeAreaView>
+                <ThemedView style={styles.headerContainer}>
+                    <ThemedText style={TEXT_STYLES.heading2}>Data for sensor</ThemedText>
+                    <ThemedText style={TEXT_STYLES.heading1}>
+                        &apos;{sensor!.name}&apos;
+                    </ThemedText>
+                </ThemedView>
+
                 <ThemedView style={styles.mainContainer}>
-                    <Button
-                        title="Reload data"
-                        onPress={() => {
-                            getData();
-                        }}
-                    ></Button>
-                    <ErrorBox error={errorText}></ErrorBox>
-                    <ThemedView style={styles.headerContainer}>
-                        <ThemedText style={TEXT_STYLES.heading2}>
-                            Data for sensor
-                        </ThemedText>
-                        <ThemedText style={TEXT_STYLES.heading1}>
-                            &apos;{sensor!.name}&apos;
-                        </ThemedText>
-                    </ThemedView>
                     {availableKeys && availableKeys.length > 0 ? (
-                        <ThemedView style={styles.checkBoxesContainer}>
-                            <CheckboxesSelector
-                                selectedValue={selectedKey}
-                                onValueChange={(k) => {
-                                    setSelectedKey(k);
-                                }}
-                                values={availableKeys}
-                            ></CheckboxesSelector>
-                        </ThemedView>
+                        <CheckboxesSelector
+                            selectedValue={selectedKey}
+                            onValueChange={(k) => {
+                                setSelectedKey(k);
+                            }}
+                            values={availableKeys}
+                            title={'Data Series'}
+                        ></CheckboxesSelector>
                     ) : null}
                     <ThemedView style={[styles.chartContainer]}>
                         {chartParams ? (
@@ -166,6 +200,15 @@ export default function SensorDetail() {
                             </ThemedText>
                         )}
                     </ThemedView>
+                    <CheckboxesSelector
+                        title="Time interval"
+                        selectedValue={selectedInterval}
+                        onValueChange={(v) => {
+                            setSelectedInterval(v);
+                        }}
+                        values={Object.values(TimeInterval) as string[]}
+                    />
+                    <ErrorBox error={errorText}></ErrorBox>
                 </ThemedView>
             </SafeAreaView>
         </BackgroundView>
@@ -176,6 +219,9 @@ const styles = StyleSheet.create({
     mainContainer: {
         display: 'flex',
         flexDirection: 'column',
+        gap: 20,
+        justifyContent: 'space-between',
+        height: '100%',
     },
     chartContainer: {
         display: 'flex',
