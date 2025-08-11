@@ -1,7 +1,7 @@
 import { fetch, FetchRequestInit } from 'expo/fetch';
 
-// export const BASE = 'http://sensor-server.juancb.ftp.sh:3000';
-export const BASE = 'http://192.168.1.134:3000';
+export const BASE = 'https://sensor-server.juancb.ftp.sh:3000';
+// export const BASE = 'https://192.168.1.134:3000';
 
 export class UnexpectedBodyError extends Error {
     constructor(message: string) {
@@ -30,7 +30,9 @@ export async function callApi<ResponseBody, ResponseOk, ResponseCode>(
     url: string,
     init: FetchRequestInit,
     returnRespCodeNotOk: (code: number) => UnexpectedCode | ResponseCode,
-    returnResponseOk: (deserializedBody: ResponseBody) => UnexpectedBodyError | ResponseOk
+    returnResponseOk: (
+        deserializedBody: ResponseBody,
+    ) => UnexpectedBodyError | ResponseOk,
 ): Promise<
     ResponseOk | ResponseCode | UnexpectedCode | UnexpectedBodyError | FetchError
 > {
@@ -43,7 +45,9 @@ export async function callApi<ResponseBody, ResponseOk, ResponseCode>(
     } catch (e) {
         if (e instanceof Error) return new FetchError(e);
         else
-            return new FetchError(new Error('Unexpected non Error object thrown from fetch'));
+            return new FetchError(
+                new Error('Unexpected non Error object thrown from fetch'),
+            );
     }
 
     let resp_json: ResponseBody;
@@ -53,7 +57,7 @@ export async function callApi<ResponseBody, ResponseOk, ResponseCode>(
         if (e instanceof Error) return new FetchError(e);
         else
             return new FetchError(
-                new Error('Unexpected non Error object thrown from FetchResponse.json()')
+                new Error('Unexpected non Error object thrown from FetchResponse.json()'),
             );
     }
 
