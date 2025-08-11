@@ -12,7 +12,7 @@ use esp_idf_svc::{
         ScanSortMethod,
     },
 };
-use esp_idf_sys::esp_read_mac;
+use esp_idf_sys::{esp_crt_bundle_attach, esp_read_mac};
 use sensor_lib::api::{
     endpoints::post_sensor_data::{
         PostSensorData, PostSensorDataRequestBody, PostSensorResponseCode,
@@ -41,7 +41,7 @@ mod persistence;
 mod private;
 mod sensors;
 
-const BASE_URL: &'static str = "http://sensor-server.juancb.ftp.sh:3000";
+const BASE_URL: &'static str = "https://sensor-server.juancb.ftp.sh:3000";
 const READS_DELAY_MS: u32 = 1000 * 60; // 1 minute
 
 const HTTP_POST_TRIES: u32 = 10;
@@ -515,8 +515,10 @@ fn main() {
 
     let mut wifi_device = load_wifi_device(wifi_devices).expect("Failed to load WiFi device");
 
-    let http_client = EspHttpConnection::new(&HttpConfiguration::default())
-        .expect("Failed to create HTTP client");
+    let mut http_conf = HttpConfiguration::default();
+    http_conf.crt_bundle_attach = Some(esp_crt_bundle_attach);
+
+    let http_client = EspHttpConnection::new(&http_conf).expect("Failed to create HTTP client");
     let mut http_client = Client::wrap(http_client);
 
     let mut wifi_attempts_failed: usize = 0;
