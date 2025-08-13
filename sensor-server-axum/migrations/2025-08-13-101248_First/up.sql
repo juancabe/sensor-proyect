@@ -13,13 +13,20 @@ CREATE TABLE colors (
 );
 
 INSERT INTO colors (hex_value, name) VALUES
-('#DB2122', 'Red'), ('#F0D16F', 'Yellow'), ('#21DB55', 'Green'),
-('#2132DB', 'Blue'), ('#6FF0D1', 'Cyan'), ('#DB21A0', 'Magenta'),
-('#DB8F21', 'Orange'),
-('#403E2A', 'Olive'), ('#807895', 'Lavender'), ('#2A4039', 'Dark Green'),
-('#402E2A', 'Brown'), ('#957E78', 'Taupe'), ('#302A40', 'Dark Purple'),
-('#807E71', 'Grayish Green'), ('#78958B', 'Sage'), ('#BFBA7A', 'Light Olive'),
-('#EA937D', 'Salmon');
+-- Primary-like colors
+('#FF0000', 'Red'),
+('#0000FF', 'Blue'),
+('#FFFF00', 'Yellow'),
+
+-- Secondary-like colors
+('#008000', 'Green'),   -- Darker, more distinct green
+('#FFA500', 'Orange'),  -- Clear orange
+('#800080', 'Purple'),  -- A standard purple (often called Magenta in CMYK context, but visually Purple here)
+
+-- Neutral/Utility colors
+('#FFFFFF', 'White'),
+('#000000', 'Black'),
+('#808080', 'Gray');
 
 
 CREATE TABLE users (
