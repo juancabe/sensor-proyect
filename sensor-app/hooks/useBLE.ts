@@ -12,7 +12,12 @@ const SENSOR_API_ID_CHAR_UUID = '8c680060-22b7-45b8-b325-f7b1b102d80f';
 const API_ACCOUNT_ID_CHAR_UUID = 'e11ca181-20c9-4675-b6f3-3f9fb91d1dc1';
 const SENSOR_UUID_CHAR_UUID = '333cad84-ceb5-4e18-bfcf-6147987c6733';
 
-const bleManager = new BleManager();
+let bleManager: BleManager | null;
+if (Platform.OS !== 'web') {
+    bleManager = new BleManager();
+} else {
+    bleManager = null;
+}
 
 function useBLE() {
     const [allDevices, setAllDevices] = useState<Device[]>([]);
@@ -83,6 +88,10 @@ function useBLE() {
             sensor_kind: string,
         ) => Promise<string>,
     ): Promise<string | void> => {
+        if (!bleManager) {
+            return;
+        }
+
         try {
             const deviceConnection = await bleManager.connectToDevice(device.id);
             setConnectedDevice(deviceConnection);
@@ -127,7 +136,7 @@ function useBLE() {
         devices.findIndex((device) => nextDevice.id === device.id) > -1;
 
     const scanForPeripherals = () =>
-        bleManager.startDeviceScan(null, null, (error, device) => {
+        bleManager?.startDeviceScan(null, null, (error, device) => {
             if (error) {
                 console.log(error);
                 return;
@@ -146,7 +155,7 @@ function useBLE() {
             }
         });
 
-    const stopScanForPeripherals = bleManager.stopDeviceScan;
+    const stopScanForPeripherals = bleManager?.stopDeviceScan;
 
     // hexStr must be 40 hex chars (20 bytes)
     function encodeHexId20(hexStr: string): string {
