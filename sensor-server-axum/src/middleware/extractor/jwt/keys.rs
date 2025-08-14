@@ -1,5 +1,6 @@
 use std::sync::LazyLock;
 
+use dotenv::dotenv;
 use jsonwebtoken::{DecodingKey, EncodingKey};
 
 pub struct Keys {
@@ -17,6 +18,7 @@ impl Keys {
 }
 
 pub static KEYS: LazyLock<Keys> = LazyLock::new(|| {
+    dotenv().expect("Should have a .env in proyect root");
     let secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
     Keys::new(secret.as_bytes())
 });

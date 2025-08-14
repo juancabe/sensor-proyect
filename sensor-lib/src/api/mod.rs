@@ -24,5 +24,5 @@ where
     -> Result<Self::ResponseBody, BodyParseError>;
 }
 
-pub mod endpoints;
 pub mod model;
+pub mod types;

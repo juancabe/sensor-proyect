@@ -1,6 +1,6 @@
 use crate::api::{
     ApiEndpoint,
-    model::{api_id::ApiId, color_palette::PlaceColor},
+    model::{api_id::ApiId, color::PlaceColor},
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

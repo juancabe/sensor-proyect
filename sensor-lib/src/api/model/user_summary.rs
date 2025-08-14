@@ -1,15 +1,13 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::api::model::{
-    api_id::ApiId,
-    color_palette::{PlaceColor, SensorColor},
-    sensor_kind::SensorKind,
+use crate::api::{
+    model::{api_id::ApiId, color::Color, sensor_kind::SensorKind},
+    types::Timestamp,
 };
 
 pub type Name = String;
 pub type Description = String;
-pub type UNIXTimestampSeconds = u32;
 
 #[derive(Debug, Serialize, Deserialize, Clone, TS)]
 #[ts(export)]
@@ -21,8 +19,8 @@ pub struct SensorSummary {
     pub place_id: ApiId,
     pub name: Name,
     pub description: Option<Description>,
-    pub color: SensorColor,
-    pub last_serialized_data: Option<(String, UNIXTimestampSeconds)>,
+    pub color: Color,
+    pub last_serialized_data: Option<(String, Timestamp)>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, TS, PartialEq, Eq, Hash)]
@@ -32,7 +30,7 @@ pub struct PlaceSummary {
     pub last_update: u32,
     pub name: Name,
     pub description: Option<Description>,
-    pub color: PlaceColor,
+    pub color: Color,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, TS)]

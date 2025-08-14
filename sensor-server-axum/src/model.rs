@@ -19,7 +19,7 @@ pub struct NewSensorData {
     pub added_at: Option<NaiveDateTime>, // UNIX timestamp in seconds
 }
 
-#[derive(Queryable, Selectable, Debug)]
+#[derive(Queryable, Selectable, Debug, Clone)]
 #[diesel(table_name = crate::schema::user_places)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserPlace {
@@ -35,11 +35,11 @@ pub struct UserPlace {
 
 #[derive(Insertable, Clone)]
 #[diesel(table_name = crate::schema::user_places)]
-pub struct NewUserPlace<'a> {
-    pub api_id: &'a str,
+pub struct NewUserPlace {
+    pub api_id: String,
     pub user_id: i32,
-    pub name: &'a str,
-    pub description: Option<&'a str>,
+    pub name: String,
+    pub description: Option<String>,
     pub color_id: i32,
 }
 
@@ -60,16 +60,16 @@ pub struct UserSensor {
 
 #[derive(Insertable, Clone)]
 #[diesel(table_name = crate::schema::user_sensors)]
-pub struct NewUserSensor<'a> {
-    pub api_id: &'a str, // 20 bytes HEX String -> Generated at the server
-    pub place_id: i32,   // Foreign key to UserPlace
-    pub device_id: &'a str,
-    pub name: &'a str,
-    pub description: Option<&'a str>,
+pub struct NewUserSensor {
+    pub api_id: String, // 20 bytes HEX String -> Generated at the server
+    pub place_id: i32,  // Foreign key to UserPlace
+    pub device_id: String,
+    pub name: String,
+    pub description: Option<String>,
     pub color_id: i32,
 }
 
-#[derive(Queryable, Selectable)]
+#[derive(Queryable, Selectable, Clone)]
 #[diesel(table_name = crate::schema::users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
@@ -84,9 +84,9 @@ pub struct User {
 
 #[derive(Insertable, Clone)]
 #[diesel(table_name = crate::schema::users)]
-pub struct NewUser<'a> {
-    pub username: &'a str,
-    pub api_id: &'a str, // e.g 94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA
-    pub hashed_password: &'a str,
-    pub email: &'a str,
+pub struct NewUser {
+    pub username: String,
+    pub api_id: String, // e.g 94a990533d76AAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    pub hashed_password: String,
+    pub email: String,
 }

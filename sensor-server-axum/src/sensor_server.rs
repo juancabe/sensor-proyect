@@ -2,6 +2,7 @@ use axum::routing::MethodRouter;
 
 use crate::{
     api::{Endpoint, endpoints::generate_endpoints},
+    db::DB_POOL,
     middleware::extractor::jwt::keys::KEYS,
 };
 
@@ -12,9 +13,11 @@ pub struct SensorServer {
 
 impl SensorServer {
     pub fn new() -> Self {
-        // Load LazyStatic
-        let _ = KEYS;
+        // Load LazyStatics
+        let _ = *KEYS;
         log::info!("Loaded keys for JWT");
+        let _ = *DB_POOL;
+        log::info!("Loaded DB_POOL");
 
         let endpoints = generate_endpoints();
 

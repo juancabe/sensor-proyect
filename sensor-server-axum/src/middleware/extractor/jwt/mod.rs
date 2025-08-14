@@ -39,8 +39,12 @@ impl IntoResponse for Error {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Claims {}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Claims {
+    pub username: String,
+    pub user_api_id: String,
+    pub iat: i64,
+}
 
 impl<S> FromRequestParts<S> for Claims
 where
