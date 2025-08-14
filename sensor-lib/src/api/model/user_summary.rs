@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::api::{
-    model::{api_id::ApiId, color::Color, sensor_kind::SensorKind},
+    model::{api_id::ApiId, sensor_kind::SensorKind},
     types::Timestamp,
 };
 
@@ -19,7 +19,7 @@ pub struct SensorSummary {
     pub place_id: ApiId,
     pub name: Name,
     pub description: Option<Description>,
-    pub color: Color,
+    pub color: String,
     pub last_serialized_data: Option<(String, Timestamp)>,
 }
 
@@ -30,7 +30,7 @@ pub struct PlaceSummary {
     pub last_update: u32,
     pub name: Name,
     pub description: Option<Description>,
-    pub color: Color,
+    pub color: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, TS)]

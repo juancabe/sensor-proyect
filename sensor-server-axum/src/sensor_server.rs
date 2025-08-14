@@ -2,7 +2,7 @@ use axum::routing::MethodRouter;
 
 use crate::{
     api::{Endpoint, endpoints::generate_endpoints},
-    db::DB_POOL,
+    db::establish_connection,
     middleware::extractor::jwt::keys::KEYS,
 };
 
@@ -16,7 +16,7 @@ impl SensorServer {
         // Load LazyStatics
         let _ = *KEYS;
         log::info!("Loaded keys for JWT");
-        let _ = *DB_POOL;
+        establish_connection().expect("Connection should be available");
         log::info!("Loaded DB_POOL");
 
         let endpoints = generate_endpoints();

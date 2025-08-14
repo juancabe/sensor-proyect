@@ -2,13 +2,13 @@ use axum::routing::MethodRouter;
 
 use crate::RoutePath;
 
-pub struct Route<'a> {
-    pub path: RoutePath<'a>,
+pub struct Route {
+    pub path: RoutePath,
     pub method_router: MethodRouter,
 }
 
-impl<'a> Route<'a> {
-    pub fn new(path: RoutePath<'a>, method_router: MethodRouter) -> Route<'a> {
+impl Route {
+    pub fn new(path: RoutePath, method_router: MethodRouter) -> Route {
         Self {
             path,
             method_router,

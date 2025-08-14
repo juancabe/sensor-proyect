@@ -17,17 +17,14 @@ pub fn insert_user_place(conn: &mut DbConn, place: NewUserPlace) -> Result<UserP
         .map(|e| e.clone())
 }
 
-pub enum UserPlaceIdentifier {
+pub enum Identifier {
     UserApiId(ApiId),
     PlaceApiId(ApiId),
 }
 
-pub fn get_user_place(
-    conn: &mut DbConn,
-    identifier: UserPlaceIdentifier,
-) -> Result<Vec<UserPlace>, Error> {
+pub fn get_user_place(conn: &mut DbConn, identifier: Identifier) -> Result<Vec<UserPlace>, Error> {
     match identifier {
-        UserPlaceIdentifier::UserApiId(api_id) => {
+        Identifier::UserApiId(api_id) => {
             use crate::schema::user_places::dsl::user_places as user_places_table;
             use crate::schema::{users::dsl as user, users::dsl::users as users_table};
 
@@ -39,7 +36,7 @@ pub fn get_user_place(
 
             Ok(res)
         }
-        UserPlaceIdentifier::PlaceApiId(api_id) => {
+        Identifier::PlaceApiId(api_id) => {
             use crate::schema::{
                 user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
             };
@@ -56,10 +53,10 @@ pub fn get_user_place(
 
 pub fn delete_user_place(
     conn: &mut DbConn,
-    identifier: UserPlaceIdentifier,
+    identifier: Identifier,
 ) -> Result<Vec<UserPlace>, Error> {
     match identifier {
-        UserPlaceIdentifier::UserApiId(api_id) => {
+        Identifier::UserApiId(api_id) => {
             use crate::schema::user_places::dsl::{user_id, user_places};
             use crate::schema::users::dsl::{api_id as user_api_id, id as user_pk, users};
 
@@ -74,7 +71,7 @@ pub fn delete_user_place(
 
             Ok(deleted_places)
         }
-        UserPlaceIdentifier::PlaceApiId(api_id) => {
+        Identifier::PlaceApiId(api_id) => {
             use crate::schema::user_places::dsl::{api_id as place_api_id, user_places};
 
             let deleted_places =
@@ -92,7 +89,8 @@ mod tests {
 
     use crate::{
         db::{
-            tests::{create_test_user, create_test_user_place, establish_test_connection},
+            establish_connection,
+            tests::{create_test_user, create_test_user_place},
             user_places::{get_user_place, insert_user_place},
         },
         model::NewUserPlace,
@@ -101,13 +99,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_place_connection() {
-        let _conn = establish_test_connection();
-    }
-
-    #[test]
     fn test_new_place() {
-        let mut conn = establish_test_connection();
+        let mut conn = establish_connection().unwrap();
         let user = create_test_user(&mut conn);
 
         let new_up: NewUserPlace = NewUserPlace {
@@ -129,38 +122,34 @@ mod tests {
 
     #[test]
     fn test_get_place() {
-        let mut conn = establish_test_connection();
+        let mut conn = establish_connection().unwrap();
 
         let user = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
         let _p1 = get_user_place(
             &mut conn,
-            UserPlaceIdentifier::PlaceApiId(
-                ApiId::from_string(&place.api_id).expect("ApiId valid"),
-            ),
+            Identifier::PlaceApiId(ApiId::from_string(&place.api_id).expect("ApiId valid")),
         )
         .expect("No error");
 
         let _p2 = get_user_place(
             &mut conn,
-            UserPlaceIdentifier::UserApiId(ApiId::from_string(&user.api_id).expect("ApiId valid")),
+            Identifier::UserApiId(ApiId::from_string(&user.api_id).expect("ApiId valid")),
         )
         .expect("No errror");
     }
 
     #[test]
     fn test_delete_place() {
-        let mut conn = establish_test_connection();
+        let mut conn = establish_connection().unwrap();
         let user = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
         let place_api_id = ApiId::from_string(&place.api_id).expect("API ID should be valid");
 
-        let deleted_places = delete_user_place(
-            &mut conn,
-            UserPlaceIdentifier::PlaceApiId(place_api_id.clone()),
-        )
-        .expect("Delete operation should not fail");
+        let deleted_places =
+            delete_user_place(&mut conn, Identifier::PlaceApiId(place_api_id.clone()))
+                .expect("Delete operation should not fail");
 
         assert_eq!(deleted_places.len(), 1);
         assert_eq!(deleted_places[0].id, place.id);

@@ -7,6 +7,7 @@ use crate::{
     RoutePath,
     api::{Endpoint, route::Route},
     middleware::extractor::jwt::Claims,
+    model::HexValue,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,7 +17,7 @@ pub struct ApiUserSensor {
     pub device_id: String,
     pub name: String,
     pub description: Option<String>,
-    // pub color: Color, TODO: Create new color type on sensor-lib
+    pub color: HexValue,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -30,12 +31,12 @@ pub struct PostSensor {}
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct DeleteSensor {}
 
-pub struct Sensor<'a> {
-    resources: Vec<Route<'a>>,
+pub struct Sensor {
+    resources: Vec<Route>,
 }
 
-impl<'a> Sensor<'a> {
-    pub fn new() -> Sensor<'a> {
+impl Sensor {
+    pub fn new() -> Sensor {
         let mr = MethodRouter::new()
             .get(Self::sensor_get)
             .post(Self::sensor_post)
@@ -43,7 +44,8 @@ impl<'a> Sensor<'a> {
 
         Self {
             resources: vec![Route::new(
-                RoutePath::from_str("/sensors").expect("The route should be correct"),
+                RoutePath::from_string("/sensors".to_string())
+                    .expect("The route should be correct"),
                 mr,
             )],
         }
@@ -71,8 +73,8 @@ impl<'a> Sensor<'a> {
     }
 }
 
-impl<'a> Endpoint for Sensor<'a> {
-    fn routes(&self) -> &[Route<'a>] {
+impl Endpoint for Sensor {
+    fn routes(&self) -> &[Route] {
         return &self.resources;
     }
 }

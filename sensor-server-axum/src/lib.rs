@@ -13,15 +13,15 @@ pub const PORT: u16 = 3000;
 /// Represents a route in the SensorServer, just contains the path from the main 2025-08-13 17:57
 /// I.e.: if the server is hosted in sensor_server.com and the route for users endpoint is
 /// sensor_server.com/users, the RoutePath for users will contain a &str == "/users"
-#[derive(Debug, Clone, Copy)]
-pub struct RoutePath<'a>(&'a str);
+#[derive(Debug, Clone)]
+pub struct RoutePath(String);
 
-impl<'a> RoutePath<'a> {
-    pub fn as_str(&'a self) -> &'a str {
-        self.0
+impl RoutePath {
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 
-    pub fn from_str(s: &'a str) -> Option<RoutePath<'a>> {
+    pub fn from_string(s: String) -> Option<RoutePath> {
         if !s.starts_with("/") {
             return None;
         }
@@ -36,8 +36,8 @@ impl<'a> RoutePath<'a> {
 
 /// Requires implementors to provide a method for converting the implementing type into a resource
 /// representation
-pub trait ToRoute<'a> {
-    fn to_route(&'a self) -> (RoutePath<'a>, &'a MethodRouter);
+pub trait ToRoute {
+    fn to_route(self) -> (RoutePath, MethodRouter);
 }
 
 #[cfg(test)]

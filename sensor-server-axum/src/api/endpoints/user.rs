@@ -25,19 +25,19 @@ pub struct GetUser {}
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct PostUser {}
 
-pub struct User<'a> {
-    resources: Vec<Route<'a>>,
+pub struct User {
+    resources: Vec<Route>,
 }
 
-impl<'a> User<'a> {
-    pub fn new() -> User<'a> {
+impl User {
+    pub fn new() -> User {
         let mr = MethodRouter::new()
             .get(Self::user_get)
             .post(Self::user_post);
 
         Self {
             resources: vec![Route::new(
-                RoutePath::from_str("/user").expect("The route should be correct"),
+                RoutePath::from_string("/user".to_string()).expect("The route should be correct"),
                 mr,
             )],
         }
@@ -55,8 +55,8 @@ impl<'a> User<'a> {
     }
 }
 
-impl<'a> Endpoint for User<'a> {
-    fn routes(&self) -> &[Route<'a>] {
+impl Endpoint for User {
+    fn routes(&self) -> &[Route] {
         return &self.resources;
     }
 }

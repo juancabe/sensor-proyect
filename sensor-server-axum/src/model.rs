@@ -1,6 +1,17 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
+pub type HexValue = String;
+
+#[derive(Queryable, Selectable, Clone)]
+#[diesel(table_name = crate::schema::colors)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct Color {
+    pub id: i32,
+    pub hex_value: HexValue,
+    pub name: String,
+}
+
 #[derive(Queryable, Selectable, Clone)]
 #[diesel(table_name = crate::schema::sensor_data)]
 #[diesel(check_for_backend(diesel::pg::Pg))]

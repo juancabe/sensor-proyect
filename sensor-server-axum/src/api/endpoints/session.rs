@@ -10,24 +10,25 @@ use crate::{
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiSession {}
 
-pub struct Session<'a> {
-    resources: Vec<Route<'a>>,
+pub struct Session {
+    resources: Vec<Route>,
 }
 
-impl<'a> Session<'a> {
-    pub fn new() -> Session<'a> {
+impl Session {
+    pub fn new() -> Session {
         let mr = MethodRouter::new();
         Self {
             resources: vec![Route::new(
-                RoutePath::from_str("/session").expect("The route should be correct"),
+                RoutePath::from_string("/session".to_string())
+                    .expect("The route should be correct"),
                 mr,
             )],
         }
     }
 }
 
-impl<'a> Endpoint for Session<'a> {
-    fn routes(&self) -> &[Route<'a>] {
+impl Endpoint for Session {
+    fn routes(&self) -> &[Route] {
         return &self.resources;
     }
 }

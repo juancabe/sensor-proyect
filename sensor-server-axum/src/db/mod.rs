@@ -1,14 +1,18 @@
+pub mod colors;
 pub mod user_places;
+pub mod users;
 
-use r2d2 as original_r2d2;
+use dotenv::dotenv;
+use hyper::StatusCode;
+use r2d2::{self as original_r2d2, PooledConnection};
 
-use diesel::{PgConnection, r2d2::ConnectionManager};
+use diesel::{Connection, PgConnection, r2d2::ConnectionManager};
 use std::{fmt::Display, sync::LazyLock};
 
-pub type DbPool = r2d2::Pool<ConnectionManager<diesel::PgConnection>>;
-pub type DbConn = PgConnection;
+pub type DbConn = PooledConnection<ConnectionManager<PgConnection>>;
+pub type DbPool = r2d2::Pool<ConnectionManager<PgConnection>>;
 
-pub static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
+static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let manager = ConnectionManager::<diesel::PgConnection>::new(database_url);
     r2d2::Pool::builder()
@@ -37,6 +41,16 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
+impl From<Error> for StatusCode {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::NotFound(_) => StatusCode::NOT_FOUND,
+            Error::ConnectionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
 impl From<diesel::result::Error> for Error {
     fn from(value: diesel::result::Error) -> Self {
         match value {
@@ -52,33 +66,42 @@ impl From<original_r2d2::Error> for Error {
     }
 }
 
+impl From<diesel::ConnectionError> for Error {
+    fn from(value: diesel::ConnectionError) -> Self {
+        Self::ConnectionError(value.into())
+    }
+}
+
+pub fn establish_connection() -> Result<DbConn, Error> {
+    dotenv().expect(".env should be available and readable");
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+
+    let mut conn;
+    if database_url.contains("test_database") {
+        let manager = ConnectionManager::<diesel::PgConnection>::new(database_url);
+        let pool = r2d2::Pool::builder()
+            .build(manager)
+            .expect("Failed to create pool.");
+        conn = pool.get()?;
+        conn.begin_test_transaction().expect("Valid");
+        log::warn!("TEST DATABASE CREATED");
+    } else {
+        conn = DB_POOL.get()?;
+    }
+
+    Ok(conn)
+}
+
 #[cfg(test)]
 pub mod tests {
 
-    use diesel::{Connection, Insertable, PgConnection, RunQueryDsl};
-    use dotenv::dotenv;
+    use diesel::{Insertable, RunQueryDsl};
     use sensor_lib::api::model::api_id::ApiId;
 
     use crate::{
         db::DbConn,
         model::{NewUser, NewUserPlace, User, UserPlace},
     };
-
-    pub fn establish_test_connection() -> PgConnection {
-        dotenv().expect(".env should be available and readable");
-
-        let database_url =
-            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for tests");
-
-        if !database_url.contains("test_database") {
-            panic!("We are not using the test database");
-        }
-
-        let mut conn = PgConnection::establish(&database_url)
-            .expect(&format!("Error connecting to {}", database_url));
-        conn.begin_test_transaction().expect("Valid");
-        conn
-    }
 
     pub fn create_test_user(conn: &mut DbConn) -> User {
         use crate::schema::users::dsl::users as users_table;

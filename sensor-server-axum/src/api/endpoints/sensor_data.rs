@@ -22,19 +22,20 @@ pub struct GetSensorData {}
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct PostSensorData {}
 
-pub struct SensorData<'a> {
-    resources: Vec<Route<'a>>,
+pub struct SensorData {
+    resources: Vec<Route>,
 }
 
-impl<'a> SensorData<'a> {
-    pub fn new() -> SensorData<'a> {
+impl SensorData {
+    pub fn new() -> SensorData {
         let mr = MethodRouter::new()
             .get(Self::sensor_get)
             .post(Self::sensor_post);
 
         Self {
             resources: vec![Route::new(
-                RoutePath::from_str("/sensor_data").expect("The route should be correct"),
+                RoutePath::from_string("/sensor_data".to_string())
+                    .expect("The route should be correct"),
                 mr,
             )],
         }
@@ -55,8 +56,8 @@ impl<'a> SensorData<'a> {
     }
 }
 
-impl<'a> Endpoint for SensorData<'a> {
-    fn routes(&self) -> &[Route<'a>] {
+impl Endpoint for SensorData {
+    fn routes(&self) -> &[Route] {
         return &self.resources;
     }
 }
