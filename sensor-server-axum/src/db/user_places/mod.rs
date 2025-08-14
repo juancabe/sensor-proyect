@@ -78,7 +78,11 @@ pub fn delete_user_place(
                 diesel::delete(user_places.filter(place_api_id.eq(api_id.as_str())))
                     .get_results(conn)?;
 
-            Ok(deleted_places)
+            if deleted_places.len() < 1 {
+                Err(Error::NotFound("No places deleted by place id".into()))
+            } else {
+                Ok(deleted_places)
+            }
         }
     }
 }
@@ -169,5 +173,24 @@ mod tests {
             "The place with id {} should not be found after deletion.",
             place.id
         );
+
+        let res = [
+            delete_user_place(&mut conn, Identifier::UserApiId(ApiId::random())),
+            delete_user_place(&mut conn, Identifier::PlaceApiId(ApiId::random())),
+        ];
+
+        assert!(res.into_iter().all(|r| {
+            if r.is_ok() {
+                println!("r: {}", r.is_ok());
+            }
+
+            r.is_err_and(|e| match e {
+                Error::NotFound(_) => true,
+                _ => {
+                    println!("was false, e: {e:?}");
+                    false
+                }
+            })
+        }))
     }
 }
