@@ -1,10 +1,34 @@
 use diesel::prelude::*;
-use sensor_lib::api::model::api_id::ApiId;
 
 use crate::{
     db::{DbConn, Error},
     model::{self, NewUserPlace, UserPlace},
 };
+#[derive(Debug)]
+pub enum Identifier {
+    UserId(i32),
+    PlaceNameAndUserId(String, i32),
+}
+
+pub fn get_user_place_id(conn: &mut DbConn, identifier: Identifier) -> Result<Vec<i32>, Error> {
+    use crate::schema::{
+        user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
+    };
+
+    let r = match identifier {
+        Identifier::UserId(id) => user_places_table
+            .filter(user_place::user_id.eq(id))
+            .select(user_place::id)
+            .load::<i32>(conn)?,
+        Identifier::PlaceNameAndUserId(name, user_id) => user_places_table
+            .filter(user_place::name.eq(name))
+            .filter(user_place::user_id.eq(user_id))
+            .select(user_place::id)
+            .load::<i32>(conn)?,
+    };
+
+    Ok(r)
+}
 
 pub fn insert_user_place(conn: &mut DbConn, place: NewUserPlace) -> Result<UserPlace, Error> {
     use crate::schema::user_places::dsl::user_places as user_places_table;
@@ -17,32 +41,28 @@ pub fn insert_user_place(conn: &mut DbConn, place: NewUserPlace) -> Result<UserP
         .map(|e| e.clone())
 }
 
-pub enum Identifier {
-    UserApiId(ApiId),
-    PlaceApiId(ApiId),
-}
-
 pub fn get_user_place(conn: &mut DbConn, identifier: Identifier) -> Result<Vec<UserPlace>, Error> {
     match identifier {
-        Identifier::UserApiId(api_id) => {
-            use crate::schema::user_places::dsl::user_places as user_places_table;
-            use crate::schema::{users::dsl as user, users::dsl::users as users_table};
-
-            let res = users_table
-                .filter(user::api_id.eq(api_id.as_str()))
-                .inner_join(user_places_table)
-                .select(model::UserPlace::as_select())
-                .load(conn)?;
-
-            Ok(res)
-        }
-        Identifier::PlaceApiId(api_id) => {
+        Identifier::UserId(id) => {
             use crate::schema::{
                 user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
             };
 
             let res = user_places_table
-                .filter(user_place::api_id.eq(api_id.as_str()))
+                .filter(user_place::user_id.eq(id))
+                .select(model::UserPlace::as_select())
+                .load(conn)?;
+
+            Ok(res)
+        }
+        Identifier::PlaceNameAndUserId(name, user_id) => {
+            use crate::schema::{
+                user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
+            };
+
+            let res = user_places_table
+                .filter(user_place::name.eq(name))
+                .filter(user_place::user_id.eq(user_id))
                 .select(model::UserPlace::as_select())
                 .load(conn)?;
 
@@ -55,28 +75,25 @@ pub fn delete_user_place(
     conn: &mut DbConn,
     identifier: Identifier,
 ) -> Result<Vec<UserPlace>, Error> {
+    use crate::schema::{
+        user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
+    };
+
     match identifier {
-        Identifier::UserApiId(api_id) => {
-            use crate::schema::user_places::dsl::{user_id, user_places};
-            use crate::schema::users::dsl::{api_id as user_api_id, id as user_pk, users};
-
-            // find the primary key of the user from their API ID.
-            let target_user_id: i32 = users
-                .filter(user_api_id.eq(api_id.as_str()))
-                .select(user_pk)
-                .first(conn)?;
-
+        Identifier::UserId(id) => {
             let deleted_places =
-                diesel::delete(user_places.filter(user_id.eq(target_user_id))).get_results(conn)?;
+                diesel::delete(user_places_table.filter(user_place::user_id.eq(id)))
+                    .get_results(conn)?;
 
             Ok(deleted_places)
         }
-        Identifier::PlaceApiId(api_id) => {
-            use crate::schema::user_places::dsl::{api_id as place_api_id, user_places};
-
-            let deleted_places =
-                diesel::delete(user_places.filter(place_api_id.eq(api_id.as_str())))
-                    .get_results(conn)?;
+        Identifier::PlaceNameAndUserId(name, user_id) => {
+            let deleted_places = diesel::delete(
+                user_places_table
+                    .filter(user_place::name.eq(name))
+                    .filter(user_place::user_id.eq(user_id)),
+            )
+            .get_results(conn)?;
 
             if deleted_places.len() < 1 {
                 Err(Error::NotFound("No places deleted by place id".into()))
@@ -89,7 +106,6 @@ pub fn delete_user_place(
 
 #[cfg(test)]
 mod tests {
-    use sensor_lib::api::model::api_id::ApiId;
 
     use crate::{
         db::{
@@ -108,7 +124,6 @@ mod tests {
         let user = create_test_user(&mut conn);
 
         let new_up: NewUserPlace = NewUserPlace {
-            api_id: ApiId::random().to_string(),
             user_id: user.id,
             name: "new_testuserplace".to_string(),
             description: Some("le description".to_string()),
@@ -117,7 +132,6 @@ mod tests {
 
         let i_up = insert_user_place(&mut conn, new_up.clone()).expect("No errors expected");
 
-        assert_eq!(i_up.api_id, new_up.api_id);
         assert_eq!(i_up.user_id, new_up.user_id);
         assert_eq!(i_up.name, new_up.name);
         assert_eq!(i_up.description, new_up.description);
@@ -133,15 +147,11 @@ mod tests {
 
         let _p1 = get_user_place(
             &mut conn,
-            Identifier::PlaceApiId(ApiId::from_string(&place.api_id).expect("ApiId valid")),
+            Identifier::PlaceNameAndUserId(place.name, user.id),
         )
         .expect("No error");
 
-        let _p2 = get_user_place(
-            &mut conn,
-            Identifier::UserApiId(ApiId::from_string(&user.api_id).expect("ApiId valid")),
-        )
-        .expect("No errror");
+        let _p2 = get_user_place(&mut conn, Identifier::UserId(user.id)).expect("No errror");
     }
 
     #[test]
@@ -149,11 +159,12 @@ mod tests {
         let mut conn = establish_connection().unwrap();
         let user = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
-        let place_api_id = ApiId::from_string(&place.api_id).expect("API ID should be valid");
 
-        let deleted_places =
-            delete_user_place(&mut conn, Identifier::PlaceApiId(place_api_id.clone()))
-                .expect("Delete operation should not fail");
+        let deleted_places = delete_user_place(
+            &mut conn,
+            Identifier::PlaceNameAndUserId(place.name.clone(), user.id),
+        )
+        .expect("Delete operation should not fail");
 
         assert_eq!(deleted_places.len(), 1);
         assert_eq!(deleted_places[0].id, place.id);
@@ -175,8 +186,14 @@ mod tests {
         );
 
         let res = [
-            delete_user_place(&mut conn, Identifier::UserApiId(ApiId::random())),
-            delete_user_place(&mut conn, Identifier::PlaceApiId(ApiId::random())),
+            delete_user_place(
+                &mut conn,
+                Identifier::PlaceNameAndUserId("namethatdoesntexist".to_string(), user.id),
+            ),
+            delete_user_place(
+                &mut conn,
+                Identifier::PlaceNameAndUserId(place.name, rand::random()),
+            ),
         ];
 
         assert!(res.into_iter().all(|r| {

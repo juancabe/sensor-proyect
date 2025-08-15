@@ -42,8 +42,8 @@ impl IntoResponse for Error {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Claims {
     pub username: String,
-    pub user_api_id: String,
-    pub iat: i64,
+    pub iat: usize,
+    pub exp: usize,
 }
 
 impl<S> FromRequestParts<S> for Claims

@@ -31,7 +31,8 @@ impl ApiId {
         self.id.clone()
     }
 
-    pub fn from_string(id: &str) -> Result<Self, Error> {
+    /// Tests wether the id &str can be turned into ApiId
+    pub fn test(id: &str) -> Result<(), Error> {
         if id.len() != Self::ID_LENGTH {
             return Err(Error::InvalidLength(
                 (id.len() as i32) - (Self::ID_LENGTH as i32),
@@ -47,6 +48,11 @@ impl ApiId {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn from_string(id: &str) -> Result<Self, Error> {
+        Self::test(id)?;
         Ok(Self { id: id.to_string() })
     }
 

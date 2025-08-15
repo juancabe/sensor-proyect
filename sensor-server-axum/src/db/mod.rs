@@ -1,5 +1,6 @@
 pub mod colors;
 pub mod user_places;
+pub mod user_sensors;
 pub mod users;
 
 use dotenv::dotenv;
@@ -10,6 +11,7 @@ use diesel::{Connection, PgConnection, r2d2::ConnectionManager};
 use std::{fmt::Display, sync::LazyLock};
 
 pub type DbConn = PooledConnection<ConnectionManager<PgConnection>>;
+// pub type DbConn = PgConnection;
 pub type DbPool = r2d2::Pool<ConnectionManager<PgConnection>>;
 
 static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
@@ -76,6 +78,7 @@ pub fn establish_connection() -> Result<DbConn, Error> {
     dotenv().expect(".env should be available and readable");
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
+    // let mut conn: DbConn = PgConnection::establish(&database_url)?;
     let mut conn;
     if database_url.contains("test_database") {
         let manager = ConnectionManager::<diesel::PgConnection>::new(database_url);
@@ -100,7 +103,7 @@ pub mod tests {
 
     use crate::{
         db::DbConn,
-        model::{NewUser, NewUserPlace, User, UserPlace},
+        model::{NewUser, NewUserPlace, NewUserSensor, User, UserPlace, UserSensor},
     };
 
     pub fn create_test_user(conn: &mut DbConn) -> User {
@@ -108,7 +111,6 @@ pub mod tests {
 
         let test_user = NewUser {
             username: "testuser".to_string(),
-            api_id: ApiId::random().to_string(),
             hashed_password: "hashed_password".to_string(),
             email: "testuser@email.com".to_string(),
         };
@@ -128,7 +130,6 @@ pub mod tests {
         use crate::schema::user_places::dsl::user_places as user_places_table;
 
         let test_user_place = NewUserPlace {
-            api_id: ApiId::random().to_string(),
             user_id: user.id,
             name: "testuserplace".to_string(),
             description: Some("le description".to_string()),
@@ -138,6 +139,28 @@ pub mod tests {
         let res: Vec<UserPlace> = test_user_place
             .clone()
             .insert_into(user_places_table)
+            .load(conn)
+            .expect("Should be insertable");
+
+        assert_eq!(res.len(), 1);
+
+        res.first().expect("Should exist").clone()
+    }
+
+    pub fn create_test_user_sensor(conn: &mut DbConn, user_place: &UserPlace) -> UserSensor {
+        use crate::schema::user_sensors::dsl::user_sensors as user_sensors_table;
+
+        let test_user_sensor = NewUserSensor {
+            name: "testusersensor".to_string(),
+            description: Some("le description".to_string()),
+            color_id: 1,
+            place_id: user_place.id,
+            device_id: ApiId::random().to_string(),
+        };
+
+        let res: Vec<UserSensor> = test_user_sensor
+            .clone()
+            .insert_into(user_sensors_table)
             .load(conn)
             .expect("Should be insertable");
 

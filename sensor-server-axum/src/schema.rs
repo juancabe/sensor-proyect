@@ -20,7 +20,6 @@ diesel::table! {
 diesel::table! {
     user_places (id) {
         id -> Int4,
-        api_id -> Text,
         user_id -> Int4,
         name -> Text,
         description -> Nullable<Text>,
@@ -33,7 +32,6 @@ diesel::table! {
 diesel::table! {
     user_sensors (id) {
         id -> Int4,
-        api_id -> Text,
         place_id -> Int4,
         device_id -> Text,
         name -> Text,
@@ -48,7 +46,6 @@ diesel::table! {
     users (id) {
         id -> Int4,
         username -> Text,
-        api_id -> Text,
         hashed_password -> Text,
         email -> Text,
         created_at -> Timestamp,

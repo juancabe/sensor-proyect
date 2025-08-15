@@ -5,16 +5,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     RoutePath,
-    api::{Endpoint, route::Route},
-    middleware::extractor::jwt::Claims,
-    model::HexValue,
+    api::{Endpoint, route::Route, types::api_id::ApiId},
+    db::{self, Error, user_sensors::Identifier},
+    middleware::extractor::{DbConnHolder, jwt::Claims},
+    model::{HexValue, NewUserSensor},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiUserSensor {
-    pub api_id: String,
-    pub place_api_id: String,
-    pub device_id: String,
+    pub device_id: ApiId,
     pub name: String,
     pub description: Option<String>,
     pub color: HexValue,
@@ -23,13 +22,21 @@ pub struct ApiUserSensor {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct GetSensor {}
+pub enum GetSensor {
+    FromSensorDeviceId(ApiId),
+    FromPlaceName(String),
+}
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct PostSensor {}
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct PostSensor {
+    pub place_name: String,
+    pub device_id: ApiId,
+    pub name: String,
+    pub description: Option<String>,
+    pub color: HexValue,
+}
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct DeleteSensor {}
+pub type DeleteSensor = GetSensor;
 
 pub struct Sensor {
     resources: Vec<Route>,
@@ -53,28 +60,344 @@ impl Sensor {
 
     async fn sensor_get(
         claims: Claims,
+        mut conn: DbConnHolder,
         Json(payload): Json<GetSensor>,
-    ) -> (StatusCode, Json<ApiUserSensor>) {
-        todo!()
+    ) -> Result<Json<Vec<ApiUserSensor>>, StatusCode> {
+        let user_id = db::users::get_user_id(
+            &mut conn.0,
+            db::users::Identifier::Username(claims.username),
+        )?;
+
+        let id = match payload {
+            GetSensor::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),
+            GetSensor::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
+        };
+
+        let vec = match db::user_sensors::get_user_sensor(&mut conn.0, id) {
+            Ok(vec) => {
+                let vec: Result<Vec<ApiUserSensor>, db::Error> = vec
+                    .into_iter()
+                    .map(|(place, sensor)| {
+                        let color = db::colors::get_color_by_id(&mut conn.0, place.color_id)
+                            .map_err(|e| {
+                                log::error!("Could not get color from id: {e:?}");
+                                db::Error::InternalError("Could not get color from id".into())
+                            })?;
+                        let aus = ApiUserSensor {
+                            name: sensor.name,
+                            description: sensor.description,
+                            created_at: sensor.created_at,
+                            updated_at: sensor.updated_at,
+                            color: color,
+                            device_id: ApiId::from_string(&sensor.device_id)
+                                .expect("Should be valid"),
+                        };
+                        Ok(aus)
+                    })
+                    .collect();
+                vec
+            }
+            Err(e) => {
+                log::error!("Error on [get_user_sensor]: {e:?}");
+                Err(e)
+            }
+        }?;
+
+        Ok(Json(vec))
     }
 
     async fn sensor_post(
         claims: Claims,
+        mut conn: DbConnHolder,
         Json(payload): Json<PostSensor>,
-    ) -> (StatusCode, Json<ApiUserSensor>) {
-        todo!()
+    ) -> Result<Json<ApiUserSensor>, StatusCode> {
+        let user_id = db::users::get_user_id(
+            &mut conn.0,
+            db::users::Identifier::Username(claims.username),
+        )?;
+
+        let color_id = db::colors::get_color_id(
+            &mut conn.0,
+            db::colors::Identifier::Hex(payload.color.clone()),
+        )?;
+
+        let place_id = db::user_places::get_user_place_id(
+            &mut conn.0,
+            db::user_places::Identifier::PlaceNameAndUserId(payload.place_name.clone(), user_id),
+        )?
+        .into_iter()
+        .next()
+        .ok_or(Error::NotFound(
+            format!(
+                "Place Id not found for place {} of user {}",
+                payload.place_name, user_id
+            )
+            .into(),
+        ))?;
+
+        let sensor = NewUserSensor {
+            name: payload.name,
+            description: payload.description,
+            color_id,
+            place_id,
+            device_id: payload.device_id.to_string(),
+        };
+
+        let res = db::user_sensors::insert_user_sensor(&mut conn.0, sensor)?;
+
+        let res = ApiUserSensor {
+            name: res.name,
+            description: res.description,
+            color: payload.color,
+            created_at: res.created_at,
+            updated_at: res.updated_at,
+            device_id: ApiId::from_string(&res.device_id).map_err(|e| {
+                log::error!("Error converting ApiId: {e:?}");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?,
+        };
+
+        Ok(Json(res))
     }
 
     async fn sensor_delete(
         claims: Claims,
+        mut conn: DbConnHolder,
         Json(payload): Json<DeleteSensor>,
-    ) -> (StatusCode, Json<ApiUserSensor>) {
-        todo!()
+    ) -> Result<Json<Vec<ApiUserSensor>>, StatusCode> {
+        let user_id = db::users::get_user_id(
+            &mut conn.0,
+            db::users::Identifier::Username(claims.username),
+        )?;
+
+        let id = match payload {
+            DeleteSensor::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),
+            DeleteSensor::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
+        };
+
+        let vec = match db::user_sensors::delete_user_sensor(&mut conn.0, id) {
+            Ok(vec) => {
+                let vec: Result<Vec<ApiUserSensor>, db::Error> = vec
+                    .into_iter()
+                    .map(|(up, us)| {
+                        let color =
+                            db::colors::get_color_by_id(&mut conn.0, up.color_id).map_err(|e| {
+                                log::error!("Could not get color from id: {e:?}");
+                                db::Error::InternalError("Could not get color from id".into())
+                            })?;
+                        let aup = ApiUserSensor {
+                            name: up.name,
+                            description: up.description,
+                            created_at: up.created_at,
+                            updated_at: up.updated_at,
+                            color: color,
+                            device_id: ApiId::from_string(&us.device_id)
+                                .expect("Should be valid ApiId"),
+                        };
+                        Ok(aup)
+                    })
+                    .collect();
+                vec
+            }
+            Err(e) => {
+                log::error!("Error on [get_user_sensor]: {e:?}");
+                Err(e)
+            }
+        }?;
+
+        Ok(Json(vec))
     }
 }
 
 impl Endpoint for Sensor {
     fn routes(&self) -> &[Route] {
         return &self.resources;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use axum::Json;
+
+    use crate::{
+        api::{
+            endpoints::sensor::{DeleteSensor, GetSensor, PostSensor, Sensor},
+            types::api_id::ApiId,
+        },
+        db::{
+            self, establish_connection,
+            tests::{create_test_user, create_test_user_place, create_test_user_sensor},
+        },
+        middleware::extractor::{DbConnHolder, jwt::Claims},
+    };
+
+    #[tokio::test]
+    async fn test_get_by_api_id() {
+        let mut conn = establish_connection().unwrap();
+        let user = create_test_user(&mut conn);
+        let user_place = create_test_user_place(&mut conn, &user);
+        let user_sensor = create_test_user_sensor(&mut conn, &user_place);
+
+        let body = GetSensor::FromSensorDeviceId(
+            ApiId::from_string(&user_sensor.device_id).expect("Valid"),
+        );
+
+        let claims = Claims {
+            username: user.username,
+            iat: chrono::Utc::now().timestamp() as usize,
+            exp: (chrono::Utc::now()
+                .checked_add_days(chrono::Days::new(3))
+                .expect("Should be able to add days"))
+            .timestamp() as usize,
+        };
+
+        let res_body = Sensor::sensor_get(
+            claims,
+            DbConnHolder(conn),
+            Json::from_bytes(
+                serde_json::to_string(&body)
+                    .expect("Should be serializable")
+                    .as_bytes(),
+            )
+            .expect("Json from Json"),
+        )
+        .await
+        .expect("Should not fail");
+
+        assert!(
+            res_body.len() == 1,
+            "res_body.len(): {}\nres_body: {:?}",
+            res_body.len(),
+            res_body
+        );
+        assert_eq!(
+            res_body.first().unwrap().device_id,
+            ApiId::from_string(&user_sensor.device_id).expect("ApiId valid")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_by_place_api_id() {
+        let mut conn = establish_connection().unwrap();
+        let user = create_test_user(&mut conn);
+        let user_place = create_test_user_place(&mut conn, &user);
+        let user_sensor = create_test_user_sensor(&mut conn, &user_place);
+
+        let body = GetSensor::FromPlaceName(user_place.name.clone());
+
+        let claims = Claims {
+            username: user.username,
+            iat: chrono::Utc::now().timestamp() as usize,
+            exp: (chrono::Utc::now()
+                .checked_add_days(chrono::Days::new(3))
+                .expect("Should be able to add days"))
+            .timestamp() as usize,
+        };
+
+        let res_body = Sensor::sensor_get(
+            claims,
+            DbConnHolder(conn),
+            Json::from_bytes(
+                serde_json::to_string(&body)
+                    .expect("Should be serializable")
+                    .as_bytes(),
+            )
+            .expect("Json from Json"),
+        )
+        .await
+        .expect("Should not fail");
+
+        assert!(
+            res_body.len() == 1,
+            "res_body.len(): {}\nres_body: {:?}",
+            res_body.len(),
+            res_body
+        );
+        assert_eq!(
+            res_body.first().unwrap().device_id,
+            ApiId::from_string(&user_sensor.device_id).expect("ApiId valid")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_post() {
+        let mut conn = establish_connection().unwrap();
+        let user = create_test_user(&mut conn);
+        let place = create_test_user_place(&mut conn, &user);
+
+        let payload = PostSensor {
+            place_name: place.name.clone(),
+            name: "My New Awesome Sensor".to_string(),
+            description: Some("A description for the new sensor.".to_string()),
+            color: "#FF0000".to_string(),
+            device_id: ApiId::random(),
+        };
+
+        let claims = Claims {
+            username: user.username,
+            iat: chrono::Utc::now().timestamp() as usize,
+            exp: (chrono::Utc::now()
+                .checked_add_days(chrono::Days::new(3))
+                .expect("Should be able to add days"))
+            .timestamp() as usize,
+        };
+
+        let res_body = Sensor::sensor_post(claims, DbConnHolder(conn), Json(payload.clone()))
+            .await
+            .expect("Should create a new place successfully");
+
+        assert_eq!(res_body.name, payload.name);
+        assert_eq!(res_body.description, payload.description);
+        assert_eq!(res_body.color, payload.color);
+        assert_eq!(res_body.device_id, payload.device_id);
+    }
+
+    #[tokio::test]
+    async fn test_delete() {
+        let mut conn = establish_connection().unwrap();
+        let user = create_test_user(&mut conn);
+        let user_place = create_test_user_place(&mut conn, &user);
+        let user_sensor = create_test_user_sensor(&mut conn, &user_place);
+        let sensor_to_delete_device_id =
+            ApiId::from_string(&user_sensor.device_id).expect("ApiId should be valid");
+
+        let payload = DeleteSensor::FromSensorDeviceId(sensor_to_delete_device_id.clone());
+
+        let claims = Claims {
+            username: user.username,
+            iat: chrono::Utc::now().timestamp() as usize,
+            exp: (chrono::Utc::now()
+                .checked_add_days(chrono::Days::new(3))
+                .expect("Should be able to add days"))
+            .timestamp() as usize,
+        };
+
+        let deleted_sensors_response =
+            Sensor::sensor_delete(claims, DbConnHolder(conn), Json(payload))
+                .await
+                .expect("Delete should not fail");
+
+        assert_eq!(
+            deleted_sensors_response.len(),
+            1,
+            "Expected to delete exactly one sensor"
+        );
+        assert_eq!(
+            deleted_sensors_response.0.first().unwrap().device_id,
+            sensor_to_delete_device_id
+        );
+
+        let mut conn_for_verify = establish_connection().unwrap();
+        let result_after_delete = db::user_sensors::get_user_sensor(
+            &mut conn_for_verify,
+            db::user_sensors::Identifier::SensorDeviceId(sensor_to_delete_device_id),
+        )
+        .expect("Get operation should not fail");
+
+        assert!(
+            result_after_delete.is_empty(),
+            "The place should not exist in the database after being deleted."
+        );
     }
 }

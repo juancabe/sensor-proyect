@@ -1,7 +1,6 @@
 use axum::{Json, routing::MethodRouter};
 use chrono::NaiveDateTime;
 use hyper::StatusCode;
-use sensor_lib::api::model::api_id::ApiId;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -14,7 +13,6 @@ use crate::{
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiUserPlace {
-    pub api_id: ApiId,
     pub name: String,
     pub description: Option<String>,
     pub color: String,
@@ -24,7 +22,7 @@ pub struct ApiUserPlace {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum GetPlace {
-    FromPlaceApiId(ApiId),
+    FromPlaceName(String),
     UserPlaces,
 }
 
@@ -39,6 +37,12 @@ pub struct PostPlace {
 
 pub struct Place {
     resources: Vec<Route>,
+}
+
+impl Endpoint for Place {
+    fn routes(&self) -> &[Route] {
+        return &self.resources;
+    }
 }
 
 impl Place {
@@ -61,26 +65,20 @@ impl Place {
         mut conn: DbConnHolder,
         Json(payload): Json<GetPlace>,
     ) -> Result<Json<Vec<ApiUserPlace>>, StatusCode> {
+        let user_id = db::users::get_user_id(
+            &mut conn.0,
+            db::users::Identifier::Username(claims.username),
+        )?;
+
         let id = match payload {
-            GetPlace::FromPlaceApiId(api_id) => Identifier::PlaceApiId(api_id),
-            GetPlace::UserPlaces => {
-                let api_id = ApiId::from_string(&claims.user_api_id).map_err(|e| {
-                    log::error!("Could not construct ApiId from claims: {:?}", e);
-                    return StatusCode::INTERNAL_SERVER_ERROR;
-                })?;
-                Identifier::UserApiId(api_id)
-            }
+            GetPlace::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
+            GetPlace::UserPlaces => Identifier::UserId(user_id),
         };
+
+        println!("in function, user.id: {id:?}");
 
         let vec = match db::user_places::get_user_place(&mut conn.0, id) {
             Ok(vec) => {
-                if !vec.iter().all(|up| ApiId::from_string(&up.api_id).is_ok()) {
-                    log::error!(
-                        "[get_user_place] some of these have invalid ApiId: {:?}",
-                        vec
-                    );
-                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
-                }
                 let vec: Result<Vec<ApiUserPlace>, db::Error> = vec
                     .into_iter()
                     .map(|up| {
@@ -90,7 +88,6 @@ impl Place {
                                 db::Error::InternalError("Could not get color from id".into())
                             })?;
                         let aup = ApiUserPlace {
-                            api_id: ApiId::from_string(&up.api_id).expect("Should be valid ApiId"),
                             name: up.name,
                             description: up.description,
                             created_at: up.created_at,
@@ -116,11 +113,9 @@ impl Place {
         mut conn: DbConnHolder,
         Json(payload): Json<PostPlace>,
     ) -> Result<Json<ApiUserPlace>, StatusCode> {
-        let api_id = ApiId::random().to_string();
-
         let user_id = db::users::get_user_id(
             &mut conn.0,
-            db::users::Identifier::ApiId(claims.user_api_id),
+            db::users::Identifier::Username(claims.username),
         )?;
 
         let color_id = db::colors::get_color_id(
@@ -129,7 +124,6 @@ impl Place {
         )?;
 
         let place = NewUserPlace {
-            api_id,
             user_id,
             name: payload.name,
             description: payload.description,
@@ -138,13 +132,7 @@ impl Place {
 
         let res = db::user_places::insert_user_place(&mut conn.0, place)?;
 
-        let api_id = ApiId::from_string(&res.api_id).map_err(|e| {
-            log::error!("Error converting ApiId: {e:?}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
         let res = ApiUserPlace {
-            api_id,
             name: res.name,
             description: res.description,
             color: payload.color,
@@ -160,26 +148,18 @@ impl Place {
         mut conn: DbConnHolder,
         Json(payload): Json<DeletePlace>,
     ) -> Result<Json<Vec<ApiUserPlace>>, StatusCode> {
+        let user_id = db::users::get_user_id(
+            &mut conn.0,
+            db::users::Identifier::Username(claims.username),
+        )?;
+
         let id = match payload {
-            DeletePlace::FromPlaceApiId(api_id) => Identifier::PlaceApiId(api_id),
-            DeletePlace::UserPlaces => {
-                let api_id = ApiId::from_string(&claims.user_api_id).map_err(|e| {
-                    log::error!("Could not construct ApiId from claims: {:?}", e);
-                    return StatusCode::INTERNAL_SERVER_ERROR;
-                })?;
-                Identifier::UserApiId(api_id)
-            }
+            DeletePlace::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
+            DeletePlace::UserPlaces => Identifier::UserId(user_id),
         };
 
         let vec = match db::user_places::delete_user_place(&mut conn.0, id) {
             Ok(vec) => {
-                if !vec.iter().all(|up| ApiId::from_string(&up.api_id).is_ok()) {
-                    log::error!(
-                        "[get_user_place] some of these have invalid ApiId: {:?}",
-                        vec
-                    );
-                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
-                }
                 let vec: Result<Vec<ApiUserPlace>, db::Error> = vec
                     .into_iter()
                     .map(|up| {
@@ -189,7 +169,6 @@ impl Place {
                                 db::Error::InternalError("Could not get color from id".into())
                             })?;
                         let aup = ApiUserPlace {
-                            api_id: ApiId::from_string(&up.api_id).expect("Should be valid ApiId"),
                             name: up.name,
                             description: up.description,
                             created_at: up.created_at,
@@ -211,22 +190,15 @@ impl Place {
     }
 }
 
-impl Endpoint for Place {
-    fn routes(&self) -> &[Route] {
-        return &self.resources;
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
     use axum::Json;
-    use sensor_lib::api::model::api_id::ApiId;
 
     use crate::{
         api::endpoints::place::{GetPlace, Place, PostPlace},
         db::{
-            self, establish_connection,
+            establish_connection,
             tests::{create_test_user, create_test_user_place},
         },
         middleware::extractor::{DbConnHolder, jwt::Claims},
@@ -242,9 +214,13 @@ mod tests {
 
         let claims = Claims {
             username: user.username,
-            user_api_id: user.api_id,
-            iat: chrono::Utc::now().timestamp(),
+            iat: chrono::Utc::now().timestamp() as usize,
+            exp: (chrono::Utc::now()
+                .checked_add_days(chrono::Days::new(3))
+                .expect("Should be able to add days"))
+            .timestamp() as usize,
         };
+        println!("in test, user.id: {}", user.id);
 
         let res_body = Place::place_get(
             claims,
@@ -265,10 +241,7 @@ mod tests {
             res_body.len(),
             res_body
         );
-        assert_eq!(
-            res_body.first().unwrap().api_id,
-            ApiId::from_string(&user_place.api_id).expect("ApiId valid")
-        );
+        assert_eq!(res_body.first().unwrap().name, user_place.name);
     }
 
     #[tokio::test]
@@ -277,14 +250,15 @@ mod tests {
         let user = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
 
-        let body = GetPlace::FromPlaceApiId(
-            ApiId::from_string(&user_place.api_id).expect("Should be valid"),
-        );
+        let body = GetPlace::FromPlaceName(user_place.name.clone());
 
         let claims = Claims {
             username: user.username,
-            user_api_id: user.api_id,
-            iat: chrono::Utc::now().timestamp(),
+            iat: chrono::Utc::now().timestamp() as usize,
+            exp: (chrono::Utc::now()
+                .checked_add_days(chrono::Days::new(3))
+                .expect("Should be able to add days"))
+            .timestamp() as usize,
         };
 
         let res_body = Place::place_get(
@@ -306,10 +280,7 @@ mod tests {
             res_body.len(),
             res_body
         );
-        assert_eq!(
-            res_body.first().unwrap().api_id,
-            ApiId::from_string(&user_place.api_id).expect("ApiId valid")
-        );
+        assert_eq!(res_body.first().unwrap().name, user_place.name);
     }
 
     #[tokio::test]
@@ -325,10 +296,12 @@ mod tests {
 
         let claims = Claims {
             username: user.username,
-            user_api_id: user.api_id,
-            iat: chrono::Utc::now().timestamp(),
+            iat: chrono::Utc::now().timestamp() as usize,
+            exp: (chrono::Utc::now()
+                .checked_add_days(chrono::Days::new(3))
+                .expect("Should be able to add days"))
+            .timestamp() as usize,
         };
-
         let res_body = Place::place_post(claims, DbConnHolder(conn), Json(payload.clone()))
             .await
             .expect("Should create a new place successfully");
@@ -336,7 +309,6 @@ mod tests {
         assert_eq!(res_body.name, payload.name);
         assert_eq!(res_body.description, payload.description);
         assert_eq!(res_body.color, payload.color);
-        assert!(!res_body.api_id.as_str().is_empty());
     }
 
     #[tokio::test]
@@ -344,15 +316,16 @@ mod tests {
         let mut conn = establish_connection().unwrap();
         let user = create_test_user(&mut conn);
         let place_to_delete = create_test_user_place(&mut conn, &user);
-        let place_to_delete_api_id =
-            ApiId::from_string(&place_to_delete.api_id).expect("ApiId should be valid");
 
-        let payload = GetPlace::FromPlaceApiId(place_to_delete_api_id.clone());
+        let payload = GetPlace::FromPlaceName(place_to_delete.name.clone());
 
         let claims = Claims {
             username: user.username,
-            user_api_id: user.api_id,
-            iat: chrono::Utc::now().timestamp(),
+            iat: chrono::Utc::now().timestamp() as usize,
+            exp: (chrono::Utc::now()
+                .checked_add_days(chrono::Days::new(3))
+                .expect("Should be able to add days"))
+            .timestamp() as usize,
         };
 
         let deleted_places_response =
@@ -366,20 +339,8 @@ mod tests {
             "Expected to delete exactly one place"
         );
         assert_eq!(
-            deleted_places_response.0.first().unwrap().api_id,
-            place_to_delete_api_id
-        );
-
-        let mut conn_for_verify = establish_connection().unwrap();
-        let result_after_delete = db::user_places::get_user_place(
-            &mut conn_for_verify,
-            db::user_places::Identifier::PlaceApiId(place_to_delete_api_id),
-        )
-        .expect("Get operation should not fail");
-
-        assert!(
-            result_after_delete.is_empty(),
-            "The place should not exist in the database after being deleted."
+            deleted_places_response.0.first().unwrap().name,
+            place_to_delete.name
         );
     }
 }

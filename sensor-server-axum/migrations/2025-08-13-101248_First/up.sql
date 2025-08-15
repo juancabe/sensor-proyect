@@ -27,7 +27,6 @@ INSERT INTO colors (hex_value, name) VALUES
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
-    api_id TEXT NOT NULL UNIQUE,
     hashed_password TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -41,13 +40,13 @@ EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE user_places (
     id SERIAL PRIMARY KEY,
-    api_id TEXT NOT NULL UNIQUE,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
     color_id INTEGER NOT NULL REFERENCES colors(id) ON DELETE RESTRICT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT user_places_user_id_name_uniq UNIQUE (user_id, name)
 );
 
 CREATE TRIGGER update_user_places_updated_at
@@ -58,9 +57,8 @@ EXECUTE PROCEDURE update_updated_at_column();
 
 CREATE TABLE user_sensors (
     id SERIAL PRIMARY KEY,
-    api_id TEXT NOT NULL UNIQUE,
     place_id INTEGER NOT NULL REFERENCES user_places(id) ON DELETE CASCADE,
-    device_id TEXT NOT NULL,
+    device_id TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     description TEXT,
     color_id INTEGER NOT NULL REFERENCES colors(id) ON DELETE RESTRICT,

@@ -1174,10 +1174,12 @@ dependencies = [
  "jsonwebtoken",
  "log",
  "r2d2",
+ "rand",
  "sensor-lib",
  "serde",
  "serde_json",
  "tokio",
+ "ts-rs",
 ]
 
 [[package]]

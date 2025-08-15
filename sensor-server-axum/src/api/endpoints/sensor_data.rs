@@ -29,8 +29,8 @@ pub struct SensorData {
 impl SensorData {
     pub fn new() -> SensorData {
         let mr = MethodRouter::new()
-            .get(Self::sensor_get)
-            .post(Self::sensor_post);
+            .get(Self::sensor_data_get)
+            .post(Self::sensor_data_post);
 
         Self {
             resources: vec![Route::new(
@@ -41,14 +41,14 @@ impl SensorData {
         }
     }
 
-    async fn sensor_get(
+    async fn sensor_data_get(
         claims: Claims,
         Json(payload): Json<GetSensorData>,
     ) -> (StatusCode, Json<ApiSensorData>) {
         todo!()
     }
 
-    async fn sensor_post(
+    async fn sensor_data_post(
         claims: Claims,
         Json(payload): Json<PostSensorData>,
     ) -> (StatusCode, Json<ApiSensorData>) {

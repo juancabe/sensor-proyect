@@ -19,3 +19,5 @@ sensor-lib = { path = "../sensor-lib/"}
 dotenv = "0.15.0"
 diesel_migrations = "2.2.0"
 r2d2 = "0.8.10"
+ts-rs = "11.0.1"
+rand = "0.9.2"
