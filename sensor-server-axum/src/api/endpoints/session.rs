@@ -137,7 +137,7 @@ mod test {
 
         let claims = Claims {
             username: user.username,
-            iat: now.checked_add_signed(-half_day).unwrap().timestamp() as usize,
+            iat: user.updated_auth_at.and_utc().timestamp() as usize + 1,
             exp: now.checked_add_signed(half_day).unwrap().timestamp() as usize,
         };
 
