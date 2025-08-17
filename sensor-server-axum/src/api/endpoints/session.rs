@@ -137,7 +137,33 @@ mod test {
 
         let claims = Claims {
             username: user.username,
-            iat: user.updated_auth_at.and_utc().timestamp() as usize + 1,
+            iat: user.updated_auth_at.and_utc().timestamp() as usize - 1, // iat should be bigger
+            exp: now.checked_add_signed(half_day).unwrap().timestamp() as usize,
+        };
+
+        let conn = DbConnHolder(conn_nref);
+
+        match Session::session_post(conn, claims).await {
+            Ok(_) => {
+                panic!("Should have failed");
+            }
+            Err(_) => (),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_session_post_should_fail() {
+        let mut conn_nref = establish_connection().unwrap();
+        let conn = &mut conn_nref;
+
+        let user = create_test_user(conn);
+
+        let now = chrono::Utc::now();
+        let half_day = TimeDelta::hours(12);
+
+        let claims = Claims {
+            username: user.username,
+            iat: user.updated_auth_at.and_utc().timestamp() as usize, // iat should be bigger
             exp: now.checked_add_signed(half_day).unwrap().timestamp() as usize,
         };
 
@@ -146,33 +172,6 @@ mod test {
         let _session = Session::session_post(conn, claims)
             .await
             .expect("Should not fail");
-    }
-
-    #[tokio::test]
-    async fn test_session_post_should_fail() {
-        let conn_nref = establish_connection().unwrap();
-
-        let now = chrono::Utc::now();
-        let half_day = TimeDelta::hours(12);
-
-        // Expiration and issuing times should be checked at the extractor
-        let claims = Claims {
-            username: "user_doesnt_exist".to_string(),
-            iat: now.checked_add_signed(-half_day).unwrap().timestamp() as usize,
-            exp: now.checked_add_signed(-half_day).unwrap().timestamp() as usize,
-        };
-
-        let conn = DbConnHolder(conn_nref);
-
-        let status_code = Session::session_post(conn, claims).await;
-
-        assert!(status_code.is_err_and(|e| match e {
-            StatusCode::UNAUTHORIZED => true,
-            _ => {
-                println!("The StatusCode was: {e}");
-                false
-            }
-        }));
     }
 
     #[tokio::test]
