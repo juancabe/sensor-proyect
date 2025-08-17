@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     RoutePath,
     api::{Endpoint, route::Route, types::api_id::ApiId},
-    db::{self, Error, user_sensors::Identifier},
-    middleware::extractor::{DbConnHolder, jwt::Claims},
+    auth::claims::Claims,
+    db::{self, DbConnHolder, Error, user_sensors::Identifier},
     model::{HexValue, NewUserSensor},
 };
 
@@ -65,10 +65,10 @@ impl Sensor {
     ) -> Result<Json<Vec<ApiUserSensor>>, StatusCode> {
         let user_id = db::users::get_user_id(
             &mut conn.0,
-            db::users::Identifier::Username(claims.username),
+            db::users::Identifier::Username(&claims.username),
         )?;
 
-        let id = match payload {
+        let id = match &payload {
             GetSensor::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),
             GetSensor::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
         };
@@ -113,7 +113,7 @@ impl Sensor {
     ) -> Result<Json<ApiUserSensor>, StatusCode> {
         let user_id = db::users::get_user_id(
             &mut conn.0,
-            db::users::Identifier::Username(claims.username),
+            db::users::Identifier::Username(&claims.username),
         )?;
 
         let color_id = db::colors::get_color_id(
@@ -123,7 +123,7 @@ impl Sensor {
 
         let place_id = db::user_places::get_user_place_id(
             &mut conn.0,
-            db::user_places::Identifier::PlaceNameAndUserId(payload.place_name.clone(), user_id),
+            db::user_places::Identifier::PlaceNameAndUserId(&payload.place_name, user_id),
         )?
         .into_iter()
         .next()
@@ -167,10 +167,10 @@ impl Sensor {
     ) -> Result<Json<Vec<ApiUserSensor>>, StatusCode> {
         let user_id = db::users::get_user_id(
             &mut conn.0,
-            db::users::Identifier::Username(claims.username),
+            db::users::Identifier::Username(&claims.username),
         )?;
 
-        let id = match payload {
+        let id = match &payload {
             DeleteSensor::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),
             DeleteSensor::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
         };
@@ -225,11 +225,11 @@ mod tests {
             endpoints::sensor::{DeleteSensor, GetSensor, PostSensor, Sensor},
             types::api_id::ApiId,
         },
+        auth::claims::Claims,
         db::{
-            self, establish_connection,
+            self, DbConnHolder, establish_connection,
             tests::{create_test_user, create_test_user_place, create_test_user_sensor},
         },
-        middleware::extractor::{DbConnHolder, jwt::Claims},
     };
 
     #[tokio::test]
@@ -391,7 +391,7 @@ mod tests {
         let mut conn_for_verify = establish_connection().unwrap();
         let result_after_delete = db::user_sensors::get_user_sensor(
             &mut conn_for_verify,
-            db::user_sensors::Identifier::SensorDeviceId(sensor_to_delete_device_id),
+            db::user_sensors::Identifier::SensorDeviceId(&sensor_to_delete_device_id),
         )
         .expect("Get operation should not fail");
 

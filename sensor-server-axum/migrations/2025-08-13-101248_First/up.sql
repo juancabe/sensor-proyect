@@ -6,6 +6,14 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+CREATE OR REPLACE FUNCTION update_updated_auth_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+   NEW.updated_auth_at = NOW();
+   RETURN NEW;
+END;
+$$ language 'plpgsql';
+
 CREATE TABLE colors (
     id SERIAL PRIMARY KEY,
     hex_value TEXT NOT NULL UNIQUE,
@@ -30,13 +38,20 @@ CREATE TABLE users (
     hashed_password TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_auth_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 CREATE TRIGGER update_users_updated_at
 BEFORE UPDATE ON users
 FOR EACH ROW
 EXECUTE PROCEDURE update_updated_at_column();
+
+CREATE TRIGGER update_users_updated_auth_at
+BEFORE UPDATE ON users
+FOR EACH ROW
+EXECUTE PROCEDURE update_updated_auth_at_column();
+
 
 CREATE TABLE user_places (
     id SERIAL PRIMARY KEY,

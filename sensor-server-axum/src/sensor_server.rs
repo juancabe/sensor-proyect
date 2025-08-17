@@ -2,8 +2,8 @@ use axum::routing::MethodRouter;
 
 use crate::{
     api::{Endpoint, endpoints::generate_endpoints},
+    auth::keys::KEYS,
     db::establish_connection,
-    middleware::extractor::jwt::keys::KEYS,
 };
 
 pub struct SensorServer {

@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     RoutePath,
     api::{Endpoint, route::Route},
-    db::{self, user_places::Identifier},
-    middleware::extractor::{DbConnHolder, jwt::Claims},
+    auth::claims::Claims,
+    db::{self, DbConnHolder, user_places::Identifier},
     model::{HexValue, NewUserPlace},
 };
 
@@ -67,10 +67,10 @@ impl Place {
     ) -> Result<Json<Vec<ApiUserPlace>>, StatusCode> {
         let user_id = db::users::get_user_id(
             &mut conn.0,
-            db::users::Identifier::Username(claims.username),
+            db::users::Identifier::Username(&claims.username),
         )?;
 
-        let id = match payload {
+        let id = match &payload {
             GetPlace::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
             GetPlace::UserPlaces => Identifier::UserId(user_id),
         };
@@ -115,7 +115,7 @@ impl Place {
     ) -> Result<Json<ApiUserPlace>, StatusCode> {
         let user_id = db::users::get_user_id(
             &mut conn.0,
-            db::users::Identifier::Username(claims.username),
+            db::users::Identifier::Username(&claims.username),
         )?;
 
         let color_id = db::colors::get_color_id(
@@ -150,10 +150,10 @@ impl Place {
     ) -> Result<Json<Vec<ApiUserPlace>>, StatusCode> {
         let user_id = db::users::get_user_id(
             &mut conn.0,
-            db::users::Identifier::Username(claims.username),
+            db::users::Identifier::Username(&claims.username),
         )?;
 
-        let id = match payload {
+        let id = match &payload {
             DeletePlace::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
             DeletePlace::UserPlaces => Identifier::UserId(user_id),
         };
@@ -197,11 +197,11 @@ mod tests {
 
     use crate::{
         api::endpoints::place::{GetPlace, Place, PostPlace},
+        auth::claims::Claims,
         db::{
-            establish_connection,
+            DbConnHolder, establish_connection,
             tests::{create_test_user, create_test_user_place},
         },
-        middleware::extractor::{DbConnHolder, jwt::Claims},
     };
 
     #[tokio::test]

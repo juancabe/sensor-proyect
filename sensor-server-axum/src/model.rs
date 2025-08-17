@@ -89,6 +89,7 @@ pub struct User {
     pub email: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub updated_auth_at: NaiveDateTime,
 }
 
 #[derive(Insertable, Clone)]

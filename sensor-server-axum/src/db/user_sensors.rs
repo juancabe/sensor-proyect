@@ -17,9 +17,9 @@ pub fn insert_user_sensor(conn: &mut DbConn, sensor: NewUserSensor) -> Result<Us
         .map(|e| e.clone())
 }
 
-pub enum Identifier {
-    PlaceNameAndUserId(String, i32),
-    SensorDeviceId(ApiId),
+pub enum Identifier<'a> {
+    PlaceNameAndUserId(&'a String, i32),
+    SensorDeviceId(&'a ApiId),
 }
 
 pub fn get_user_sensor(
@@ -171,7 +171,7 @@ mod tests {
 
         let _p1 = get_user_sensor(
             &mut conn,
-            Identifier::PlaceNameAndUserId(place.name.clone(), user.id),
+            Identifier::PlaceNameAndUserId(&place.name, user.id),
         )
         .expect("No error");
 
@@ -191,7 +191,7 @@ mod tests {
 
         let deleted_sensors = delete_user_sensor(
             &mut conn,
-            Identifier::PlaceNameAndUserId(user_place.name.clone(), user.id),
+            Identifier::PlaceNameAndUserId(&user_place.name, user.id),
         )
         .expect("Delete operation should not fail");
 

@@ -1,6 +1,7 @@
 use axum::routing::MethodRouter;
 
 pub mod api;
+pub mod auth;
 pub mod db;
 pub mod middleware;
 pub mod model;

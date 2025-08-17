@@ -14,6 +14,8 @@ pub type DbConn = PooledConnection<ConnectionManager<PgConnection>>;
 // pub type DbConn = PgConnection;
 pub type DbPool = r2d2::Pool<ConnectionManager<PgConnection>>;
 
+pub struct DbConnHolder(pub DbConn);
+
 static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let manager = ConnectionManager::<diesel::PgConnection>::new(database_url);

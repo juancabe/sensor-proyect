@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     RoutePath,
     api::{Endpoint, route::Route},
-    middleware::extractor::jwt::Claims,
+    auth::claims::Claims,
 };
 
 #[derive(Debug, Serialize, Deserialize)]

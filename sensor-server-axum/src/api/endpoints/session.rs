@@ -1,5 +1,4 @@
 use axum::{Json, routing::MethodRouter};
-use chrono::TimeDelta;
 use hyper::StatusCode;
 use jsonwebtoken::{Header, encode};
 use serde::{Deserialize, Serialize};
@@ -7,11 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     RoutePath,
     api::{Endpoint, route::Route},
-    db::users,
-    middleware::extractor::{
-        DbConnHolder,
-        jwt::{Claims, keys::KEYS},
-    },
+    auth::{claims::Claims, keys::KEYS},
+    db::{self, DbConnHolder, users},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -55,58 +51,57 @@ impl Session {
         }
     }
 
-    async fn session_post(claims: Claims) -> Result<Json<ApiSession>, StatusCode> {
-        let now = chrono::Utc::now();
-        let expires_in = TimeDelta::days(1);
-        let tomorrow = now
-            .checked_add_signed(expires_in)
-            .expect("Should not be out of range");
+    async fn session_post(
+        mut conn: DbConnHolder,
+        claims: Claims,
+    ) -> Result<Json<ApiSession>, StatusCode> {
+        {
+            // Check if the user changed auth between JWT renewals
 
-        let claims = Claims {
-            username: claims.username,
-            iat: now.timestamp() as usize,
-            exp: tomorrow.timestamp() as usize,
-        };
+            let user = db::users::get_user(
+                &mut conn.0,
+                db::users::Identifier::Username(&claims.username),
+            )
+            .map_err(|e| match e {
+                db::Error::NotFound(e) => {
+                    log::info!("The user didn't exist so the DB returned the code: {e:?}");
+                    StatusCode::UNAUTHORIZED
+                }
+                _ => e.into(),
+            })?;
+
+            if user.updated_auth_at.and_utc().timestamp() as usize > claims.iat {
+                log::warn!(
+                    "User {} tried to session_post when his user.updated_auth_at > claims.iat",
+                    user.username
+                );
+                Err(StatusCode::UNAUTHORIZED)?
+            }
+        }
+
+        let claims = Claims::new(claims.username);
 
         match encode(&Header::default(), &claims, &KEYS.encoding) {
-            Ok(jwt) => Ok(Json(ApiSession::new(
-                jwt,
-                expires_in.num_seconds() as usize,
-            ))),
+            Ok(jwt) => Ok(Json(ApiSession::new(jwt, claims.exp - claims.exp))),
             Err(_) => todo!(),
         }
     }
 
-    async fn session_get(
+    pub async fn session_get(
         mut conn: DbConnHolder,
         Json(payload): Json<GetSession>,
     ) -> Result<Json<ApiSession>, StatusCode> {
-        let db_hashed_password = users::get_user_password(
-            &mut conn.0,
-            users::Identifier::Username(payload.username.clone()),
-        )?;
+        let db_hashed_password =
+            users::get_user_password(&mut conn.0, users::Identifier::Username(&payload.username))?;
 
         if db_hashed_password != payload.hashed_password {
             return Err(StatusCode::UNAUTHORIZED);
         }
 
-        let now = chrono::Utc::now();
-        let expires_in = TimeDelta::days(1);
-        let tomorrow = now
-            .checked_add_signed(expires_in)
-            .expect("Should not be out of range");
-
-        let claims = Claims {
-            username: payload.username,
-            iat: now.timestamp() as usize,
-            exp: tomorrow.timestamp() as usize,
-        };
+        let claims = Claims::new(payload.username);
 
         match encode(&Header::default(), &claims, &KEYS.encoding) {
-            Ok(jwt) => Ok(Json(ApiSession::new(
-                jwt,
-                expires_in.num_seconds() as usize,
-            ))),
+            Ok(jwt) => Ok(Json(ApiSession::new(jwt, claims.exp - claims.iat))),
             Err(_) => todo!(),
         }
     }
@@ -115,5 +110,85 @@ impl Session {
 impl Endpoint for Session {
     fn routes(&self) -> &[Route] {
         return &self.resources;
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use chrono::TimeDelta;
+
+    use crate::{
+        auth::claims::Claims,
+        db::{establish_connection, tests::create_test_user},
+    };
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_session_post() {
+        let mut conn_nref = establish_connection().unwrap();
+        let conn = &mut conn_nref;
+
+        let user = create_test_user(conn);
+
+        let now = chrono::Utc::now();
+        let half_day = TimeDelta::hours(12);
+
+        let claims = Claims {
+            username: user.username,
+            iat: now.checked_add_signed(-half_day).unwrap().timestamp() as usize,
+            exp: now.checked_add_signed(half_day).unwrap().timestamp() as usize,
+        };
+
+        let conn = DbConnHolder(conn_nref);
+
+        let _session = Session::session_post(conn, claims)
+            .await
+            .expect("Should not fail");
+    }
+
+    #[tokio::test]
+    async fn test_session_post_should_fail() {
+        let conn_nref = establish_connection().unwrap();
+
+        let now = chrono::Utc::now();
+        let half_day = TimeDelta::hours(12);
+
+        // Expiration and issuing times should be checked at the extractor
+        let claims = Claims {
+            username: "user_doesnt_exist".to_string(),
+            iat: now.checked_add_signed(-half_day).unwrap().timestamp() as usize,
+            exp: now.checked_add_signed(-half_day).unwrap().timestamp() as usize,
+        };
+
+        let conn = DbConnHolder(conn_nref);
+
+        let status_code = Session::session_post(conn, claims).await;
+
+        assert!(status_code.is_err_and(|e| match e {
+            StatusCode::UNAUTHORIZED => true,
+            _ => {
+                println!("The StatusCode was: {e}");
+                false
+            }
+        }));
+    }
+
+    #[tokio::test]
+    async fn test_session_get() {
+        let mut conn_nref = establish_connection().unwrap();
+        let conn = &mut conn_nref;
+        let user = create_test_user(conn);
+
+        let json = GetSession {
+            username: user.username,
+            hashed_password: user.hashed_password,
+        };
+
+        let conn = DbConnHolder(conn_nref);
+        let _res = Session::session_get(conn, Json(json))
+            .await
+            .expect("Should not fail");
     }
 }

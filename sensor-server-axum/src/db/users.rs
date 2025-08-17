@@ -1,10 +1,29 @@
-use crate::db::{DbConn, Error};
+use crate::{
+    db::{DbConn, Error},
+    model::User,
+};
 use diesel::prelude::*;
 
 #[derive(Debug)]
-pub enum Identifier {
+pub enum Identifier<'a> {
     Id(i32),
-    Username(String),
+    Username(&'a str),
+}
+
+pub fn get_user(conn: &mut DbConn, identifier: Identifier) -> Result<User, Error> {
+    use crate::schema::{users::dsl as user, users::dsl::users as users_table};
+
+    let r = match identifier {
+        Identifier::Id(id) => users_table
+            .filter(user::id.eq(id))
+            .select(User::as_select())
+            .first::<User>(conn)?,
+        Identifier::Username(username) => users_table
+            .filter(user::username.eq(username))
+            .select(User::as_select())
+            .first::<User>(conn)?,
+    };
+    Ok(r)
 }
 
 pub fn get_user_id(conn: &mut DbConn, identifier: Identifier) -> Result<i32, Error> {
@@ -46,14 +65,42 @@ mod test {
     use crate::db::{establish_connection, tests::create_test_user};
 
     #[test]
+    fn test_get_user() {
+        let mut conn = establish_connection().expect("Correct!!");
+
+        let user = create_test_user(&mut conn);
+
+        let identifier = Identifier::Username(&user.username);
+        let res1 = get_user(&mut conn, identifier).expect("Should work!");
+
+        let identifier = Identifier::Id(user.id);
+        let res2 = get_user(&mut conn, identifier).expect("Should work!");
+
+        assert!(res1.id == user.id);
+        assert!(res2.id == user.id);
+    }
+
+    #[test]
     fn test_get_user_id() {
         let mut conn = establish_connection().expect("Correct!!");
 
         let user = create_test_user(&mut conn);
 
-        let identifier = Identifier::Username(user.username);
+        let identifier = Identifier::Username(&user.username);
         let res1 = get_user_id(&mut conn, identifier).expect("Should work!");
 
         assert!(res1 == user.id);
+    }
+
+    #[test]
+    fn test_get_user_hashed_password() {
+        let mut conn = establish_connection().expect("Correct!!");
+
+        let user = create_test_user(&mut conn);
+
+        let identifier = Identifier::Username(&user.username);
+        let res1 = get_user_password(&mut conn, identifier).expect("Should work!");
+
+        assert!(res1 == user.hashed_password);
     }
 }

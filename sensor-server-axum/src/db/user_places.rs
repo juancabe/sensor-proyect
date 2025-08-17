@@ -5,9 +5,9 @@ use crate::{
     model::{self, NewUserPlace, UserPlace},
 };
 #[derive(Debug)]
-pub enum Identifier {
+pub enum Identifier<'a> {
     UserId(i32),
-    PlaceNameAndUserId(String, i32),
+    PlaceNameAndUserId(&'a str, i32),
 }
 
 pub fn get_user_place_id(conn: &mut DbConn, identifier: Identifier) -> Result<Vec<i32>, Error> {
@@ -147,7 +147,7 @@ mod tests {
 
         let _p1 = get_user_place(
             &mut conn,
-            Identifier::PlaceNameAndUserId(place.name, user.id),
+            Identifier::PlaceNameAndUserId(&place.name, user.id),
         )
         .expect("No error");
 
@@ -162,7 +162,7 @@ mod tests {
 
         let deleted_places = delete_user_place(
             &mut conn,
-            Identifier::PlaceNameAndUserId(place.name.clone(), user.id),
+            Identifier::PlaceNameAndUserId(&place.name, user.id),
         )
         .expect("Delete operation should not fail");
 
@@ -188,11 +188,11 @@ mod tests {
         let res = [
             delete_user_place(
                 &mut conn,
-                Identifier::PlaceNameAndUserId("namethatdoesntexist".to_string(), user.id),
+                Identifier::PlaceNameAndUserId("namethatdoesntexist", user.id),
             ),
             delete_user_place(
                 &mut conn,
-                Identifier::PlaceNameAndUserId(place.name, rand::random()),
+                Identifier::PlaceNameAndUserId(&place.name, rand::random()),
             ),
         ];
 
