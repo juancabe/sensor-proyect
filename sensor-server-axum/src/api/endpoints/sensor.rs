@@ -63,10 +63,11 @@ impl Sensor {
         mut conn: DbConnHolder,
         Json(payload): Json<GetSensor>,
     ) -> Result<Json<Vec<ApiUserSensor>>, StatusCode> {
-        let user_id = db::users::get_user_id(
+        let user_id = db::users::get_user(
             &mut conn.0,
             db::users::Identifier::Username(&claims.username),
-        )?;
+        )?
+        .id;
 
         let id = match &payload {
             GetSensor::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),
@@ -111,10 +112,11 @@ impl Sensor {
         mut conn: DbConnHolder,
         Json(payload): Json<PostSensor>,
     ) -> Result<Json<ApiUserSensor>, StatusCode> {
-        let user_id = db::users::get_user_id(
+        let user_id = db::users::get_user(
             &mut conn.0,
             db::users::Identifier::Username(&claims.username),
-        )?;
+        )?
+        .id;
 
         let color_id = db::colors::get_color_id(
             &mut conn.0,
@@ -165,10 +167,11 @@ impl Sensor {
         mut conn: DbConnHolder,
         Json(payload): Json<DeleteSensor>,
     ) -> Result<Json<Vec<ApiUserSensor>>, StatusCode> {
-        let user_id = db::users::get_user_id(
+        let user_id = db::users::get_user(
             &mut conn.0,
             db::users::Identifier::Username(&claims.username),
-        )?;
+        )?
+        .id;
 
         let id = match &payload {
             DeleteSensor::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),

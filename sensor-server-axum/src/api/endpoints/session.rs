@@ -92,7 +92,8 @@ impl Session {
         Json(payload): Json<GetSession>,
     ) -> Result<Json<ApiSession>, StatusCode> {
         let db_hashed_password =
-            users::get_user_password(&mut conn.0, users::Identifier::Username(&payload.username))?;
+            users::get_user(&mut conn.0, users::Identifier::Username(&payload.username))?
+                .hashed_password;
 
         if db_hashed_password != payload.hashed_password {
             return Err(StatusCode::UNAUTHORIZED);

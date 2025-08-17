@@ -7,13 +7,16 @@ use crate::{
     RoutePath,
     api::{Endpoint, route::Route},
     auth::claims::Claims,
+    db::{
+        DbConn, DbConnHolder,
+        users::{Identifier, Update, get_user, insert_user, update_user},
+    },
+    model::NewUser,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiUser {
     pub username: String,
-    pub api_id: String,
-    pub hashed_password: String,
     pub email: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -23,7 +26,19 @@ pub struct ApiUser {
 pub struct GetUser {}
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct PostUser {}
+pub enum PutUser {
+    Username(String),
+    HashedPassword(String),
+    Email(String),
+}
+
+/// Register User
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct PostUser {
+    pub username: String,
+    pub hashed_password: String,
+    pub email: String,
+}
 
 pub struct User {
     resources: Vec<Route>,
@@ -33,7 +48,8 @@ impl User {
     pub fn new() -> User {
         let mr = MethodRouter::new()
             .get(Self::user_get)
-            .post(Self::user_post);
+            .post(Self::user_post)
+            .put(Self::user_put);
 
         Self {
             resources: vec![Route::new(
@@ -43,20 +59,271 @@ impl User {
         }
     }
 
-    async fn user_get(claims: Claims, Json(payload): Json<GetUser>) -> (StatusCode, Json<ApiUser>) {
-        todo!()
+    async fn user_get(claims: Claims, mut conn: DbConnHolder) -> Result<Json<ApiUser>, StatusCode> {
+        let conn = &mut conn.0;
+        let user = get_user(conn, Identifier::Username(&claims.username))?;
+
+        let username = user.username;
+        let email = user.email;
+        let created_at = user.created_at;
+        let updated_at = user.updated_at;
+
+        let au = ApiUser {
+            username,
+            email,
+            created_at,
+            updated_at,
+        };
+
+        Ok(Json(au))
+    }
+
+    /// Should not be called with Identifier::Id
+    fn user_field_exists_for_some_user(
+        conn: &mut DbConn,
+        identifier: Identifier,
+        user_id: Option<i32>, // and that user_id is not this
+    ) -> Result<bool, StatusCode> {
+        if let Identifier::Id(_) = identifier {
+            log::error!("This function was not meant to be called with an ID as identifier");
+            assert!(false);
+        }
+
+        match get_user(conn, identifier) {
+            Ok(user) => Ok(user_id.is_none_or(|uid| uid != user.id)),
+            Err(e) => match e {
+                crate::db::Error::NotFound(_) => Ok(false),
+                _ => Err(e.into()),
+            },
+        }
+    }
+
+    /// Update a user attribute
+    async fn user_put(
+        mut conn: DbConnHolder,
+        claims: Claims,
+        Json(payload): Json<PutUser>,
+    ) -> Result<Json<ApiUser>, StatusCode> {
+        let conn = &mut conn.0;
+
+        let user = get_user(conn, Identifier::Username(&claims.username))?;
+
+        println!("user got!!!!!!!!!");
+
+        // Check for repeated fields
+        let identifier = match &payload {
+            PutUser::Username(un) => Some(Identifier::Username(un)),
+            PutUser::HashedPassword(_) => None,
+            PutUser::Email(em) => Some(Identifier::Email(em)),
+        };
+        if let Some(identifier) = identifier {
+            match Self::user_field_exists_for_some_user(conn, identifier, Some(user.id)) {
+                Ok(exists) => {
+                    if exists {
+                        Err(StatusCode::CONFLICT)?
+                    }
+                }
+                Err(e) => Err(e)?,
+            }
+        }
+
+        println!("field existed!!!!!!!!!");
+
+        let crate::model::User {
+            id: _,
+            username,
+            hashed_password: _,
+            email,
+            created_at,
+            updated_at,
+            updated_auth_at: _,
+        } = update_user(
+            conn,
+            Identifier::Username(&claims.username),
+            payload as Update,
+        )?;
+
+        Ok(Json(ApiUser {
+            username,
+            email,
+            created_at,
+            updated_at,
+        }))
     }
 
     async fn user_post(
-        claims: Claims,
+        mut conn: DbConnHolder,
         Json(payload): Json<PostUser>,
-    ) -> (StatusCode, Json<ApiUser>) {
-        todo!()
+    ) -> (StatusCode, String) {
+        let conn = &mut conn.0;
+
+        let PostUser {
+            username,
+            hashed_password,
+            email,
+        } = payload;
+
+        match Self::user_field_exists_for_some_user(conn, Identifier::Username(&username), None) {
+            Ok(exists) => {
+                if exists {
+                    return (
+                        StatusCode::CONFLICT,
+                        "The username is already in use".into(),
+                    );
+                }
+            }
+            Err(e) => return (e.into(), "Error".to_string()),
+        }
+
+        match Self::user_field_exists_for_some_user(conn, Identifier::Email(&email), None) {
+            Ok(exists) => {
+                if exists {
+                    return (
+                        StatusCode::CONFLICT,
+                        "The username is already in use".into(),
+                    );
+                }
+            }
+            Err(e) => return (e.into(), "Error".to_string()),
+        }
+
+        let new_user = NewUser {
+            username,
+            hashed_password,
+            email,
+        };
+
+        match insert_user(conn, new_user) {
+            Ok(_) => (StatusCode::OK, "OK".into()),
+            Err(e) => (e.into(), "Error".into()),
+        }
     }
 }
 
 impl Endpoint for User {
     fn routes(&self) -> &[Route] {
         return &self.resources;
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use axum::Json;
+    use hyper::StatusCode;
+
+    use crate::{
+        api::endpoints::user::{PostUser, PutUser, User},
+        auth::claims::Claims,
+        db::{DbConnHolder, establish_connection, tests::create_test_user},
+        model,
+    };
+
+    #[tokio::test]
+    async fn test_user_get() {
+        let mut conn = establish_connection().unwrap();
+
+        let user = create_test_user(&mut conn);
+
+        let mut claims = Claims::new(user.username.clone());
+
+        let res = User::user_get(claims.clone(), DbConnHolder(conn))
+            .await
+            .expect("Should not fail");
+
+        assert_eq!(res.username, user.username);
+        assert_eq!(res.email, user.email);
+
+        let mut conn = establish_connection().unwrap();
+        let _user = create_test_user(&mut conn);
+        claims.username = "anotheruser".into();
+        let res = User::user_get(claims, DbConnHolder(conn))
+            .await
+            .err()
+            .expect("Should fail");
+
+        assert_eq!(res, StatusCode::NOT_FOUND)
+    }
+
+    #[tokio::test]
+    async fn test_user_post() {
+        let conn = establish_connection().unwrap();
+
+        let json = PostUser {
+            username: "newuser".into(),
+            hashed_password: "password".into(),
+            email: "email".into(),
+        };
+
+        let (code, _string) = User::user_post(DbConnHolder(conn), Json(json)).await;
+        assert_eq!(code, StatusCode::OK);
+
+        let mut conn = establish_connection().unwrap();
+
+        let model::User {
+            id: _,
+            username,
+            hashed_password,
+            email,
+            created_at: _,
+            updated_at: _,
+            updated_auth_at: _,
+        } = create_test_user(&mut conn);
+
+        let json = PostUser {
+            username,
+            hashed_password,
+            email,
+        };
+
+        let (code, _string) = User::user_post(DbConnHolder(conn), Json(json)).await;
+        assert_eq!(code, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn test_user_put() {
+        let mut conn = establish_connection().unwrap();
+        let model::User {
+            id: _,
+            username,
+            hashed_password: _,
+            email: _,
+            created_at: _,
+            updated_at: _,
+            updated_auth_at: _,
+        } = create_test_user(&mut conn);
+
+        let new_username = "newusername".to_string();
+
+        let json = PutUser::Username(new_username.clone());
+
+        assert_ne!(&username, &new_username);
+
+        let claims = Claims::new(username);
+
+        let res = User::user_put(DbConnHolder(conn), claims, Json(json))
+            .await
+            .expect("Should not fail");
+        assert_eq!(res.username, new_username);
+    }
+
+    #[tokio::test]
+    async fn test_user_put_fail() {
+        let mut conn = establish_connection().unwrap();
+
+        let user1 = create_test_user(&mut conn);
+        let user2 = create_test_user(&mut conn);
+
+        let new_username_user2 = user1.username;
+
+        let json = PutUser::Username(new_username_user2.clone());
+
+        let claims = Claims::new(user2.username);
+
+        let res = User::user_put(DbConnHolder(conn), claims, Json(json))
+            .await
+            .err()
+            .expect("Should fail");
+
+        assert_eq!(res, StatusCode::CONFLICT);
     }
 }

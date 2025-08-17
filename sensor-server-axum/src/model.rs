@@ -79,7 +79,7 @@ pub struct NewUserSensor {
     pub color_id: i32,
 }
 
-#[derive(Queryable, Selectable, Clone)]
+#[derive(Queryable, Selectable, AsChangeset, Clone)]
 #[diesel(table_name = crate::schema::users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {

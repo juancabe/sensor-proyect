@@ -1,6 +1,7 @@
 use crate::{
+    api::endpoints::user::PutUser,
     db::{DbConn, Error},
-    model::User,
+    model::{NewUser, User},
 };
 use diesel::prelude::*;
 
@@ -8,6 +9,18 @@ use diesel::prelude::*;
 pub enum Identifier<'a> {
     Id(i32),
     Username(&'a str),
+    Email(&'a str),
+}
+
+pub fn insert_user(conn: &mut DbConn, new_user: NewUser) -> Result<User, Error> {
+    use crate::schema::users::dsl::users as users_table;
+    let vec = new_user.insert_into(users_table).load(conn)?;
+    let user: User = vec
+        .into_iter()
+        .next()
+        .ok_or(Error::NotFound("NotFound".into()))?;
+
+    Ok(user)
 }
 
 pub fn get_user(conn: &mut DbConn, identifier: Identifier) -> Result<User, Error> {
@@ -22,40 +35,43 @@ pub fn get_user(conn: &mut DbConn, identifier: Identifier) -> Result<User, Error
             .filter(user::username.eq(username))
             .select(User::as_select())
             .first::<User>(conn)?,
+        Identifier::Email(email) => users_table
+            .filter(user::email.eq(email))
+            .select(User::as_select())
+            .first::<User>(conn)?,
     };
     Ok(r)
 }
 
-pub fn get_user_id(conn: &mut DbConn, identifier: Identifier) -> Result<i32, Error> {
+pub type Update = PutUser;
+
+pub fn update_user(
+    conn: &mut DbConn,
+    identifier: Identifier,
+    update: Update,
+) -> Result<User, Error> {
     use crate::schema::{users::dsl as user, users::dsl::users as users_table};
 
-    let r = match identifier {
-        Identifier::Id(id) => users_table
-            .filter(user::id.eq(id))
-            .select(user::id)
-            .first::<i32>(conn)?,
-        Identifier::Username(username) => users_table
-            .filter(user::username.eq(username))
-            .select(user::id)
-            .first::<i32>(conn)?,
-    };
-    Ok(r)
-}
+    let mut db_user = get_user(conn, identifier)?;
 
-pub fn get_user_password(conn: &mut DbConn, identifier: Identifier) -> Result<String, Error> {
-    use crate::schema::{users::dsl as user, users::dsl::users as users_table};
+    match update {
+        Update::Username(un) => db_user.username = un,
+        Update::HashedPassword(hp) => db_user.hashed_password = hp,
+        Update::Email(em) => db_user.email = em,
+    }
 
-    let r = match identifier {
-        Identifier::Id(id) => users_table
-            .filter(user::id.eq(id))
-            .select(user::hashed_password)
-            .first::<String>(conn)?,
-        Identifier::Username(username) => users_table
-            .filter(user::username.eq(username))
-            .select(user::hashed_password)
-            .first::<String>(conn)?,
-    };
-    Ok(r)
+    let rows = diesel::update(users_table)
+        .filter(user::id.eq(db_user.id))
+        .set(&db_user)
+        .execute(conn)?;
+
+    if rows == 0 {
+        Err(Error::NotFound(
+            "Not found, update didn't affect any rows".into(),
+        ))?
+    }
+
+    Ok(db_user)
 }
 
 #[cfg(test)]
@@ -78,29 +94,5 @@ mod test {
 
         assert!(res1.id == user.id);
         assert!(res2.id == user.id);
-    }
-
-    #[test]
-    fn test_get_user_id() {
-        let mut conn = establish_connection().expect("Correct!!");
-
-        let user = create_test_user(&mut conn);
-
-        let identifier = Identifier::Username(&user.username);
-        let res1 = get_user_id(&mut conn, identifier).expect("Should work!");
-
-        assert!(res1 == user.id);
-    }
-
-    #[test]
-    fn test_get_user_hashed_password() {
-        let mut conn = establish_connection().expect("Correct!!");
-
-        let user = create_test_user(&mut conn);
-
-        let identifier = Identifier::Username(&user.username);
-        let res1 = get_user_password(&mut conn, identifier).expect("Should work!");
-
-        assert!(res1 == user.hashed_password);
     }
 }

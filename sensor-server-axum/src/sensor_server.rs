@@ -31,7 +31,7 @@ impl SensorServer {
             .flatten()
             .map(|route| {
                 (
-                    String::from("/api/v0/") + route.path.as_str(),
+                    String::from("/api/v0") + route.path.as_str(),
                     &route.method_router,
                 )
             })
@@ -40,10 +40,41 @@ impl SensorServer {
 
 #[cfg(test)]
 mod tests {
+    use axum::Router;
+    use axum_test::TestServer;
+
     use crate::sensor_server::SensorServer;
+
+    fn load_router(sensor_server: SensorServer) -> Router {
+        let mut router = Router::new();
+
+        for (path, method_router) in sensor_server.routes() {
+            router = router.route(&path, method_router.clone());
+        }
+
+        router
+    }
 
     #[test]
     fn test_sensor_server() {
-        SensorServer::new();
+        let sensor_server = SensorServer::new();
+        let _ = load_router(sensor_server);
+    }
+
+    // A test-oriented constructor to avoid real side-effects
+    fn test_server() -> TestServer {
+        let sensor_server = SensorServer::new();
+        let router = load_router(sensor_server);
+        TestServer::new(router).expect("start test server")
+    }
+
+    #[tokio::test]
+    async fn healthcheck_works() {
+        let server = test_server();
+
+        // Assuming one of your endpoints exposes GET /api/v0/health
+        let res = server.get("/api/v0/health").await;
+        res.assert_status_ok();
+        res.assert_text("OK"); // or whatever your health endpoint returns
     }
 }

@@ -65,10 +65,11 @@ impl Place {
         mut conn: DbConnHolder,
         Json(payload): Json<GetPlace>,
     ) -> Result<Json<Vec<ApiUserPlace>>, StatusCode> {
-        let user_id = db::users::get_user_id(
+        let user_id = db::users::get_user(
             &mut conn.0,
             db::users::Identifier::Username(&claims.username),
-        )?;
+        )?
+        .id;
 
         let id = match &payload {
             GetPlace::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
@@ -113,10 +114,11 @@ impl Place {
         mut conn: DbConnHolder,
         Json(payload): Json<PostPlace>,
     ) -> Result<Json<ApiUserPlace>, StatusCode> {
-        let user_id = db::users::get_user_id(
+        let user_id = db::users::get_user(
             &mut conn.0,
             db::users::Identifier::Username(&claims.username),
-        )?;
+        )?
+        .id;
 
         let color_id = db::colors::get_color_id(
             &mut conn.0,
@@ -148,10 +150,11 @@ impl Place {
         mut conn: DbConnHolder,
         Json(payload): Json<DeletePlace>,
     ) -> Result<Json<Vec<ApiUserPlace>>, StatusCode> {
-        let user_id = db::users::get_user_id(
+        let user_id = db::users::get_user(
             &mut conn.0,
             db::users::Identifier::Username(&claims.username),
-        )?;
+        )?
+        .id;
 
         let id = match &payload {
             DeletePlace::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),

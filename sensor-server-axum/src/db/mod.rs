@@ -1,4 +1,5 @@
 pub mod colors;
+pub mod sensor_data;
 pub mod user_places;
 pub mod user_sensors;
 pub mod users;
@@ -100,7 +101,10 @@ pub fn establish_connection() -> Result<DbConn, Error> {
 #[cfg(test)]
 pub mod tests {
 
+    use std::ops::Range;
+
     use diesel::{Insertable, RunQueryDsl};
+    use rand::{Rng, distr::Alphabetic};
     use sensor_lib::api::model::api_id::ApiId;
 
     use crate::{
@@ -108,13 +112,24 @@ pub mod tests {
         model::{NewUser, NewUserPlace, NewUserSensor, User, UserPlace, UserSensor},
     };
 
+    pub fn random_string(range: Range<usize>) -> String {
+        rand::rng()
+            .sample_iter(&Alphabetic)
+            .take(rand::random_range(range))
+            .map(char::from)
+            .collect()
+    }
+
     pub fn create_test_user(conn: &mut DbConn) -> User {
         use crate::schema::users::dsl::users as users_table;
 
+        let username = random_string(5..16);
+        let email = random_string(5..16);
+
         let test_user = NewUser {
-            username: "testuser".to_string(),
+            username,
             hashed_password: "hashed_password".to_string(),
-            email: "testuser@email.com".to_string(),
+            email,
         };
 
         let res: Vec<User> = test_user
@@ -131,10 +146,13 @@ pub mod tests {
     pub fn create_test_user_place(conn: &mut DbConn, user: &User) -> UserPlace {
         use crate::schema::user_places::dsl::user_places as user_places_table;
 
+        let name = random_string(5..16);
+        let description = random_string(5..16);
+
         let test_user_place = NewUserPlace {
             user_id: user.id,
-            name: "testuserplace".to_string(),
-            description: Some("le description".to_string()),
+            name,
+            description: Some(description),
             color_id: 1,
         };
 
@@ -152,9 +170,12 @@ pub mod tests {
     pub fn create_test_user_sensor(conn: &mut DbConn, user_place: &UserPlace) -> UserSensor {
         use crate::schema::user_sensors::dsl::user_sensors as user_sensors_table;
 
+        let name = random_string(5..16);
+        let description = random_string(5..16);
+
         let test_user_sensor = NewUserSensor {
-            name: "testusersensor".to_string(),
-            description: Some("le description".to_string()),
+            name,
+            description: Some(description),
             color_id: 1,
             place_id: user_place.id,
             device_id: ApiId::random().to_string(),

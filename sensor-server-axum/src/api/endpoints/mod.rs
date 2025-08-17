@@ -1,5 +1,6 @@
 use crate::api::Endpoint;
 
+pub mod health;
 pub mod place;
 pub mod sensor;
 pub mod sensor_data;
@@ -14,6 +15,7 @@ pub fn generate_endpoints() -> Vec<Box<dyn Endpoint>> {
     endpoints.push(Box::new(sensor_data::SensorData::new()));
     endpoints.push(Box::new(session::Session::new()));
     endpoints.push(Box::new(user::User::new()));
+    endpoints.push(Box::new(health::Health::new()));
 
     endpoints
 }
