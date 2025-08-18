@@ -1,4 +1,4 @@
-use axum::{Json, routing::MethodRouter};
+use axum::{Json, extract::Query, routing::MethodRouter};
 use hyper::StatusCode;
 use jsonwebtoken::{Header, encode};
 use serde::{Deserialize, Serialize};
@@ -89,7 +89,7 @@ impl Session {
 
     pub async fn session_get(
         mut conn: DbConnHolder,
-        Json(payload): Json<GetSession>,
+        Query(payload): Query<GetSession>,
     ) -> Result<Json<ApiSession>, StatusCode> {
         let db_hashed_password =
             users::get_user(&mut conn.0, users::Identifier::Username(&payload.username))?
@@ -187,7 +187,7 @@ mod test {
         };
 
         let conn = DbConnHolder(conn_nref);
-        let _res = Session::session_get(conn, Json(json))
+        let _res = Session::session_get(conn, Query(json))
             .await
             .expect("Should not fail");
     }

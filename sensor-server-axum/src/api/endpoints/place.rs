@@ -1,4 +1,4 @@
-use axum::{Json, routing::MethodRouter};
+use axum::{Json, extract::Query, routing::MethodRouter};
 use chrono::NaiveDateTime;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -63,7 +63,7 @@ impl Place {
     async fn place_get(
         claims: Claims,
         mut conn: DbConnHolder,
-        Json(payload): Json<GetPlace>,
+        Query(payload): Query<GetPlace>,
     ) -> Result<Json<Vec<ApiUserPlace>>, StatusCode> {
         let user_id = db::users::get_user(
             &mut conn.0,
@@ -196,7 +196,7 @@ impl Place {
 #[cfg(test)]
 mod tests {
 
-    use axum::Json;
+    use axum::{Json, extract::Query};
 
     use crate::{
         api::endpoints::place::{GetPlace, Place, PostPlace},
@@ -225,18 +225,9 @@ mod tests {
         };
         println!("in test, user.id: {}", user.id);
 
-        let res_body = Place::place_get(
-            claims,
-            DbConnHolder(conn),
-            Json::from_bytes(
-                serde_json::to_string(&body)
-                    .expect("Should be serializable")
-                    .as_bytes(),
-            )
-            .expect("Json from Json"),
-        )
-        .await
-        .expect("Should not fail");
+        let res_body = Place::place_get(claims, DbConnHolder(conn), Query(body))
+            .await
+            .expect("Should not fail");
 
         assert!(
             res_body.len() == 1,
@@ -264,18 +255,9 @@ mod tests {
             .timestamp() as usize,
         };
 
-        let res_body = Place::place_get(
-            claims,
-            DbConnHolder(conn),
-            Json::from_bytes(
-                serde_json::to_string(&body)
-                    .expect("Should be serializable")
-                    .as_bytes(),
-            )
-            .expect("Json from Json"),
-        )
-        .await
-        .expect("Should not fail");
+        let res_body = Place::place_get(claims, DbConnHolder(conn), Query(body))
+            .await
+            .expect("Should not fail");
 
         assert!(
             res_body.len() == 1,

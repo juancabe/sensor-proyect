@@ -1,4 +1,4 @@
-use axum::{Json, routing::MethodRouter};
+use axum::{Json, extract::Query, routing::MethodRouter};
 use chrono::NaiveDateTime;
 use hyper::StatusCode;
 use jsonwebtoken::{Header, encode};
@@ -106,7 +106,7 @@ impl SensorData {
     pub async fn sensor_data_get(
         claims: Claims,
         mut conn: DbConnHolder,
-        Json(payload): Json<GetSensorData>,
+        Query(payload): Query<GetSensorData>,
     ) -> Result<Json<Vec<ApiSensorData>>, StatusCode> {
         let conn = &mut conn.0;
         let sensor = Self::authorized_sensor(conn, &payload.device_id, &claims.username)?;
@@ -182,7 +182,7 @@ impl Endpoint for SensorData {
 
 #[cfg(test)]
 mod test {
-    use axum::Json;
+    use axum::{Json, extract::Query};
 
     use crate::{
         api::{
@@ -217,7 +217,7 @@ mod test {
 
         let conn = DbConnHolder(conn_uref);
 
-        let res = SensorData::sensor_data_get(claims, conn, Json(json))
+        let res = SensorData::sensor_data_get(claims, conn, Query(json))
             .await
             .expect("Should not fail");
 
