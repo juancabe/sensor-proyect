@@ -2,6 +2,10 @@
 
 Rust implementation for the sernsors server
 
+## TODO
+
+- [ ] Methods that should accept url params aren't
+
 ## Main dependencies
 
 ### Services used
