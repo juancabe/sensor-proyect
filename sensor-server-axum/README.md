@@ -2,9 +2,10 @@
 
 Rust implementation for the sernsors server
 
-## TODO
+## TODOs
 
-- [ ] Methods that should accept url params aren't
+- [x] Methods that should accept url params aren't
+- [ ] Refactor so that API Endpoints return API Path
 
 ## Main dependencies
 

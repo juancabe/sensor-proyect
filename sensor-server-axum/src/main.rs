@@ -1,6 +1,5 @@
 use std::net::{Ipv4Addr, SocketAddrV4};
 
-use axum::Router;
 use dotenv::dotenv;
 use sensor_server_axum::{PORT, sensor_server::SensorServer};
 use tokio::net::TcpListener;
@@ -18,11 +17,8 @@ async fn main() {
     let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, PORT))
         .await
         .unwrap();
-    let mut router = Router::new();
 
-    for (path, method_router) in sensor_server.routes() {
-        router = router.route(&path, method_router.clone()); // TODO: Get rid of clone
-    }
+    let router = sensor_server.into_router();
 
     axum::serve(listener, router).await.unwrap()
 }
