@@ -1,4 +1,0 @@
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main
-ENV CC=clang
-ENV CC_x86_64_unknown_linux_gnu=clang
-RUN apt-get update && apt-get install -y clang libpq-dev
