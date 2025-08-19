@@ -9,6 +9,8 @@ Rust implementation for the sernsors server
 - [x] Add better log information for the endpoints
 - [x] Export bindings to TS
 - [ ] Add Put endpoints where needed
+- [ ] Use PoisonedIdentifiers correctly
+- [ ] Try to refactor DB to LazyLock<Mutex<...>> or something to share a DbConn on the state (maybe no)
 
 ## Main dependencies
 

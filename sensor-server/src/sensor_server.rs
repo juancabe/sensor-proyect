@@ -9,18 +9,8 @@ use crate::{
 
 pub type ServerMethodRouter = MethodRouter;
 
-#[derive(Debug, Clone)]
-pub struct State {}
-
-impl State {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
 pub struct SensorServer {
     endpoints: Vec<Box<dyn Endpoint>>,
-    _state: State,
 }
 
 impl SensorServer {
@@ -39,9 +29,7 @@ impl SensorServer {
 
         let endpoints = generate_endpoints();
 
-        let _state = State::new();
-
-        Self { endpoints, _state }
+        Self { endpoints }
     }
 
     pub fn routes(&self) -> impl Iterator<Item = (String, ServerMethodRouter)> {
@@ -64,9 +52,7 @@ impl SensorServer {
             router = router.route(&path, route);
         }
 
-        router
-            // .with_state(self.state)
-            .layer(axum::middleware::from_fn(crate::middleware::log_request))
+        router.layer(axum::middleware::from_fn(crate::middleware::log_request))
     }
 }
 

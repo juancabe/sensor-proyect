@@ -6,6 +6,8 @@ pub mod db;
 pub mod middleware;
 pub mod model;
 pub mod schema;
+pub mod state;
+
 pub mod sensor_server;
 
 pub const PORT: u16 = 3000;
