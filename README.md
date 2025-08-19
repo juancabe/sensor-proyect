@@ -1,10 +1,16 @@
-# Server TODOs
-- [x] API endpoint to add new sensor to User available sensors
-- [x] Refactor endpoints to support authentication
-- [x] Measure with more than one sensor
-- [x] Optimize energy consumption
-- [x] API endpoint to get a summary of user (including data related to their sensors)
-- [x] On server, update last measurement time for sensor
-- [ ] Add sensor name field on sensors table, also add place color {DB}
-- [ ] Mode for constant BLE mode on sensor that permits it's direct connection from the app
-- [ ] Include optional Battery level in sensor data
+# Sensor Proyect
+Personal proyect that integrated `embeeded` software __developed in Rust__  and hardware that provides data series through HTTP to a `server` __developed in Rust__ to a `frontend` developed using __Expo__ with React and Typescript that targets Android, IOS and Web end users.
+
+## Proyect components
+### Embeeded **sensor_client**
+TODO
+### Server **sensor_server**
+TODO
+### Frontend **sensor_app**
+TODO
+
+## TODOs
+- [ ] Finish server refactor to axum
+- [ ] Adapt app and sensor to new server
+- [ ] Prepare app for Web
+
