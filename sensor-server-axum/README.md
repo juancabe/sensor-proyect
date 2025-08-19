@@ -6,7 +6,8 @@ Rust implementation for the sernsors server
 
 - [x] Methods that should accept url params aren't
 - [x] Refactor so that API Endpoints return API Path
-- [ ] Add better log information for the endpoints
+- [x] Add better log information for the endpoints
+- [ ] Export bindings to TS
 
 ## Main dependencies
 
