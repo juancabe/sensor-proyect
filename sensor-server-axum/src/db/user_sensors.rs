@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn test_new_sensor() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_get_sensor() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
 
         let user = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn test_delete_sensor() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
         let user_sensor = create_test_user_sensor(&mut conn, &user_place);
@@ -215,24 +215,5 @@ mod tests {
             "The place with id {} should not be found after deletion.",
             user_place.id
         );
-
-        // let res = [
-        //     delete_user_sensor(&mut conn, Identifier::UserApiId(ApiId::random())),
-        //     delete_user_sensor(&mut conn, Identifier::PlaceApiId(ApiId::random())),
-        // ];
-        //
-        // assert!(res.into_iter().all(|r| {
-        //     if r.is_ok() {
-        //         println!("r: {}", r.is_ok());
-        //     }
-        //
-        //     r.is_err_and(|e| match e {
-        //         Error::NotFound(_) => true,
-        //         _ => {
-        //             println!("was false, e: {e:?}");
-        //             false
-        //         }
-        //     })
-        // }))
     }
 }

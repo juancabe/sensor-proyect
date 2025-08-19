@@ -82,7 +82,7 @@ mod test {
 
     #[test]
     fn test_get_user() {
-        let mut conn = establish_connection().expect("Correct!!");
+        let mut conn = establish_connection(true).expect("Correct!!");
 
         let user = create_test_user(&mut conn);
 

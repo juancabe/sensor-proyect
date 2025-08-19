@@ -59,31 +59,40 @@ impl From<Error> for StatusCode {
 impl From<diesel::result::Error> for Error {
     fn from(value: diesel::result::Error) -> Self {
         match value {
-            diesel::result::Error::NotFound => Self::NotFound(value.into()),
-            _ => Self::InternalError(value.into()),
+            diesel::result::Error::NotFound => {
+                log::warn!("Diesel NotFound will translate into NotFound: {value:?} ");
+                Self::NotFound(value.into())
+            }
+            e => {
+                log::error!("Diesel error will return InternalError: {e:?}");
+                Self::InternalError(e.into())
+            }
         }
     }
 }
 
 impl From<original_r2d2::Error> for Error {
     fn from(value: original_r2d2::Error) -> Self {
+        log::error!("r2d2 error will return ConnectionError: {value:?}");
         Self::ConnectionError(value.into())
     }
 }
 
 impl From<diesel::ConnectionError> for Error {
     fn from(value: diesel::ConnectionError) -> Self {
+        log::error!("diesel::ConnectionError error will return ConnectionError: {value:?}");
         Self::ConnectionError(value.into())
     }
 }
 
-pub fn establish_connection() -> Result<DbConn, Error> {
+pub fn establish_connection(test: bool) -> Result<DbConn, Error> {
     dotenv().expect(".env should be available and readable");
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    assert_eq!(database_url.contains("test_database"), test);
 
     // let mut conn: DbConn = PgConnection::establish(&database_url)?;
     let mut conn;
-    if database_url.contains("test_database") {
+    if test {
         let manager = ConnectionManager::<diesel::PgConnection>::new(database_url);
         let pool = r2d2::Pool::builder()
             .build(manager)

@@ -5,7 +5,8 @@ Rust implementation for the sernsors server
 ## TODOs
 
 - [x] Methods that should accept url params aren't
-- [ ] Refactor so that API Endpoints return API Path
+- [x] Refactor so that API Endpoints return API Path
+- [ ] Add better log information for the endpoints
 
 ## Main dependencies
 

@@ -45,6 +45,7 @@ pub struct User {
 }
 
 impl User {
+    pub const API_PATH: &str = "/user";
     pub fn new() -> User {
         let mr = MethodRouter::new()
             .get(Self::user_get)
@@ -53,7 +54,8 @@ impl User {
 
         Self {
             resources: vec![Route::new(
-                RoutePath::from_string("/user".to_string()).expect("The route should be correct"),
+                RoutePath::from_string(Self::API_PATH.to_string())
+                    .expect("The route should be correct"),
                 mr,
             )],
         }
@@ -108,8 +110,6 @@ impl User {
 
         let user = get_user(conn, Identifier::Username(&claims.username))?;
 
-        println!("user got!!!!!!!!!");
-
         // Check for repeated fields
         let identifier = match &payload {
             PutUser::Username(un) => Some(Identifier::Username(un)),
@@ -126,8 +126,6 @@ impl User {
                 Err(e) => Err(e)?,
             }
         }
-
-        println!("field existed!!!!!!!!!");
 
         let crate::model::User {
             id: _,
@@ -204,6 +202,9 @@ impl Endpoint for User {
     fn routes(&self) -> &[Route] {
         return &self.resources;
     }
+    fn path(&self) -> &str {
+        Self::API_PATH
+    }
 }
 
 #[cfg(test)]
@@ -220,7 +221,7 @@ mod test {
 
     #[tokio::test]
     async fn test_user_get() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
 
         let user = create_test_user(&mut conn);
 
@@ -233,7 +234,7 @@ mod test {
         assert_eq!(res.username, user.username);
         assert_eq!(res.email, user.email);
 
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let _user = create_test_user(&mut conn);
         claims.username = "anotheruser".into();
         let res = User::user_get(claims, DbConnHolder(conn))
@@ -246,7 +247,7 @@ mod test {
 
     #[tokio::test]
     async fn test_user_post() {
-        let conn = establish_connection().unwrap();
+        let conn = establish_connection(true).unwrap();
 
         let json = PostUser {
             username: "newuser".into(),
@@ -257,7 +258,7 @@ mod test {
         let (code, _string) = User::user_post(DbConnHolder(conn), Json(json)).await;
         assert_eq!(code, StatusCode::OK);
 
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
 
         let model::User {
             id: _,
@@ -281,7 +282,7 @@ mod test {
 
     #[tokio::test]
     async fn test_user_put() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let model::User {
             id: _,
             username,
@@ -308,7 +309,7 @@ mod test {
 
     #[tokio::test]
     async fn test_user_put_fail() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
 
         let user1 = create_test_user(&mut conn);
         let user2 = create_test_user(&mut conn);

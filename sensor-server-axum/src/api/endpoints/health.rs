@@ -14,15 +14,22 @@ impl Endpoint for Health {
     fn routes(&self) -> &[Route] {
         return &self.resources;
     }
+
+    fn path(&self) -> &str {
+        Self::API_PATH
+    }
 }
 
 impl Health {
+    pub const API_PATH: &str = "/health";
+
     pub fn new() -> Health {
         let mr = MethodRouter::new().get(Self::health_get);
 
         Self {
             resources: vec![Route::new(
-                RoutePath::from_string("/health".to_string()).expect("The route should be correct"),
+                RoutePath::from_string(Self::API_PATH.to_string())
+                    .expect("The route should be correct"),
                 mr,
             )],
         }

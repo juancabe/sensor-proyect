@@ -1,5 +1,5 @@
 use axum::{Json, extract::Query, routing::MethodRouter};
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, TimeDelta, Utc};
 use hyper::StatusCode;
 use jsonwebtoken::{Header, encode};
 use serde::{Deserialize, Serialize};
@@ -31,11 +31,13 @@ pub struct PostSensorDataResponse {
     pub new_jwt: String,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GetSensorData {
-    device_id: ApiId,
-    lowest_added_at: Option<ApiTimestamp>,
-    upper_added_at: Option<ApiTimestamp>,
+    #[serde(flatten)]
+    pub device_id: ApiId,
+    // Not included if added_at == [upper | lowest]_added_at
+    pub lowest_added_at: Option<ApiTimestamp>,
+    pub upper_added_at: Option<ApiTimestamp>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -49,7 +51,13 @@ pub struct SensorData {
     resources: Vec<Route>,
 }
 
+enum RangeDelimiter {
+    Top,
+    Bottom,
+}
+
 impl SensorData {
+    pub const API_PATH: &str = "/sensor_data";
     pub fn new() -> SensorData {
         let mr = MethodRouter::new()
             .get(Self::sensor_data_get)
@@ -57,7 +65,7 @@ impl SensorData {
 
         Self {
             resources: vec![Route::new(
-                RoutePath::from_string("/sensor_data".to_string())
+                RoutePath::from_string(Self::API_PATH.to_string())
                     .expect("The route should be correct"),
                 mr,
             )],
@@ -88,19 +96,52 @@ impl SensorData {
         }
     }
 
+    /// ## Max
+    /// - if true, will set returned timestamp to at most the reference_utc for max
+    /// - if false, will set returned timestamp to at least reference_utc for !max
+    /// Also, if timestamp is None, it will return the reference_utc
     fn convert_opt_timestamp_into_naive(
         timestamp: Option<ApiTimestamp>,
+        max: RangeDelimiter,
     ) -> Result<NaiveDateTime, StatusCode> {
         use chrono::DateTime;
-        match timestamp {
+
+        let reference_utc = match max {
+            RangeDelimiter::Top => Utc::now()
+                .checked_add_signed(TimeDelta::minutes(1))
+                .ok_or_else(|| {
+                    log::error!("Could not construct max_utc on convert_opt_timestamp_into_naive");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?,
+            RangeDelimiter::Bottom => DateTime::from_timestamp(0, 0).ok_or_else(|| {
+                log::error!("Could not construct max_utc on convert_opt_timestamp_into_naive");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?,
+        };
+
+        let reference_cmp = match max {
+            RangeDelimiter::Top => i64::min,
+            RangeDelimiter::Bottom => i64::max,
+        };
+
+        let res = match timestamp {
             Some(secs) => {
-                let secs = i64::min(secs as i64, chrono::Utc::now().timestamp());
+                let secs = reference_cmp(secs as i64, reference_utc.timestamp());
                 DateTime::from_timestamp(secs, 0)
                     .and_then(|dt| Some(dt.naive_utc()))
-                    .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
+                    .ok_or_else(|| {
+                        log::error!(
+                            "Could not construct return naive on convert_opt_timestamp_into_naive from secs {secs}"
+                        );
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })
             }
-            None => Ok(NaiveDateTime::default()),
-        }
+            None => Ok(reference_utc.naive_utc()),
+        };
+
+        log::trace!("convert_opt_timestamp_into_naive returned {res:?}");
+
+        res
     }
 
     pub async fn sensor_data_get(
@@ -111,8 +152,12 @@ impl SensorData {
         let conn = &mut conn.0;
         let sensor = Self::authorized_sensor(conn, &payload.device_id, &claims.username)?;
 
-        let up = Self::convert_opt_timestamp_into_naive(payload.upper_added_at)?;
-        let low = Self::convert_opt_timestamp_into_naive(payload.lowest_added_at)?;
+        let low = Self::convert_opt_timestamp_into_naive(
+            payload.lowest_added_at,
+            RangeDelimiter::Bottom,
+        )?;
+        let up =
+            Self::convert_opt_timestamp_into_naive(payload.upper_added_at, RangeDelimiter::Top)?;
 
         let sensor_data = get_sensor_data(conn, Identifier::SensorId(sensor.id), low..up)?
             .into_iter()
@@ -178,6 +223,9 @@ impl Endpoint for SensorData {
     fn routes(&self) -> &[Route] {
         return &self.resources;
     }
+    fn path(&self) -> &str {
+        Self::API_PATH
+    }
 }
 
 #[cfg(test)]
@@ -198,7 +246,7 @@ mod test {
 
     #[tokio::test]
     async fn test_get_sensor_data() {
-        let mut conn_uref = establish_connection().unwrap();
+        let mut conn_uref = establish_connection(true).unwrap();
         let conn = &mut conn_uref;
 
         let user = create_test_user(conn);
@@ -226,7 +274,7 @@ mod test {
 
     #[tokio::test]
     async fn test_post_sensor_data() {
-        let mut conn_uref = establish_connection().unwrap();
+        let mut conn_uref = establish_connection(true).unwrap();
         let conn = &mut conn_uref;
 
         let user = create_test_user(conn);

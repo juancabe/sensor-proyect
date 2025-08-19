@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn test_new_place() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
 
         let new_up: NewUserPlace = NewUserPlace {
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_get_place() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
 
         let user = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_delete_place() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
@@ -197,15 +197,10 @@ mod tests {
         ];
 
         assert!(res.into_iter().all(|r| {
-            if r.is_ok() {
-                println!("r: {}", r.is_ok());
-            }
-
             r.is_err_and(|e| match e {
                 Error::NotFound(_) => true,
                 _ => {
-                    println!("was false, e: {e:?}");
-                    false
+                    panic!("was false, e: {e:?}");
                 }
             })
         }))

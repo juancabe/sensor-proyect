@@ -21,18 +21,24 @@ pub struct ApiUserPlace {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub enum GetPlace {
+pub enum GetPlaceEnum {
     FromPlaceName(String),
     UserPlaces,
 }
 
-type DeletePlace = GetPlace;
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct GetPlace {
+    #[serde(flatten)]
+    pub param: GetPlaceEnum,
+}
+
+type DeletePlace = GetPlaceEnum;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct PostPlace {
-    name: String,
-    description: Option<String>,
-    color: HexValue,
+    pub name: String,
+    pub description: Option<String>,
+    pub color: HexValue,
 }
 
 pub struct Place {
@@ -43,9 +49,13 @@ impl Endpoint for Place {
     fn routes(&self) -> &[Route] {
         return &self.resources;
     }
+    fn path(&self) -> &str {
+        Self::API_PATH
+    }
 }
 
 impl Place {
+    pub const API_PATH: &str = "/place";
     pub fn new() -> Place {
         let mr = MethodRouter::new()
             .get(Self::place_get)
@@ -54,7 +64,8 @@ impl Place {
 
         Self {
             resources: vec![Route::new(
-                RoutePath::from_string("/places".to_string()).expect("The route should be correct"),
+                RoutePath::from_string(Self::API_PATH.to_string())
+                    .expect("The route should be correct"),
                 mr,
             )],
         }
@@ -71,12 +82,12 @@ impl Place {
         )?
         .id;
 
-        let id = match &payload {
-            GetPlace::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
-            GetPlace::UserPlaces => Identifier::UserId(user_id),
-        };
+        let payload = payload.param;
 
-        println!("in function, user.id: {id:?}");
+        let id = match &payload {
+            GetPlaceEnum::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
+            GetPlaceEnum::UserPlaces => Identifier::UserId(user_id),
+        };
 
         let vec = match db::user_places::get_user_place(&mut conn.0, id) {
             Ok(vec) => {
@@ -199,7 +210,7 @@ mod tests {
     use axum::{Json, extract::Query};
 
     use crate::{
-        api::endpoints::place::{GetPlace, Place, PostPlace},
+        api::endpoints::place::{GetPlace, GetPlaceEnum, Place, PostPlace},
         auth::claims::Claims,
         db::{
             DbConnHolder, establish_connection,
@@ -209,9 +220,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_place_get_user_places() {
-        let body = GetPlace::UserPlaces;
+        let body = GetPlaceEnum::UserPlaces;
 
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
 
@@ -223,11 +234,11 @@ mod tests {
                 .expect("Should be able to add days"))
             .timestamp() as usize,
         };
-        println!("in test, user.id: {}", user.id);
 
-        let res_body = Place::place_get(claims, DbConnHolder(conn), Query(body))
-            .await
-            .expect("Should not fail");
+        let res_body =
+            Place::place_get(claims, DbConnHolder(conn), Query(GetPlace { param: body }))
+                .await
+                .expect("Should not fail");
 
         assert!(
             res_body.len() == 1,
@@ -240,11 +251,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_place_get_api_id() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
 
-        let body = GetPlace::FromPlaceName(user_place.name.clone());
+        let body = GetPlaceEnum::FromPlaceName(user_place.name.clone());
 
         let claims = Claims {
             username: user.username,
@@ -255,9 +266,10 @@ mod tests {
             .timestamp() as usize,
         };
 
-        let res_body = Place::place_get(claims, DbConnHolder(conn), Query(body))
-            .await
-            .expect("Should not fail");
+        let res_body =
+            Place::place_get(claims, DbConnHolder(conn), Query(GetPlace { param: body }))
+                .await
+                .expect("Should not fail");
 
         assert!(
             res_body.len() == 1,
@@ -270,7 +282,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_place_post() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
 
         let payload = PostPlace {
@@ -298,11 +310,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_place_delete() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
         let place_to_delete = create_test_user_place(&mut conn, &user);
 
-        let payload = GetPlace::FromPlaceName(place_to_delete.name.clone());
+        let payload = GetPlaceEnum::FromPlaceName(place_to_delete.name.clone());
 
         let claims = Claims {
             username: user.username,

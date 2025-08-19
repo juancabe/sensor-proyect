@@ -40,13 +40,13 @@ pub fn get_color_by_id(conn: &mut DbConn, id: i32) -> Result<String, Error> {
 #[cfg(test)]
 mod test {
 
-    use crate::{db::establish_connection, model::COLORS};
+    use crate::{db::establish_connection, model::COLOR_HEX_STRS};
 
     use super::*;
 
     #[test]
     fn test_get_color_id() {
-        let mut conn = establish_connection().expect("Should be available");
+        let mut conn = establish_connection(true).expect("Should be available");
 
         for id in 1..10 {
             let identifier = Identifier::Id(id);
@@ -54,7 +54,7 @@ mod test {
             assert_eq!(res, id);
         }
 
-        for (index, color) in COLORS.iter().enumerate() {
+        for (index, color) in COLOR_HEX_STRS.iter().enumerate() {
             let identifier = Identifier::Hex(color.to_string());
             let res = get_color_id(&mut conn, identifier).expect("Color should exist");
             assert_eq!(index + 1, res as usize)
@@ -70,9 +70,9 @@ mod test {
 
     #[test]
     fn test_get_color_by_id() {
-        let mut conn = establish_connection().expect("Should be available");
+        let mut conn = establish_connection(true).expect("Should be available");
 
-        for (index, color) in COLORS.iter().enumerate() {
+        for (index, color) in COLOR_HEX_STRS.iter().enumerate() {
             let res = get_color_by_id(&mut conn, (index + 1) as i32).expect("Color should exist");
             assert_eq!(res, *color);
         }

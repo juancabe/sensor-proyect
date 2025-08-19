@@ -13,9 +13,14 @@ pub fn insert_sensor_data(conn: &mut DbConn, new_data: NewSensorData) -> Result<
 
     let data: Vec<SensorData> = new_data.insert_into(sensor_data_table).load(conn)?;
 
-    data.first()
+    let data = data
+        .into_iter()
+        .next()
         .ok_or(Error::NotFound("The returned vec was empty".into()))
-        .map(|e| e.clone())
+        .map(|e| e.clone())?;
+
+    log::trace!("Data added: {data:?}");
+    Ok(data)
 }
 
 pub enum Identifier {
@@ -37,6 +42,8 @@ pub fn get_sensor_data(
                 .filter(sensor_data::sensor_id.eq(device_id))
                 .filter(sensor_data::added_at.between(range.start, range.end))
                 .load(conn)?;
+
+            log::trace!("Returned {} items", res.len());
 
             Ok(res)
         }

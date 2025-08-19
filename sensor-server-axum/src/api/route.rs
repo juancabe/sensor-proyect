@@ -1,9 +1,4 @@
-use axum::routing::MethodRouter;
-
-use crate::{
-    RoutePath,
-    sensor_server::{ServerMethodRouter, State},
-};
+use crate::{RoutePath, sensor_server::ServerMethodRouter};
 
 pub struct Route {
     pub path: RoutePath,

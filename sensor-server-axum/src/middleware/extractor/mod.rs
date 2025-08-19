@@ -21,11 +21,11 @@ where
         _parts: &mut axum::http::request::Parts,
         _state: &S,
     ) -> Result<Self, Self::Rejection> {
-        match establish_connection() {
+        match establish_connection(false) {
             Ok(conn) => Ok(DbConnHolder(conn)),
             Err(e) => {
                 log::error!(
-                    "On call to establish_connection when from_request_parts parsing for DbConnHolder: {e:?}"
+                    "On call to establish_connection(true) when from_request_parts parsing for DbConnHolder: {e:?}"
                 );
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
             }

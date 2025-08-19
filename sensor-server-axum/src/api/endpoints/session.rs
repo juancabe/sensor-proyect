@@ -20,7 +20,7 @@ pub struct GetSession {
 pub struct ApiSession {
     pub access_token: String,
     pub expires_in: usize,
-    token_type: &'static str,
+    token_type: String,
 }
 
 impl ApiSession {
@@ -28,7 +28,7 @@ impl ApiSession {
         Self {
             access_token,
             expires_in,
-            token_type: "Bearer",
+            token_type: "Bearer".to_string(),
         }
     }
 }
@@ -38,13 +38,14 @@ pub struct Session {
 }
 
 impl Session {
+    pub const API_PATH: &str = "/session";
     pub fn new() -> Session {
         let mr = MethodRouter::new()
             .get(Self::session_get)
             .post(Self::session_post);
         Self {
             resources: vec![Route::new(
-                RoutePath::from_string("/session".to_string())
+                RoutePath::from_string(Self::API_PATH.to_string())
                     .expect("The route should be correct"),
                 mr,
             )],
@@ -92,7 +93,18 @@ impl Session {
         Query(payload): Query<GetSession>,
     ) -> Result<Json<ApiSession>, StatusCode> {
         let db_hashed_password =
-            users::get_user(&mut conn.0, users::Identifier::Username(&payload.username))?
+            users::get_user(&mut conn.0, users::Identifier::Username(&payload.username))
+                .map_err(|e| match e {
+                    db::Error::NotFound(error) => {
+                        log::trace!(
+                            "Tried to login to user: {username} but it doesn't exist: {error:?}",
+                            username = &payload.username
+                        );
+                        StatusCode::UNAUTHORIZED
+                    }
+                    db::Error::ConnectionError(_) => e.into(),
+                    db::Error::InternalError(_) => e.into(),
+                })?
                 .hashed_password;
 
         if db_hashed_password != payload.hashed_password {
@@ -112,6 +124,10 @@ impl Endpoint for Session {
     fn routes(&self) -> &[Route] {
         return &self.resources;
     }
+
+    fn path(&self) -> &str {
+        Self::API_PATH
+    }
 }
 
 #[cfg(test)]
@@ -128,7 +144,7 @@ mod test {
 
     #[tokio::test]
     async fn test_session_post() {
-        let mut conn_nref = establish_connection().unwrap();
+        let mut conn_nref = establish_connection(true).unwrap();
         let conn = &mut conn_nref;
 
         let user = create_test_user(conn);
@@ -154,7 +170,7 @@ mod test {
 
     #[tokio::test]
     async fn test_session_post_should_fail() {
-        let mut conn_nref = establish_connection().unwrap();
+        let mut conn_nref = establish_connection(true).unwrap();
         let conn = &mut conn_nref;
 
         let user = create_test_user(conn);
@@ -177,7 +193,7 @@ mod test {
 
     #[tokio::test]
     async fn test_session_get() {
-        let mut conn_nref = establish_connection().unwrap();
+        let mut conn_nref = establish_connection(true).unwrap();
         let conn = &mut conn_nref;
         let user = create_test_user(conn);
 

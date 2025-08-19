@@ -1,4 +1,5 @@
 use axum::{Router, routing::MethodRouter};
+use dotenv::dotenv;
 
 use crate::{
     api::{Endpoint, endpoints::generate_endpoints},
@@ -19,22 +20,28 @@ impl State {
 
 pub struct SensorServer {
     endpoints: Vec<Box<dyn Endpoint>>,
-    state: State,
+    _state: State,
 }
 
 impl SensorServer {
+    pub const API_BASE: &str = "/api/v0";
     pub fn new() -> Self {
         // Load LazyStatics
         let _ = *KEYS;
         log::info!("Loaded keys for JWT");
-        establish_connection().expect("Connection should be available");
+
+        dotenv().expect(".env should be available and readable");
+
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        assert!(!database_url.contains("test"));
+        establish_connection(false).expect("Connection should be available");
         log::info!("Loaded DB_POOL");
 
         let endpoints = generate_endpoints();
 
-        let state = State::new();
+        let _state = State::new();
 
-        Self { endpoints, state }
+        Self { endpoints, _state }
     }
 
     pub fn routes(&self) -> impl Iterator<Item = (String, ServerMethodRouter)> {
@@ -44,7 +51,7 @@ impl SensorServer {
             .flatten()
             .map(|route| {
                 (
-                    String::from("/api/v0") + route.path.as_str(),
+                    String::from(Self::API_BASE) + route.path.as_str(),
                     route.method_router.clone(),
                 )
             })
@@ -65,34 +72,350 @@ impl SensorServer {
 #[cfg(test)]
 mod tests {
     use axum_test::TestServer;
+    use hyper::StatusCode;
+    use serde_json::json;
 
-    use crate::sensor_server::SensorServer;
+    use crate::{
+        api::{
+            endpoints::{
+                self,
+                place::{ApiUserPlace, GetPlace, GetPlaceEnum, PostPlace},
+                sensor::{ApiUserSensor, GetSensor, GetSensorEnum, PostSensor},
+                sensor_data::{
+                    ApiSensorData, GetSensorData, PostSensorData, PostSensorDataResponse,
+                },
+                session::{ApiSession, GetSession},
+                user::{ApiUser, GetUser, PostUser},
+            },
+            types::api_id::ApiId,
+        },
+        db::tests::random_string,
+        model::COLOR_HEX_STRS,
+        sensor_server::SensorServer,
+    };
 
-    #[test]
-    fn test_sensor_server() {
-        let sensor_server = SensorServer::new();
-    }
+    // #[test]
+    // #[ignore = "DB should not include test in name, must commit changes and then be reverted"]
+    // fn test_sensor_server() {
+    //     let _sensor_server = SensorServer::new();
+    // }
 
     #[tokio::test]
     #[ignore = "DB should not include test in name, must commit changes and then be reverted"]
     async fn test_integration() {
         // This test should be run in a db that can be 'migration redo'
+        env_logger::Builder::new()
+            .filter_level(log::LevelFilter::Trace)
+            .init();
 
-        let server = TestServer::new(SensorServer::new().into_router())
+        log::info!("Hello Test!");
+
+        let mut server = TestServer::new(SensorServer::new().into_router())
             .expect("Should be created successfully");
+        server.expect_success();
 
-        let res = server.get("/api/v0/health").await;
-        res.assert_status_ok();
-        res.assert_text("OK"); // or whatever your health endpoint returns
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::health::Health::API_PATH
+        );
+        let res = server.get(path.as_str()).await;
+        server.clear_query_params();
+        res.assert_text("OK");
+
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::user::User::API_PATH
+        );
+
+        let username = random_string(15..20);
+        let hashed_password = random_string(15..20);
+        let email = random_string(15..20);
+
+        let body = PostUser {
+            username: username.clone(),
+            hashed_password: hashed_password.clone(),
+            email: email.clone(),
+        };
+
+        // Create the user
+        server.post(path.as_str()).json(&body).await;
+
+        // Get the session
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::session::Session::API_PATH
+        );
+
+        let query = GetSession {
+            username: body.username,
+            hashed_password: body.hashed_password,
+        };
+
+        let res = server
+            .get(path.as_str())
+            .add_query_params(json!(query))
+            .await;
+        let session: ApiSession = res.json();
+
+        server.clear_query_params();
+        server.add_header(
+            "Authorization",
+            (String::from("Bearer ") + session.access_token.as_str()).as_str(),
+        );
+
+        // Get User Back
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::user::User::API_PATH
+        );
+
+        let _query = GetUser {};
+        let res = server.get(path.as_str()).await;
+        server.clear_query_params();
+        let api_user: ApiUser = res.json();
+
+        assert_eq!(api_user.username, username);
+        assert_eq!(api_user.email, email);
+
+        // Add a place
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::place::Place::API_PATH
+        );
+
+        let name = random_string(15..20);
+        let description = random_string(30..50);
+
+        let body = PostPlace {
+            name: name.clone(),
+            description: Some(description.clone()),
+            color: COLOR_HEX_STRS[0].to_string(),
+        };
+        let res = server.post(path.as_str()).json(&body).await;
+        let api_place: ApiUserPlace = res.json();
+
+        assert_eq!(api_place.name, name.clone());
+        assert_eq!(
+            api_place.description.expect("Should be set"),
+            description.clone()
+        );
+        assert_eq!(api_place.color, COLOR_HEX_STRS[0].to_string());
+
+        // Add a sensor
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::sensor::Sensor::API_PATH
+        );
+
+        let sensor_name = random_string(15..20);
+        let sensor_description = random_string(30..50);
+        let sensor_device_id = ApiId::random();
+
+        let body = PostSensor {
+            name: sensor_name.clone(),
+            description: Some(sensor_description.clone()),
+            color: COLOR_HEX_STRS[0].to_string(),
+            place_name: name.clone(),
+            device_id: sensor_device_id.clone(),
+        };
+
+        let res = server.post(path.as_str()).json(&body).await;
+        let api_sensor: ApiUserSensor = res.json();
+
+        assert_eq!(api_sensor.name, sensor_name.clone());
+        assert_eq!(api_sensor.device_id, sensor_device_id);
+        assert_eq!(
+            api_sensor.description.expect("Should be set"),
+            sensor_description.clone()
+        );
+        assert_eq!(api_sensor.color, COLOR_HEX_STRS[0].to_string());
+
+        // Send sensor data
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::sensor_data::SensorData::API_PATH
+        );
+
+        let serialized_data = "
+        {
+            co2: 312
+            temperature: 12
+            humidity: 32
+        }
+        ";
+
+        let body = PostSensorData {
+            device_id: sensor_device_id.clone(),
+            serialized_data: json!(serialized_data),
+            created_at: None,
+        };
+
+        let res = server.post(&path).json(&body).await;
+        let resp1: PostSensorDataResponse = res.json();
+
+        // Send new data with the new JWT
+        server.clear_headers();
+        server.add_header(
+            "Authorization",
+            "Bearer ".to_string() + resp1.new_jwt.as_str(),
+        );
+        let res = server.post(&path).json(&body).await;
+        let resp2: PostSensorDataResponse = res.json();
+
+        // Get those added datas
+        let query = GetSensorData {
+            device_id: sensor_device_id.clone(),
+            lowest_added_at: Some(resp1.api_data.added_at - 1),
+            upper_added_at: Some(resp2.api_data.added_at + 1),
+        };
+
+        let res = server.get(&path).add_query_params(query).await;
+        server.clear_query_params();
+
+        let data: Vec<ApiSensorData> = res.json();
+        assert_eq!(data.len(), 2);
+
+        // Get those added datas without specifying range
+        let query = GetSensorData {
+            device_id: sensor_device_id.clone(),
+            lowest_added_at: None,
+            upper_added_at: None,
+        };
+
+        let res = server.get(&path).add_query_params(query).await;
+        server.clear_query_params();
+
+        let data: Vec<ApiSensorData> = res.json();
+        assert_eq!(data.len(), 2);
+
+        // Login with invalid password
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::session::Session::API_PATH
+        );
+
+        let query = GetSession {
+            username: username.clone(),
+            hashed_password: hashed_password.clone() + "bad",
+        };
+
+        server.clear_headers();
+        let res = server
+            .get(&path)
+            .add_query_params(query)
+            .expect_failure()
+            .await;
+
+        assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED);
+
+        // Login with invalid username
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::session::Session::API_PATH
+        );
+
+        let query = GetSession {
+            username: username.clone() + "bad",
+            hashed_password: hashed_password.clone(),
+        };
+
+        server.clear_headers();
+        let res = server
+            .get(&path)
+            .add_query_params(query)
+            .expect_failure()
+            .await;
+        assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED);
+
+        server.clear_headers();
+        server.add_header(
+            "Authorization",
+            "Bearer ".to_string() + resp2.new_jwt.as_str(),
+        );
+
+        // GET list of places
+        let place_list_path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::place::Place::API_PATH
+        );
+
+        let query: GetPlace = GetPlace {
+            param: GetPlaceEnum::FromPlaceName(name.clone()),
+        };
+
+        let res = server.get(&place_list_path).add_query_params(query).await;
+        server.clear_query_params();
+        let place_list: Vec<ApiUserPlace> = res.json();
+        assert_eq!(place_list.len(), 1);
+        let fetched_place = &place_list[0];
+        assert_eq!(fetched_place.name, name);
+        assert_eq!(fetched_place.description.as_ref().unwrap(), &description);
+        assert_eq!(fetched_place.color, COLOR_HEX_STRS[0].to_string());
+
+        // GET list of sensors
+        let sensor_list_path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::sensor::Sensor::API_PATH
+        );
+        let query = GetSensorEnum::FromPlaceName(name.clone());
+        let query = GetSensor { param: query };
+
+        let res = server.get(&sensor_list_path).add_query_params(query).await;
+        server.clear_query_params();
+        let sensor_list: Vec<ApiUserSensor> = res.json();
+        assert_eq!(sensor_list.len(), 1);
+        let fetched_sensor = &sensor_list[0];
+        assert_eq!(fetched_sensor.name, sensor_name);
+        assert_eq!(
+            fetched_sensor.description.as_ref().unwrap(),
+            &sensor_description
+        );
+        assert_eq!(fetched_sensor.device_id, sensor_device_id);
+
+        // Unauthorized access to protected endpoints
+        server.clear_headers();
+        let res = server.get(&place_list_path).expect_failure().await;
+        assert_eq!(res.status_code(), StatusCode::BAD_REQUEST);
+
+        server.add_header("Authorization", "Bearer invalidjwt");
+        let res = server.get(&sensor_list_path).expect_failure().await;
+        assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED);
+
+        let invalid_place = PostPlace {
+            name: "invalid".to_string(),
+            description: None,
+            color: COLOR_HEX_STRS[0].to_string(),
+        };
+        let res = server
+            .post(&place_list_path)
+            .json(&invalid_place)
+            .expect_failure()
+            .await;
+        assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED);
+
+        let invalid_sensor = PostSensor {
+            name: "invalid".to_string(),
+            description: None,
+            color: COLOR_HEX_STRS[0].to_string(),
+            place_name: name.clone(),
+            device_id: ApiId::random(),
+        };
+        let res = server
+            .post(&sensor_list_path)
+            .json(&invalid_sensor)
+            .expect_failure()
+            .await;
+        assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED);
     }
-
-    // #[tokio::test]
-    // async fn healthcheck_works() {
-    //     let server = test_server();
-    //
-    //     // Assuming one of your endpoints exposes GET /api/v0/health
-    //     let res = server.get("/api/v0/health").await;
-    //     res.assert_status_ok();
-    //     res.assert_text("OK"); // or whatever your health endpoint returns
-    // }
 }

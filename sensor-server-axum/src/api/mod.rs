@@ -6,4 +6,5 @@ use crate::api::route::Route;
 
 pub trait Endpoint {
     fn routes(&self) -> &[Route];
+    fn path(&self) -> &str;
 }

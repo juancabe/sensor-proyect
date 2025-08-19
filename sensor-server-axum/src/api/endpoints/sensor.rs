@@ -22,9 +22,14 @@ pub struct ApiUserSensor {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub enum GetSensor {
+pub enum GetSensorEnum {
     FromSensorDeviceId(ApiId),
     FromPlaceName(String),
+}
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct GetSensor {
+    #[serde(flatten)]
+    pub param: GetSensorEnum,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
@@ -36,13 +41,14 @@ pub struct PostSensor {
     pub color: HexValue,
 }
 
-pub type DeleteSensor = GetSensor;
+pub type DeleteSensor = GetSensorEnum;
 
 pub struct Sensor {
     resources: Vec<Route>,
 }
 
 impl Sensor {
+    pub const API_PATH: &str = "/sensor";
     pub fn new() -> Sensor {
         let mr = MethodRouter::new()
             .get(Self::sensor_get)
@@ -51,7 +57,7 @@ impl Sensor {
 
         Self {
             resources: vec![Route::new(
-                RoutePath::from_string("/sensors".to_string())
+                RoutePath::from_string(Self::API_PATH.to_string())
                     .expect("The route should be correct"),
                 mr,
             )],
@@ -69,9 +75,11 @@ impl Sensor {
         )?
         .id;
 
+        let payload = payload.param;
+
         let id = match &payload {
-            GetSensor::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),
-            GetSensor::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
+            GetSensorEnum::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),
+            GetSensorEnum::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
         };
 
         let vec = match db::user_sensors::get_user_sensor(&mut conn.0, id) {
@@ -216,6 +224,9 @@ impl Endpoint for Sensor {
     fn routes(&self) -> &[Route] {
         return &self.resources;
     }
+    fn path(&self) -> &str {
+        Self::API_PATH
+    }
 }
 
 #[cfg(test)]
@@ -225,7 +236,7 @@ mod tests {
 
     use crate::{
         api::{
-            endpoints::sensor::{DeleteSensor, GetSensor, PostSensor, Sensor},
+            endpoints::sensor::{DeleteSensor, GetSensor, GetSensorEnum, PostSensor, Sensor},
             types::api_id::ApiId,
         },
         auth::claims::Claims,
@@ -237,12 +248,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_by_api_id() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
         let user_sensor = create_test_user_sensor(&mut conn, &user_place);
 
-        let body = GetSensor::FromSensorDeviceId(
+        let body = GetSensorEnum::FromSensorDeviceId(
             ApiId::from_string(&user_sensor.device_id).expect("Valid"),
         );
 
@@ -255,9 +266,10 @@ mod tests {
             .timestamp() as usize,
         };
 
-        let res_body = Sensor::sensor_get(claims, DbConnHolder(conn), Query(body))
-            .await
-            .expect("Should not fail");
+        let res_body =
+            Sensor::sensor_get(claims, DbConnHolder(conn), Query(GetSensor { param: body }))
+                .await
+                .expect("Should not fail");
 
         assert!(
             res_body.len() == 1,
@@ -273,12 +285,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_by_place_api_id() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
         let user_sensor = create_test_user_sensor(&mut conn, &user_place);
 
-        let body = GetSensor::FromPlaceName(user_place.name.clone());
+        let body = GetSensorEnum::FromPlaceName(user_place.name.clone());
 
         let claims = Claims {
             username: user.username,
@@ -289,9 +301,10 @@ mod tests {
             .timestamp() as usize,
         };
 
-        let res_body = Sensor::sensor_get(claims, DbConnHolder(conn), Query(body))
-            .await
-            .expect("Should not fail");
+        let res_body =
+            Sensor::sensor_get(claims, DbConnHolder(conn), Query(GetSensor { param: body }))
+                .await
+                .expect("Should not fail");
 
         assert!(
             res_body.len() == 1,
@@ -307,7 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_post() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
@@ -340,7 +353,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete() {
-        let mut conn = establish_connection().unwrap();
+        let mut conn = establish_connection(true).unwrap();
         let user = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
         let user_sensor = create_test_user_sensor(&mut conn, &user_place);
@@ -373,7 +386,7 @@ mod tests {
             sensor_to_delete_device_id
         );
 
-        let mut conn_for_verify = establish_connection().unwrap();
+        let mut conn_for_verify = establish_connection(true).unwrap();
         let result_after_delete = db::user_sensors::get_user_sensor(
             &mut conn_for_verify,
             db::user_sensors::Identifier::SensorDeviceId(&sensor_to_delete_device_id),
