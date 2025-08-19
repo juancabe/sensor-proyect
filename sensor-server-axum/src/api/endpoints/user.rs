@@ -1,11 +1,11 @@
 use axum::{Json, routing::MethodRouter};
-use chrono::NaiveDateTime;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::{
     RoutePath,
-    api::{Endpoint, route::Route},
+    api::{Endpoint, route::Route, types::ApiTimestamp},
     auth::claims::Claims,
     db::{
         DbConn, DbConnHolder,
@@ -14,18 +14,21 @@ use crate::{
     model::NewUser,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize)]
+#[ts(export, export_to = "./api/endpoints/user/")]
 pub struct ApiUser {
     pub username: String,
     pub email: String,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
+    pub created_at: ApiTimestamp,
+    pub updated_at: ApiTimestamp,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[ts(export, export_to = "./api/endpoints/user/")]
 pub struct GetUser {}
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[ts(export, export_to = "./api/endpoints/user/")]
 pub enum PutUser {
     Username(String),
     HashedPassword(String),
@@ -33,20 +36,23 @@ pub enum PutUser {
 }
 
 /// Register User
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[ts(export, export_to = "./api/endpoints/user/")]
 pub struct PostUser {
     pub username: String,
     pub hashed_password: String,
     pub email: String,
 }
 
-pub struct User {
-    resources: Vec<Route>,
-}
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+#[ts(export, export_to = "./api/endpoints/user/")]
 pub enum NotUniqueUser {
     Username(String),
     Email(String),
+}
+
+pub struct User {
+    resources: Vec<Route>,
 }
 
 impl User {
@@ -72,8 +78,8 @@ impl User {
 
         let username = user.username;
         let email = user.email;
-        let created_at = user.created_at;
-        let updated_at = user.updated_at;
+        let created_at = user.created_at.and_utc().timestamp() as usize;
+        let updated_at = user.updated_at.and_utc().timestamp() as usize;
 
         let au = ApiUser {
             username,
@@ -157,6 +163,9 @@ impl User {
             updated_at,
             updated_auth_at: _,
         } = user;
+
+        let created_at = created_at.and_utc().timestamp() as ApiTimestamp;
+        let updated_at = updated_at.and_utc().timestamp() as ApiTimestamp;
 
         Ok(Json(ApiUser {
             username,

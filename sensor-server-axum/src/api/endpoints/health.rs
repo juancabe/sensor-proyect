@@ -1,10 +1,16 @@
-use axum::routing::MethodRouter;
+use axum::{extract::Query, routing::MethodRouter};
 use hyper::StatusCode;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::{
     RoutePath,
     api::{Endpoint, route::Route},
 };
+
+#[derive(Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./api/endpoints/health/")]
+pub struct GetHealth {}
 
 pub struct Health {
     resources: Vec<Route>,
@@ -35,7 +41,7 @@ impl Health {
         }
     }
 
-    async fn health_get() -> (StatusCode, String) {
+    async fn health_get(Query(_): Query<GetHealth>) -> (StatusCode, String) {
         (StatusCode::OK, "OK".into())
     }
 }

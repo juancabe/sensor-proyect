@@ -2,6 +2,7 @@ use axum::{Json, extract::Query, routing::MethodRouter};
 use hyper::StatusCode;
 use jsonwebtoken::{Header, encode};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::{
     RoutePath,
@@ -10,13 +11,19 @@ use crate::{
     db::{self, DbConnHolder, users},
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize)]
+#[ts(export, export_to = "./api/endpoints/session/")]
 pub struct GetSession {
     pub username: String,
     pub hashed_password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize)]
+#[ts(export, export_to = "./api/endpoints/session/")]
+pub struct PostSession {}
+
+#[derive(TS, Debug, Serialize, Deserialize)]
+#[ts(export, export_to = "./api/endpoints/session/")]
 pub struct ApiSession {
     pub access_token: String,
     pub expires_in: usize,

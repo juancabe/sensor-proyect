@@ -1,7 +1,7 @@
 use diesel::prelude::*;
 
 use crate::{
-    api::types::api_id::ApiId,
+    api::types::device_id::DeviceId,
     db::{DbConn, Error},
     model::{self, NewUserSensor, UserPlace, UserSensor},
 };
@@ -19,7 +19,7 @@ pub fn insert_user_sensor(conn: &mut DbConn, sensor: NewUserSensor) -> Result<Us
 
 pub enum Identifier<'a> {
     PlaceNameAndUserId(&'a String, i32),
-    SensorDeviceId(&'a ApiId),
+    SensorDeviceId(&'a DeviceId),
 }
 
 pub fn get_user_sensor(
@@ -151,7 +151,7 @@ mod tests {
             description: Some("le description".to_string()),
             color_id: 1,
             place_id: place.id,
-            device_id: ApiId::random().to_string(),
+            device_id: DeviceId::random().to_string(),
         };
 
         let i_up = insert_user_sensor(&mut conn, new_up.clone()).expect("No errors expected");

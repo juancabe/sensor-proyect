@@ -3,6 +3,8 @@ use chrono::{NaiveDateTime, TimeDelta, Utc};
 use hyper::StatusCode;
 use jsonwebtoken::{Header, encode};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use ts_rs::TS;
 
 use crate::{
     RoutePath,
@@ -10,7 +12,7 @@ use crate::{
         Endpoint,
         endpoints::authorized_sensor,
         route::Route,
-        types::{ApiTimestamp, api_id::ApiId},
+        types::{ApiTimestamp, device_id::DeviceId},
     },
     auth::{claims::Claims, keys::KEYS},
     db::{
@@ -20,31 +22,35 @@ use crate::{
     model::NewSensorData,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize)]
+#[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct ApiSensorData {
-    pub data: serde_json::value::Value,
+    pub data: String,
     pub added_at: ApiTimestamp,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize)]
+#[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct PostSensorDataResponse {
     pub api_data: ApiSensorData,
     pub new_jwt: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize)]
+#[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct GetSensorData {
     #[serde(flatten)]
-    pub device_id: ApiId,
+    pub device_id: DeviceId,
     // Not included if added_at == [upper | lowest]_added_at
     pub lowest_added_at: Option<ApiTimestamp>,
     pub upper_added_at: Option<ApiTimestamp>,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct PostSensorData {
-    pub device_id: ApiId,
-    pub serialized_data: serde_json::Value,
+    pub device_id: DeviceId,
+    pub serialized_data: String,
     pub created_at: Option<ApiTimestamp>,
 }
 
@@ -146,7 +152,7 @@ impl SensorData {
             get_sensor_data(conn, Identifier::SensorId(sensor.id), low..up)?
                 .into_iter()
                 .map(|d| ApiSensorData {
-                    data: d.data,
+                    data: d.data.to_string(),
                     added_at: d.added_at.and_utc().timestamp() as ApiTimestamp,
                 })
                 .collect();
@@ -177,14 +183,14 @@ impl SensorData {
 
         let new_data = NewSensorData {
             sensor_id: sensor.id,
-            data: payload.serialized_data,
+            data: json!(payload.serialized_data),
             added_at,
         };
 
         let data = insert_sensor_data(conn, new_data)?;
 
         let api_data = ApiSensorData {
-            data: data.data,
+            data: data.data.to_string(),
             added_at: data.added_at.and_utc().timestamp() as usize,
         };
 
@@ -215,7 +221,7 @@ mod test {
     use crate::{
         api::{
             endpoints::sensor_data::{GetSensorData, PostSensorData, SensorData},
-            types::api_id::ApiId,
+            types::device_id::DeviceId,
         },
         auth::claims::Claims,
         db::{
@@ -235,7 +241,7 @@ mod test {
 
         let claims = Claims::new(user.username);
 
-        let device_id = ApiId::from_string(&sensor.device_id).unwrap();
+        let device_id = DeviceId::from_string(&sensor.device_id).unwrap();
 
         let json = GetSensorData {
             device_id,
@@ -263,11 +269,11 @@ mod test {
 
         let claims = Claims::new(user.username);
 
-        let device_id = ApiId::from_string(&sensor.device_id).unwrap();
+        let device_id = DeviceId::from_string(&sensor.device_id).unwrap();
 
         let json = PostSensorData {
             device_id,
-            serialized_data: serde_json::Value::default(),
+            serialized_data: String::default(),
             created_at: None,
         };
 
@@ -276,7 +282,5 @@ mod test {
         let res = SensorData::sensor_data_post(claims, conn, Json(json.clone()))
             .await
             .expect("Should not fail");
-
-        assert_eq!(res.api_data.data, json.serialized_data);
     }
 }

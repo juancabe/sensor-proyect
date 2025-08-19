@@ -1,47 +1,61 @@
 use axum::{Json, extract::Query, routing::MethodRouter};
-use chrono::NaiveDateTime;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::{
     RoutePath,
-    api::{Endpoint, endpoints::authorized_sensor, route::Route, types::api_id::ApiId},
+    api::{
+        Endpoint,
+        endpoints::authorized_sensor,
+        route::Route,
+        types::{ApiTimestamp, device_id::DeviceId},
+    },
     auth::claims::Claims,
     db::{self, DbConnHolder, Error, user_sensors::Identifier},
     model::{HexValue, NewUserSensor},
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize)]
+#[ts(export, export_to = "./api/endpoints/sensor/")]
 pub struct ApiUserSensor {
-    pub device_id: ApiId,
+    pub device_id: DeviceId,
     pub name: String,
     pub description: Option<String>,
     pub color: HexValue,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
+    pub created_at: ApiTimestamp,
+    pub updated_at: ApiTimestamp,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
 pub enum GetSensorEnum {
-    FromSensorDeviceId(ApiId),
+    FromSensorDeviceId(DeviceId),
     FromPlaceName(String),
 }
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[ts(export, export_to = "./api/endpoints/sensor/")]
 pub struct GetSensor {
     #[serde(flatten)]
     pub param: GetSensorEnum,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[ts(export, export_to = "./api/endpoints/sensor/")]
 pub struct PostSensor {
     pub place_name: String,
-    pub device_id: ApiId,
+    pub device_id: DeviceId,
     pub name: String,
     pub description: Option<String>,
     pub color: HexValue,
 }
 
-pub type DeleteSensor = GetSensorEnum;
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[ts(export, export_to = "./api/endpoints/sensor/")]
+pub enum DeleteSensor {
+    FromSensorDeviceId(DeviceId),
+    FromPlaceName(String),
+}
 
 pub struct Sensor {
     resources: Vec<Route>,
@@ -95,10 +109,10 @@ impl Sensor {
                         let aus = ApiUserSensor {
                             name: sensor.name,
                             description: sensor.description,
-                            created_at: sensor.created_at,
-                            updated_at: sensor.updated_at,
+                            created_at: sensor.created_at.and_utc().timestamp() as usize,
+                            updated_at: sensor.updated_at.and_utc().timestamp() as usize,
                             color: color,
-                            device_id: ApiId::from_string(&sensor.device_id)
+                            device_id: DeviceId::from_string(&sensor.device_id)
                                 .expect("Should be valid"),
                         };
                         Ok(aus)
@@ -183,9 +197,9 @@ impl Sensor {
             name: res.name,
             description: res.description,
             color: payload.color,
-            created_at: res.created_at,
-            updated_at: res.updated_at,
-            device_id: ApiId::from_string(&res.device_id).map_err(|e| {
+            created_at: res.created_at.and_utc().timestamp() as usize,
+            updated_at: res.updated_at.and_utc().timestamp() as usize,
+            device_id: DeviceId::from_string(&res.device_id).map_err(|e| {
                 log::error!("Error converting ApiId: {e:?}");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?,
@@ -233,10 +247,10 @@ impl Sensor {
                         let aup = ApiUserSensor {
                             name: up.name,
                             description: up.description,
-                            created_at: up.created_at,
-                            updated_at: up.updated_at,
+                            created_at: up.created_at.and_utc().timestamp() as usize,
+                            updated_at: up.updated_at.and_utc().timestamp() as usize,
                             color: color,
-                            device_id: ApiId::from_string(&us.device_id)
+                            device_id: DeviceId::from_string(&us.device_id)
                                 .expect("Should be valid ApiId"),
                         };
                         Ok(aup)
@@ -274,7 +288,7 @@ mod tests {
     use crate::{
         api::{
             endpoints::sensor::{DeleteSensor, GetSensor, GetSensorEnum, PostSensor, Sensor},
-            types::api_id::ApiId,
+            types::device_id::DeviceId,
         },
         auth::claims::Claims,
         db::{
@@ -291,7 +305,7 @@ mod tests {
         let user_sensor = create_test_user_sensor(&mut conn, &user_place);
 
         let body = GetSensorEnum::FromSensorDeviceId(
-            ApiId::from_string(&user_sensor.device_id).expect("Valid"),
+            DeviceId::from_string(&user_sensor.device_id).expect("Valid"),
         );
 
         let claims = Claims {
@@ -316,7 +330,7 @@ mod tests {
         );
         assert_eq!(
             res_body.first().unwrap().device_id,
-            ApiId::from_string(&user_sensor.device_id).expect("ApiId valid")
+            DeviceId::from_string(&user_sensor.device_id).expect("ApiId valid")
         );
     }
 
@@ -351,7 +365,7 @@ mod tests {
         );
         assert_eq!(
             res_body.first().unwrap().device_id,
-            ApiId::from_string(&user_sensor.device_id).expect("ApiId valid")
+            DeviceId::from_string(&user_sensor.device_id).expect("ApiId valid")
         );
     }
 
@@ -366,7 +380,7 @@ mod tests {
             name: "My New Awesome Sensor".to_string(),
             description: Some("A description for the new sensor.".to_string()),
             color: "#FF0000".to_string(),
-            device_id: ApiId::random(),
+            device_id: DeviceId::random(),
         };
 
         let claims = Claims {
@@ -395,7 +409,7 @@ mod tests {
         let user_place = create_test_user_place(&mut conn, &user);
         let user_sensor = create_test_user_sensor(&mut conn, &user_place);
         let sensor_to_delete_device_id =
-            ApiId::from_string(&user_sensor.device_id).expect("ApiId should be valid");
+            DeviceId::from_string(&user_sensor.device_id).expect("ApiId should be valid");
 
         let payload = DeleteSensor::FromSensorDeviceId(sensor_to_delete_device_id.clone());
 

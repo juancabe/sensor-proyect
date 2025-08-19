@@ -1,40 +1,48 @@
 use axum::{Json, extract::Query, routing::MethodRouter};
-use chrono::NaiveDateTime;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::{
     RoutePath,
-    api::{Endpoint, route::Route},
+    api::{Endpoint, route::Route, types::ApiTimestamp},
     auth::claims::Claims,
     db::{self, DbConnHolder, user_places::Identifier},
     model::{HexValue, NewUserPlace},
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./api/endpoints/place/")]
 pub struct ApiUserPlace {
     pub name: String,
     pub description: Option<String>,
     pub color: String,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
+    pub created_at: ApiTimestamp,
+    pub updated_at: ApiTimestamp,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
 pub enum GetPlaceEnum {
     FromPlaceName(String),
     UserPlaces,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[ts(export, export_to = "./api/endpoints/place/")]
 pub struct GetPlace {
     #[serde(flatten)]
     pub param: GetPlaceEnum,
 }
 
-type DeletePlace = GetPlaceEnum;
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[ts(export, export_to = "./api/endpoints/place/")]
+pub enum DeletePlace {
+    FromPlaceName(String),
+    UserPlaces,
+}
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[ts(export, export_to = "./api/endpoints/place/")]
 pub struct PostPlace {
     pub name: String,
     pub description: Option<String>,
@@ -102,8 +110,8 @@ impl Place {
                         let aup = ApiUserPlace {
                             name: up.name,
                             description: up.description,
-                            created_at: up.created_at,
-                            updated_at: up.updated_at,
+                            created_at: up.created_at.and_utc().timestamp() as usize,
+                            updated_at: up.updated_at.and_utc().timestamp() as usize,
                             color: color,
                         };
                         Ok(aup)
@@ -156,8 +164,8 @@ impl Place {
             name: res.name,
             description: res.description,
             color: payload.color,
-            created_at: res.created_at,
-            updated_at: res.updated_at,
+            created_at: res.created_at.and_utc().timestamp() as usize,
+            updated_at: res.updated_at.and_utc().timestamp() as usize,
         };
 
         log::trace!("Returning ApiUserPlace: {res:?}");
@@ -196,8 +204,8 @@ impl Place {
                         let aup = ApiUserPlace {
                             name: up.name,
                             description: up.description,
-                            created_at: up.created_at,
-                            updated_at: up.updated_at,
+                            created_at: up.created_at.and_utc().timestamp() as usize,
+                            updated_at: up.updated_at.and_utc().timestamp() as usize,
                             color: color,
                         };
                         Ok(aup)
@@ -223,7 +231,7 @@ mod tests {
     use axum::{Json, extract::Query};
 
     use crate::{
-        api::endpoints::place::{GetPlace, GetPlaceEnum, Place, PostPlace},
+        api::endpoints::place::{DeletePlace, GetPlace, GetPlaceEnum, Place, PostPlace},
         auth::claims::Claims,
         db::{
             DbConnHolder, establish_connection,
@@ -327,7 +335,7 @@ mod tests {
         let user = create_test_user(&mut conn);
         let place_to_delete = create_test_user_place(&mut conn, &user);
 
-        let payload = GetPlaceEnum::FromPlaceName(place_to_delete.name.clone());
+        let payload = DeletePlace::FromPlaceName(place_to_delete.name.clone());
 
         let claims = Claims {
             username: user.username,

@@ -1,7 +1,7 @@
 use hyper::StatusCode;
 
 use crate::{
-    api::{Endpoint, types::api_id::ApiId},
+    api::{Endpoint, types::device_id::DeviceId},
     db::{self, DbConn, Error},
     model::UserSensor,
 };
@@ -28,7 +28,7 @@ pub fn generate_endpoints() -> Vec<Box<dyn Endpoint>> {
 
 fn authorized_sensor(
     conn: &mut DbConn,
-    device_id: &ApiId,
+    device_id: &DeviceId,
     username: &str,
 ) -> Result<UserSensor, StatusCode> {
     let db_res = db::user_sensors::get_user_sensor(

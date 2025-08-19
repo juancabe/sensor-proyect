@@ -88,7 +88,7 @@ mod tests {
                 session::{ApiSession, GetSession},
                 user::{ApiUser, GetUser, NotUniqueUser, PostUser},
             },
-            types::api_id::ApiId,
+            types::device_id::DeviceId,
         },
         db::tests::random_string,
         model::COLOR_HEX_STRS,
@@ -265,7 +265,7 @@ mod tests {
 
         let sensor_name = random_string(15..20);
         let sensor_description = random_string(30..50);
-        let sensor_device_id = ApiId::random();
+        let sensor_device_id = DeviceId::random();
 
         let body = PostSensor {
             name: sensor_name.clone(),
@@ -325,7 +325,7 @@ mod tests {
 
         let body = PostSensorData {
             device_id: sensor_device_id.clone(),
-            serialized_data: json!(serialized_data),
+            serialized_data: serialized_data.to_string(),
             created_at: None,
         };
 
@@ -481,7 +481,7 @@ mod tests {
             description: None,
             color: COLOR_HEX_STRS[0].to_string(),
             place_name: name.clone(),
-            device_id: ApiId::random(),
+            device_id: DeviceId::random(),
         };
         let res = server
             .post(&sensor_list_path)
