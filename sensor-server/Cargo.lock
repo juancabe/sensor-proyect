@@ -1416,7 +1416,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sensor-server-axum"
+name = "sensor-server"
 version = "0.1.0"
 dependencies = [
  "axum",

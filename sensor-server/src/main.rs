@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use dotenv::dotenv;
-use sensor_server_axum::{PORT, sensor_server::SensorServer};
+use sensor_server::{PORT, sensor_server::SensorServer};
 use tokio::net::TcpListener;
 
 #[tokio::main]

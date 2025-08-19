@@ -279,7 +279,7 @@ mod test {
 
         let conn = DbConnHolder(conn_uref);
 
-        let res = SensorData::sensor_data_post(claims, conn, Json(json.clone()))
+        let _res = SensorData::sensor_data_post(claims, conn, Json(json.clone()))
             .await
             .expect("Should not fail");
     }
