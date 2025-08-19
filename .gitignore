@@ -5,3 +5,4 @@
 test_db.*
 private.rs
 sensor-client/src/private.rs
+sensor-server.old/
