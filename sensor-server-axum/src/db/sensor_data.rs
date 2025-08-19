@@ -43,7 +43,7 @@ pub fn get_sensor_data(
                 .filter(sensor_data::added_at.between(range.start, range.end))
                 .load(conn)?;
 
-            log::trace!("Returned {} items", res.len());
+            log::trace!("DB Returned {} items", res.len());
 
             Ok(res)
         }

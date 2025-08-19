@@ -65,7 +65,8 @@ impl SensorServer {
         }
 
         router
-        // .with_state(self.state)
+            // .with_state(self.state)
+            .layer(axum::middleware::from_fn(crate::middleware::log_request))
     }
 }
 
@@ -85,7 +86,7 @@ mod tests {
                     ApiSensorData, GetSensorData, PostSensorData, PostSensorDataResponse,
                 },
                 session::{ApiSession, GetSession},
-                user::{ApiUser, GetUser, PostUser},
+                user::{ApiUser, GetUser, NotUniqueUser, PostUser},
             },
             types::api_id::ApiId,
         },
@@ -123,6 +124,7 @@ mod tests {
         server.clear_query_params();
         res.assert_text("OK");
 
+        // Create the user
         let path = format!(
             "{}{}",
             SensorServer::API_BASE,
@@ -139,8 +141,37 @@ mod tests {
             email: email.clone(),
         };
 
-        // Create the user
         server.post(path.as_str()).json(&body).await;
+
+        // , same username: should fail
+        let body = PostUser {
+            username: username.clone(),
+            hashed_password: random_string(15..20),
+            email: random_string(15..20),
+        };
+        let res = server
+            .post(path.as_str())
+            .json(&body)
+            .expect_failure()
+            .await;
+        assert_eq!(StatusCode::CONFLICT, res.status_code());
+        let resp: Option<NotUniqueUser> = res.json();
+        assert_eq!(NotUniqueUser::Username(username.clone()), resp.unwrap());
+
+        // , same email: should fail
+        let body = PostUser {
+            username: random_string(15..20),
+            hashed_password: random_string(15..20),
+            email: email.clone(),
+        };
+        let res = server
+            .post(path.as_str())
+            .json(&body)
+            .expect_failure()
+            .await;
+        assert_eq!(StatusCode::CONFLICT, res.status_code());
+        let resp: Option<NotUniqueUser> = res.json();
+        assert_eq!(NotUniqueUser::Email(email.clone()), resp.unwrap());
 
         // Get the session
         let path = format!(
@@ -150,8 +181,8 @@ mod tests {
         );
 
         let query = GetSession {
-            username: body.username,
-            hashed_password: body.hashed_password,
+            username: username.clone(),
+            hashed_password: hashed_password.clone(),
         };
 
         let res = server
@@ -180,7 +211,6 @@ mod tests {
 
         assert_eq!(api_user.username, username);
         assert_eq!(api_user.email, email);
-
         // Add a place
         let path = format!(
             "{}{}",
@@ -205,6 +235,26 @@ mod tests {
             description.clone()
         );
         assert_eq!(api_place.color, COLOR_HEX_STRS[0].to_string());
+
+        // Add a place with same name should error
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::place::Place::API_PATH
+        );
+
+        let body = PostPlace {
+            name: name.clone(),
+            description: Some(description.clone()),
+            color: COLOR_HEX_STRS[0].to_string(),
+        };
+        let res = server
+            .post(path.as_str())
+            .json(&body)
+            .expect_failure()
+            .await;
+
+        assert_eq!(StatusCode::CONFLICT, res.status_code());
 
         // Add a sensor
         let path = format!(
@@ -235,6 +285,28 @@ mod tests {
             sensor_description.clone()
         );
         assert_eq!(api_sensor.color, COLOR_HEX_STRS[0].to_string());
+
+        // Add a sensor again, should fail
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::sensor::Sensor::API_PATH
+        );
+
+        let body = PostSensor {
+            name: random_string(15..20),
+            description: Some(sensor_description.clone()),
+            color: COLOR_HEX_STRS[0].to_string(),
+            place_name: name.clone(),
+            device_id: sensor_device_id.clone(),
+        };
+
+        let res = server
+            .post(path.as_str())
+            .json(&body)
+            .expect_failure()
+            .await;
+        assert_eq!(StatusCode::CONFLICT, res.status_code());
 
         // Send sensor data
         let path = format!(

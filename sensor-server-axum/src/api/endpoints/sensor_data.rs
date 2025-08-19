@@ -8,15 +8,16 @@ use crate::{
     RoutePath,
     api::{
         Endpoint,
+        endpoints::authorized_sensor,
         route::Route,
         types::{ApiTimestamp, api_id::ApiId},
     },
     auth::{claims::Claims, keys::KEYS},
     db::{
-        self, DbConn, DbConnHolder, Error,
+        DbConnHolder,
         sensor_data::{Identifier, get_sensor_data, insert_sensor_data},
     },
-    model::{NewSensorData, UserSensor},
+    model::NewSensorData,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,30 +70,6 @@ impl SensorData {
                     .expect("The route should be correct"),
                 mr,
             )],
-        }
-    }
-
-    fn authorized_sensor(
-        conn: &mut DbConn,
-        device_id: &ApiId,
-        username: &str,
-    ) -> Result<UserSensor, StatusCode> {
-        let db_res = db::user_sensors::get_user_sensor(
-            conn,
-            db::user_sensors::Identifier::SensorDeviceId(device_id),
-        )?;
-
-        let (place, sensor) = db_res
-            .into_iter()
-            .next()
-            .ok_or(Error::NotFound("NotFound".into()))?;
-
-        let user_id = db::users::get_user(conn, db::users::Identifier::Username(username))?.id;
-
-        if user_id != place.user_id {
-            Err(StatusCode::UNAUTHORIZED)
-        } else {
-            Ok(sensor)
         }
     }
 
@@ -150,7 +127,9 @@ impl SensorData {
         Query(payload): Query<GetSensorData>,
     ) -> Result<Json<Vec<ApiSensorData>>, StatusCode> {
         let conn = &mut conn.0;
-        let sensor = Self::authorized_sensor(conn, &payload.device_id, &claims.username)?;
+        let sensor = authorized_sensor(conn, &payload.device_id, &claims.username)?;
+
+        log::trace!("Getting data for sensor: {sensor:?}");
 
         let low = Self::convert_opt_timestamp_into_naive(
             payload.lowest_added_at,
@@ -159,13 +138,20 @@ impl SensorData {
         let up =
             Self::convert_opt_timestamp_into_naive(payload.upper_added_at, RangeDelimiter::Top)?;
 
-        let sensor_data = get_sensor_data(conn, Identifier::SensorId(sensor.id), low..up)?
-            .into_iter()
-            .map(|d| ApiSensorData {
-                data: d.data,
-                added_at: d.added_at.and_utc().timestamp() as ApiTimestamp,
-            })
-            .collect();
+        let range = low..up;
+
+        log::trace!("Range was: {range:?}");
+
+        let sensor_data: Vec<ApiSensorData> =
+            get_sensor_data(conn, Identifier::SensorId(sensor.id), low..up)?
+                .into_iter()
+                .map(|d| ApiSensorData {
+                    data: d.data,
+                    added_at: d.added_at.and_utc().timestamp() as ApiTimestamp,
+                })
+                .collect();
+
+        log::trace!("Returning {} datums", sensor_data.len());
 
         Ok(Json(sensor_data))
     }
@@ -176,19 +162,13 @@ impl SensorData {
         Json(payload): Json<PostSensorData>,
     ) -> Result<Json<PostSensorDataResponse>, StatusCode> {
         let conn = &mut conn.0;
-        let db_res = db::user_sensors::get_user_sensor(
-            conn,
-            db::user_sensors::Identifier::SensorDeviceId(&payload.device_id),
-        )?;
 
-        let (place, sensor) = db_res.first().ok_or(Error::NotFound("NotFound".into()))?;
+        let sensor = authorized_sensor(conn, &payload.device_id, &claims.username)?;
 
-        let user_id =
-            db::users::get_user(conn, db::users::Identifier::Username(&claims.username))?.id;
-
-        if user_id != place.user_id {
-            Err(StatusCode::UNAUTHORIZED)?
-        }
+        log::trace!(
+            "Adding data to sensor {sensor:?}, data: {:?}",
+            payload.serialized_data
+        );
 
         let added_at = payload
             .created_at

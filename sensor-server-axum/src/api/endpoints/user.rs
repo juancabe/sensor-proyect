@@ -43,6 +43,11 @@ pub struct PostUser {
 pub struct User {
     resources: Vec<Route>,
 }
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+pub enum NotUniqueUser {
+    Username(String),
+    Email(String),
+}
 
 impl User {
     pub const API_PATH: &str = "/user";
@@ -77,6 +82,8 @@ impl User {
             updated_at,
         };
 
+        log::trace!("User got: {au:?}");
+
         Ok(Json(au))
     }
 
@@ -92,7 +99,10 @@ impl User {
         }
 
         match get_user(conn, identifier) {
-            Ok(user) => Ok(user_id.is_none_or(|uid| uid != user.id)),
+            Ok(user) => {
+                log::trace!("On user_field_exists_for_some_user, colliding user was: {user:?}");
+                Ok(user_id.is_none_or(|uid| uid != user.id))
+            }
             Err(e) => match e {
                 crate::db::Error::NotFound(_) => Ok(false),
                 _ => Err(e.into()),
@@ -110,6 +120,8 @@ impl User {
 
         let user = get_user(conn, Identifier::Username(&claims.username))?;
 
+        log::trace!("User requesting update is: {user:?}");
+
         // Check for repeated fields
         let identifier = match &payload {
             PutUser::Username(un) => Some(Identifier::Username(un)),
@@ -117,15 +129,24 @@ impl User {
             PutUser::Email(em) => Some(Identifier::Email(em)),
         };
         if let Some(identifier) = identifier {
-            match Self::user_field_exists_for_some_user(conn, identifier, Some(user.id)) {
+            match Self::user_field_exists_for_some_user(conn, identifier.clone(), Some(user.id)) {
                 Ok(exists) => {
                     if exists {
+                        log::trace!("user_put failed, same value: {identifier:?}");
                         Err(StatusCode::CONFLICT)?
                     }
                 }
                 Err(e) => Err(e)?,
             }
         }
+
+        let user = update_user(
+            conn,
+            Identifier::Username(&claims.username),
+            payload as Update,
+        )?;
+
+        log::trace!("User updated to: {user:?}");
 
         let crate::model::User {
             id: _,
@@ -135,11 +156,7 @@ impl User {
             created_at,
             updated_at,
             updated_auth_at: _,
-        } = update_user(
-            conn,
-            Identifier::Username(&claims.username),
-            payload as Update,
-        )?;
+        } = user;
 
         Ok(Json(ApiUser {
             username,
@@ -152,8 +169,10 @@ impl User {
     async fn user_post(
         mut conn: DbConnHolder,
         Json(payload): Json<PostUser>,
-    ) -> (StatusCode, String) {
+    ) -> (StatusCode, Json<Option<NotUniqueUser>>) {
         let conn = &mut conn.0;
+
+        log::trace!("user_post body received: {payload:?}");
 
         let PostUser {
             username,
@@ -164,25 +183,27 @@ impl User {
         match Self::user_field_exists_for_some_user(conn, Identifier::Username(&username), None) {
             Ok(exists) => {
                 if exists {
+                    log::trace!("username was repeated: {username}");
                     return (
                         StatusCode::CONFLICT,
-                        "The username is already in use".into(),
+                        Json(Some(NotUniqueUser::Username(username))),
                     );
                 }
             }
-            Err(e) => return (e.into(), "Error".to_string()),
+            Err(e) => return (e.into(), Json(None)),
         }
 
         match Self::user_field_exists_for_some_user(conn, Identifier::Email(&email), None) {
             Ok(exists) => {
                 if exists {
+                    log::trace!("email was repeated: {email}");
                     return (
                         StatusCode::CONFLICT,
-                        "The username is already in use".into(),
+                        Json(Some(NotUniqueUser::Email(email))),
                     );
                 }
             }
-            Err(e) => return (e.into(), "Error".to_string()),
+            Err(e) => return (e.into(), Json(None)),
         }
 
         let new_user = NewUser {
@@ -191,9 +212,11 @@ impl User {
             email,
         };
 
+        log::trace!("NewUser: {new_user:?}");
+
         match insert_user(conn, new_user) {
-            Ok(_) => (StatusCode::OK, "OK".into()),
-            Err(e) => (e.into(), "Error".into()),
+            Ok(_) => (StatusCode::OK, Json(None)),
+            Err(e) => (e.into(), Json(None)),
         }
     }
 }

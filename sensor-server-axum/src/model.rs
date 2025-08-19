@@ -70,7 +70,7 @@ pub struct UserSensor {
     pub updated_at: NaiveDateTime,
 }
 
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = crate::schema::user_sensors)]
 pub struct NewUserSensor {
     pub place_id: i32, // Foreign key to UserPlace
@@ -80,7 +80,7 @@ pub struct NewUserSensor {
     pub color_id: i32,
 }
 
-#[derive(Queryable, Selectable, AsChangeset, Clone)]
+#[derive(Queryable, Selectable, AsChangeset, Clone, Debug)]
 #[diesel(table_name = crate::schema::users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
@@ -93,7 +93,7 @@ pub struct User {
     pub updated_auth_at: NaiveDateTime,
 }
 
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, Debug)]
 #[diesel(table_name = crate::schema::users)]
 pub struct NewUser {
     pub username: String,

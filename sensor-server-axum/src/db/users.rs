@@ -5,7 +5,7 @@ use crate::{
 };
 use diesel::prelude::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Identifier<'a> {
     Id(i32),
     Username(&'a str),

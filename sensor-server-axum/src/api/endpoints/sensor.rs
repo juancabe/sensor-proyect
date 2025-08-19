@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     RoutePath,
-    api::{Endpoint, route::Route, types::api_id::ApiId},
+    api::{Endpoint, endpoints::authorized_sensor, route::Route, types::api_id::ApiId},
     auth::claims::Claims,
     db::{self, DbConnHolder, Error, user_sensors::Identifier},
     model::{HexValue, NewUserSensor},
@@ -111,6 +111,7 @@ impl Sensor {
                 Err(e)
             }
         }?;
+        log::trace!("Got {} sensors", vec.len());
 
         Ok(Json(vec))
     }
@@ -120,6 +121,8 @@ impl Sensor {
         mut conn: DbConnHolder,
         Json(payload): Json<PostSensor>,
     ) -> Result<Json<ApiUserSensor>, StatusCode> {
+        log::trace!("sensor_post: {payload:?}");
+
         let user_id = db::users::get_user(
             &mut conn.0,
             db::users::Identifier::Username(&claims.username),
@@ -153,6 +156,27 @@ impl Sensor {
             device_id: payload.device_id.to_string(),
         };
 
+        log::trace!("NewUserSensor: {sensor:?}");
+        //
+        // match db::user_sensors::get_user_sensor(
+        //     &mut conn.0,
+        //     Identifier::SensorDeviceId(&payload.device_id),
+        // ) {
+        //     Ok(v) => {
+        //         if !v.is_empty() {
+        //             return Err(StatusCode::CONFLICT);
+        //         }
+        //     }
+        //     Err(e) => match e {
+        //         Error::NotFound(error) => {
+        //             log::trace!(
+        //                 "New sensor can be inserted, no other present with same device id: {error:?}"
+        //             );
+        //         }
+        //         _ => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        //     },
+        // }
+
         let res = db::user_sensors::insert_user_sensor(&mut conn.0, sensor)?;
 
         let res = ApiUserSensor {
@@ -166,6 +190,8 @@ impl Sensor {
                 StatusCode::INTERNAL_SERVER_ERROR
             })?,
         };
+
+        log::trace!("Sensor created correctly: {res:?}");
 
         Ok(Json(res))
     }
@@ -181,9 +207,17 @@ impl Sensor {
         )?
         .id;
 
+        log::trace!("Deleting sensor: {payload:?}");
+
         let id = match &payload {
-            DeleteSensor::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),
-            DeleteSensor::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
+            DeleteSensor::FromSensorDeviceId(device_id) => {
+                let _sensor = authorized_sensor(&mut conn.0, device_id, &claims.username)?;
+                Identifier::SensorDeviceId(device_id)
+            }
+            DeleteSensor::FromPlaceName(name) => {
+                log::trace!("Deleting all sensors from place {name}");
+                Identifier::PlaceNameAndUserId(name, user_id)
+            }
         };
 
         let vec = match db::user_sensors::delete_user_sensor(&mut conn.0, id) {
@@ -208,6 +242,7 @@ impl Sensor {
                         Ok(aup)
                     })
                     .collect();
+
                 vec
             }
             Err(e) => {
@@ -215,6 +250,8 @@ impl Sensor {
                 Err(e)
             }
         }?;
+
+        log::trace!("Deleted {} sensors", vec.len());
 
         Ok(Json(vec))
     }

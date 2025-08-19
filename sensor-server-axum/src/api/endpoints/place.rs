@@ -117,6 +117,8 @@ impl Place {
             }
         }?;
 
+        log::trace!("place_get returning {} places", vec.len());
+
         Ok(Json(vec))
     }
 
@@ -131,14 +133,19 @@ impl Place {
         )?
         .id;
 
+        log::trace!("Creating new place: {payload:?}");
+
         let color_id = db::colors::get_color_id(
             &mut conn.0,
             db::colors::Identifier::Hex(payload.color.clone()),
-        )?;
+        )
+        .inspect_err(|e| {
+            log::warn!("Error looking for ({color}): {e:?}", color = payload.color);
+        })?;
 
         let place = NewUserPlace {
             user_id,
-            name: payload.name,
+            name: payload.name.clone(),
             description: payload.description,
             color_id,
         };
@@ -153,6 +160,8 @@ impl Place {
             updated_at: res.updated_at,
         };
 
+        log::trace!("Returning ApiUserPlace: {res:?}");
+
         Ok(Json(res))
     }
 
@@ -166,6 +175,8 @@ impl Place {
             db::users::Identifier::Username(&claims.username),
         )?
         .id;
+
+        log::trace!("Deleting place: {payload:?}");
 
         let id = match &payload {
             DeletePlace::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
@@ -199,6 +210,8 @@ impl Place {
                 Err(e)
             }
         }?;
+
+        log::trace!("Deleted {} places", vec.len());
 
         Ok(Json(vec))
     }

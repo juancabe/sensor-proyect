@@ -56,9 +56,9 @@ impl Session {
         mut conn: DbConnHolder,
         claims: Claims,
     ) -> Result<Json<ApiSession>, StatusCode> {
+        log::trace!("Renewing JWT for user: {}", claims.username);
         {
             // Check if the user changed auth between JWT renewals
-
             let user = db::users::get_user(
                 &mut conn.0,
                 db::users::Identifier::Username(&claims.username),
@@ -84,7 +84,12 @@ impl Session {
 
         match encode(&Header::default(), &claims, &KEYS.encoding) {
             Ok(jwt) => Ok(Json(ApiSession::new(jwt, claims.exp - claims.exp))),
-            Err(_) => todo!(),
+            Err(e) => {
+                log::error!(
+                    "Error generating new claims for encode(default, {claims:?}, &KEYS.encoding): {e:?}"
+                );
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
         }
     }
 
@@ -92,22 +97,24 @@ impl Session {
         mut conn: DbConnHolder,
         Query(payload): Query<GetSession>,
     ) -> Result<Json<ApiSession>, StatusCode> {
+        log::trace!("Generating new JWT");
+
         let db_hashed_password =
             users::get_user(&mut conn.0, users::Identifier::Username(&payload.username))
                 .map_err(|e| match e {
                     db::Error::NotFound(error) => {
-                        log::trace!(
+                        log::warn!(
                             "Tried to login to user: {username} but it doesn't exist: {error:?}",
                             username = &payload.username
                         );
                         StatusCode::UNAUTHORIZED
                     }
-                    db::Error::ConnectionError(_) => e.into(),
-                    db::Error::InternalError(_) => e.into(),
+                    _ => StatusCode::INTERNAL_SERVER_ERROR,
                 })?
                 .hashed_password;
 
         if db_hashed_password != payload.hashed_password {
+            log::warn!("Passwords didn't match for payload: {payload:?}");
             return Err(StatusCode::UNAUTHORIZED);
         }
 
@@ -115,7 +122,12 @@ impl Session {
 
         match encode(&Header::default(), &claims, &KEYS.encoding) {
             Ok(jwt) => Ok(Json(ApiSession::new(jwt, claims.exp - claims.iat))),
-            Err(_) => todo!(),
+            Err(e) => {
+                log::error!(
+                    "Error generating new claims for encode(default, {claims:?}, &KEYS.encoding): {e:?}"
+                );
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
         }
     }
 }

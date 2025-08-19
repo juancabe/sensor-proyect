@@ -8,7 +8,7 @@ use dotenv::dotenv;
 use hyper::StatusCode;
 use r2d2::{self as original_r2d2, PooledConnection};
 
-use diesel::{Connection, PgConnection, r2d2::ConnectionManager};
+use diesel::{Connection, PgConnection, r2d2::ConnectionManager, result::DatabaseErrorKind};
 use std::{fmt::Display, sync::LazyLock};
 
 pub type DbConn = PooledConnection<ConnectionManager<PgConnection>>;
@@ -32,6 +32,7 @@ pub enum Error {
     ConnectionError(ExternalError),
     NotFound(ExternalError),
     InternalError(ExternalError),
+    NotUnique(ExternalError),
 }
 
 impl Display for Error {
@@ -40,6 +41,7 @@ impl Display for Error {
             Error::ConnectionError(error) => write!(f, "Connection Error: {error:?}"),
             Error::NotFound(error) => write!(f, "Not Found: {error:?}"),
             Error::InternalError(error) => write!(f, "Internal Error: {error:?}"),
+            Error::NotUnique(error) => write!(f, "NotUnique Error: {error:?}"),
         }
     }
 }
@@ -52,6 +54,7 @@ impl From<Error> for StatusCode {
             Error::NotFound(_) => StatusCode::NOT_FOUND,
             Error::ConnectionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Error::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::NotUnique(_) => StatusCode::CONFLICT,
         }
     }
 }
@@ -63,10 +66,21 @@ impl From<diesel::result::Error> for Error {
                 log::warn!("Diesel NotFound will translate into NotFound: {value:?} ");
                 Self::NotFound(value.into())
             }
-            e => {
-                log::error!("Diesel error will return InternalError: {e:?}");
-                Self::InternalError(e.into())
-            }
+            e => match e {
+                diesel::result::Error::DatabaseError(
+                    DatabaseErrorKind::UniqueViolation,
+                    err_info,
+                ) => {
+                    log::warn!(
+                        "Diesel UniqueViolation will translate into NotUnique: {err_info:?} "
+                    );
+                    Self::NotUnique("NotUnique".into())
+                }
+                _ => {
+                    log::error!("Diesel error will return InternalError: {e:?}");
+                    Self::InternalError(e.into())
+                }
+            },
         }
     }
 }
