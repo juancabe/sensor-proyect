@@ -13,6 +13,7 @@ Rust implementation for the sernsors server
 - [ ] Try to refactor DB to LazyLock<Mutex<...>> or something to share a DbConn on the state (maybe no)
 - [x] Impose restrictions on user-input fields
 - [ ] Test Api... types and Poisoning Middleware better
+- [ ] Transform other api-input types into Validated types
 
 ## Main dependencies
 
