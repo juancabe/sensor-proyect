@@ -1,29 +1,36 @@
-use axum::{Json, extract::Query, routing::MethodRouter};
+use axum::{extract::Query, routing::MethodRouter};
+use axum_serde_valid::Json;
 use hyper::StatusCode;
 use jsonwebtoken::{Header, encode};
 use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
 use ts_rs::TS;
 
 use crate::{
     RoutePath,
-    api::{Endpoint, route::Route},
+    api::{
+        Endpoint,
+        route::Route,
+        types::validate::{api_raw_password::ApiRawPassword, api_username::ApiUsername},
+    },
     auth::{claims::Claims, keys::KEYS},
     db::{self, DbConnHolder, users},
 };
 
-#[derive(TS, Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/session/")]
 pub struct GetSession {
-    pub username: String,
-    pub hashed_password: String,
+    pub username: ApiUsername,
+    pub raw_password: ApiRawPassword,
 }
 
-#[derive(TS, Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/session/")]
 pub struct PostSession {}
 
 #[derive(TS, Debug, Serialize, Deserialize)]
 #[ts(export, export_to = "./api/endpoints/session/")]
+// WARN: Dont accept this in any endpoint
 pub struct ApiSession {
     pub access_token: String,
     pub expires_in: usize,
@@ -106,26 +113,28 @@ impl Session {
     ) -> Result<Json<ApiSession>, StatusCode> {
         log::trace!("Generating new JWT");
 
-        let db_hashed_password =
-            users::get_user(&mut conn.0, users::Identifier::Username(&payload.username))
-                .map_err(|e| match e {
-                    db::Error::NotFound(error) => {
-                        log::warn!(
-                            "Tried to login to user: {username} but it doesn't exist: {error:?}",
-                            username = &payload.username
-                        );
-                        StatusCode::UNAUTHORIZED
-                    }
-                    _ => StatusCode::INTERNAL_SERVER_ERROR,
-                })?
-                .hashed_password;
+        let db_hashed_password = users::get_user(
+            &mut conn.0,
+            users::Identifier::Username(payload.username.as_str()),
+        )
+        .map_err(|e| match e {
+            db::Error::NotFound(error) => {
+                log::warn!(
+                    "Tried to login to user: {username:?} but it doesn't exist: {error:?}",
+                    username = &payload.username
+                );
+                StatusCode::UNAUTHORIZED
+            }
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?
+        .hashed_password;
 
-        if db_hashed_password != payload.hashed_password {
+        if !payload.raw_password.password_matches(&db_hashed_password) {
             log::warn!("Passwords didn't match for payload: {payload:?}");
             return Err(StatusCode::UNAUTHORIZED);
         }
 
-        let claims = Claims::new(payload.username);
+        let claims = Claims::new(payload.username.into());
 
         match encode(&Header::default(), &claims, &KEYS.encoding) {
             Ok(jwt) => Ok(Json(ApiSession::new(jwt, claims.exp - claims.iat))),
@@ -166,7 +175,7 @@ mod test {
         let mut conn_nref = establish_connection(true).unwrap();
         let conn = &mut conn_nref;
 
-        let user = create_test_user(conn);
+        let (user, _) = create_test_user(conn);
 
         let now = chrono::Utc::now();
         let half_day = TimeDelta::hours(12);
@@ -192,7 +201,7 @@ mod test {
         let mut conn_nref = establish_connection(true).unwrap();
         let conn = &mut conn_nref;
 
-        let user = create_test_user(conn);
+        let (user, _) = create_test_user(conn);
 
         let now = chrono::Utc::now();
         let half_day = TimeDelta::hours(12);
@@ -214,11 +223,11 @@ mod test {
     async fn test_session_get() {
         let mut conn_nref = establish_connection(true).unwrap();
         let conn = &mut conn_nref;
-        let user = create_test_user(conn);
+        let (user, pass) = create_test_user(conn);
 
         let json = GetSession {
-            username: user.username,
-            hashed_password: user.hashed_password,
+            username: user.username.into(),
+            raw_password: pass,
         };
 
         let conn = DbConnHolder(conn_nref);

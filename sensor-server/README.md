@@ -11,6 +11,7 @@ Rust implementation for the sernsors server
 - [ ] Add Put endpoints where needed
 - [ ] Use PoisonedIdentifiers correctly
 - [ ] Try to refactor DB to LazyLock<Mutex<...>> or something to share a DbConn on the state (maybe no)
+- [ ] Impose restrictions on user-input fields
 
 ## Main dependencies
 

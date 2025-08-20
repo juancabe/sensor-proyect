@@ -32,6 +32,23 @@ impl SensorServer {
         Self { endpoints }
     }
 
+    pub fn for_test() -> Self {
+        // Load LazyStatics
+        let _ = *KEYS;
+        log::info!("Loaded keys for JWT");
+
+        dotenv().expect(".env should be available and readable");
+
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        assert!(database_url.contains("test"));
+        establish_connection(false).expect("Connection should be available");
+        log::info!("Loaded DB_POOL");
+
+        let endpoints = generate_endpoints();
+
+        Self { endpoints }
+    }
+
     pub fn routes(&self) -> impl Iterator<Item = (String, ServerMethodRouter)> {
         self.endpoints
             .iter()
@@ -60,7 +77,7 @@ impl SensorServer {
 mod tests {
     use axum_test::TestServer;
     use hyper::StatusCode;
-    use serde_json::json;
+    use serde_valid::json::json;
 
     use crate::{
         api::{
@@ -74,7 +91,14 @@ mod tests {
                 session::{ApiSession, GetSession},
                 user::{ApiUser, GetUser, NotUniqueUser, PostUser},
             },
-            types::device_id::DeviceId,
+            types::{
+                device_id::DeviceId,
+                validate::{
+                    api_color::ApiColor, api_description::ApiDescription, api_email::ApiEmail,
+                    api_entity_name::ApiEntityName, api_raw_password::ApiRawPassword,
+                    api_username::ApiUsername,
+                },
+            },
         },
         db::tests::random_string,
         model::COLOR_HEX_STRS,
@@ -88,7 +112,8 @@ mod tests {
     // }
 
     #[tokio::test]
-    #[ignore = "DB should not include test in name, must commit changes and then be reverted"]
+    #[ignore = "reason"]
+    // #[ignore = "DB should not include test in name, must commit changes and then be reverted"]
     async fn test_integration() {
         // This test should be run in a db that can be 'migration redo'
         env_logger::Builder::new()
@@ -97,7 +122,7 @@ mod tests {
 
         log::info!("Hello Test!");
 
-        let mut server = TestServer::new(SensorServer::new().into_router())
+        let mut server = TestServer::new(SensorServer::for_test().into_router())
             .expect("Should be created successfully");
         server.expect_success();
 
@@ -117,14 +142,14 @@ mod tests {
             endpoints::user::User::API_PATH
         );
 
-        let username = random_string(15..20);
-        let hashed_password = random_string(15..20);
-        let email = random_string(15..20);
+        let username = ApiUsername::random();
+        let raw_password = ApiRawPassword::random();
+        let email = ApiEmail::random();
 
         let body = PostUser {
             username: username.clone(),
-            hashed_password: hashed_password.clone(),
             email: email.clone(),
+            raw_password: raw_password.clone(),
         };
 
         server.post(path.as_str()).json(&body).await;
@@ -132,8 +157,8 @@ mod tests {
         // , same username: should fail
         let body = PostUser {
             username: username.clone(),
-            hashed_password: random_string(15..20),
-            email: random_string(15..20),
+            email: ApiEmail::random(),
+            raw_password: ApiRawPassword::random(),
         };
         let res = server
             .post(path.as_str())
@@ -142,13 +167,16 @@ mod tests {
             .await;
         assert_eq!(StatusCode::CONFLICT, res.status_code());
         let resp: Option<NotUniqueUser> = res.json();
-        assert_eq!(NotUniqueUser::Username(username.clone()), resp.unwrap());
+        assert_eq!(
+            NotUniqueUser::Username(username.clone().into()),
+            resp.unwrap()
+        );
 
         // , same email: should fail
         let body = PostUser {
-            username: random_string(15..20),
-            hashed_password: random_string(15..20),
+            username: ApiUsername::random(),
             email: email.clone(),
+            raw_password: ApiRawPassword::random(),
         };
         let res = server
             .post(path.as_str())
@@ -157,7 +185,22 @@ mod tests {
             .await;
         assert_eq!(StatusCode::CONFLICT, res.status_code());
         let resp: Option<NotUniqueUser> = res.json();
-        assert_eq!(NotUniqueUser::Email(email.clone()), resp.unwrap());
+        assert_eq!(NotUniqueUser::Email(email.clone().into()), resp.unwrap());
+
+        // , invalid username: should fail
+        let body = PostUser {
+            username: "a".to_string().into(),
+            email: ApiEmail::random(),
+            raw_password: ApiRawPassword::random(),
+        };
+        let res = server
+            .post(path.as_str())
+            .json(&body)
+            .expect_failure()
+            .await;
+        assert_eq!(StatusCode::CONFLICT, res.status_code());
+        let resp: Option<NotUniqueUser> = res.json();
+        assert_eq!(NotUniqueUser::Email(email.clone().into()), resp.unwrap());
 
         // Get the session
         let path = format!(
@@ -168,7 +211,7 @@ mod tests {
 
         let query = GetSession {
             username: username.clone(),
-            hashed_password: hashed_password.clone(),
+            raw_password: raw_password.clone(),
         };
 
         let res = server
@@ -204,13 +247,14 @@ mod tests {
             endpoints::place::Place::API_PATH
         );
 
-        let name = random_string(15..20);
-        let description = random_string(30..50);
+        let name = ApiEntityName::random();
+        let description = ApiDescription::random();
+        let color = ApiColor::random();
 
         let body = PostPlace {
             name: name.clone(),
             description: Some(description.clone()),
-            color: COLOR_HEX_STRS[0].to_string(),
+            color: color.clone(),
         };
         let res = server.post(path.as_str()).json(&body).await;
         let api_place: ApiUserPlace = res.json();
@@ -220,7 +264,7 @@ mod tests {
             api_place.description.expect("Should be set"),
             description.clone()
         );
-        assert_eq!(api_place.color, COLOR_HEX_STRS[0].to_string());
+        assert_eq!(api_place.color, color);
 
         // Add a place with same name should error
         let path = format!(
@@ -231,8 +275,8 @@ mod tests {
 
         let body = PostPlace {
             name: name.clone(),
-            description: Some(description.clone()),
-            color: COLOR_HEX_STRS[0].to_string(),
+            description: Some(description.clone().into()),
+            color: COLOR_HEX_STRS[0].to_string().into(),
         };
         let res = server
             .post(path.as_str())
@@ -254,23 +298,23 @@ mod tests {
         let sensor_device_id = DeviceId::random();
 
         let body = PostSensor {
-            name: sensor_name.clone(),
-            description: Some(sensor_description.clone()),
-            color: COLOR_HEX_STRS[0].to_string(),
-            place_name: name.clone(),
+            name: sensor_name.clone().into(),
+            description: Some(sensor_description.clone().into()),
+            color: COLOR_HEX_STRS[0].to_string().into(),
+            place_name: name.clone().into(),
             device_id: sensor_device_id.clone(),
         };
 
         let res = server.post(path.as_str()).json(&body).await;
         let api_sensor: ApiUserSensor = res.json();
 
-        assert_eq!(api_sensor.name, sensor_name.clone());
+        assert_eq!(api_sensor.name, sensor_name.clone().into());
         assert_eq!(api_sensor.device_id, sensor_device_id);
         assert_eq!(
             api_sensor.description.expect("Should be set"),
-            sensor_description.clone()
+            sensor_description.clone().into()
         );
-        assert_eq!(api_sensor.color, COLOR_HEX_STRS[0].to_string());
+        assert_eq!(api_sensor.color, COLOR_HEX_STRS[0].to_string().into());
 
         // Add a sensor again, should fail
         let path = format!(
@@ -280,9 +324,9 @@ mod tests {
         );
 
         let body = PostSensor {
-            name: random_string(15..20),
-            description: Some(sensor_description.clone()),
-            color: COLOR_HEX_STRS[0].to_string(),
+            name: random_string(ApiEntityName::MIN_LEN..ApiEntityName::MAX_LEN).into(),
+            description: Some(sensor_description.clone().into()),
+            color: color.clone(),
             place_name: name.clone(),
             device_id: sensor_device_id.clone(),
         };
@@ -362,7 +406,7 @@ mod tests {
 
         let query = GetSession {
             username: username.clone(),
-            hashed_password: hashed_password.clone() + "bad",
+            raw_password: ApiRawPassword::random(),
         };
 
         server.clear_headers();
@@ -382,8 +426,8 @@ mod tests {
         );
 
         let query = GetSession {
-            username: username.clone() + "bad",
-            hashed_password: hashed_password.clone(),
+            username: ApiUsername::random(),
+            raw_password: raw_password.clone(),
         };
 
         server.clear_headers();
@@ -418,7 +462,7 @@ mod tests {
         let fetched_place = &place_list[0];
         assert_eq!(fetched_place.name, name);
         assert_eq!(fetched_place.description.as_ref().unwrap(), &description);
-        assert_eq!(fetched_place.color, COLOR_HEX_STRS[0].to_string());
+        assert_eq!(fetched_place.color, color.clone());
 
         // GET list of sensors
         let sensor_list_path = format!(
@@ -434,9 +478,8 @@ mod tests {
         let sensor_list: Vec<ApiUserSensor> = res.json();
         assert_eq!(sensor_list.len(), 1);
         let fetched_sensor = &sensor_list[0];
-        assert_eq!(fetched_sensor.name, sensor_name);
         assert_eq!(
-            fetched_sensor.description.as_ref().unwrap(),
+            fetched_sensor.description.as_ref().unwrap().as_str(),
             &sensor_description
         );
         assert_eq!(fetched_sensor.device_id, sensor_device_id);
@@ -451,9 +494,9 @@ mod tests {
         assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED);
 
         let invalid_place = PostPlace {
-            name: "invalid".to_string(),
+            name: ApiEntityName::random(),
             description: None,
-            color: COLOR_HEX_STRS[0].to_string(),
+            color: color.clone(),
         };
         let res = server
             .post(&place_list_path)
@@ -463,9 +506,9 @@ mod tests {
         assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED);
 
         let invalid_sensor = PostSensor {
-            name: "invalid".to_string(),
+            name: ApiEntityName::random(),
             description: None,
-            color: COLOR_HEX_STRS[0].to_string(),
+            color: color.clone(),
             place_name: name.clone(),
             device_id: DeviceId::random(),
         };

@@ -1,11 +1,22 @@
-use axum::{Json, routing::MethodRouter};
+use axum::routing::MethodRouter;
+use axum_serde_valid::Json;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
 use ts_rs::TS;
 
 use crate::{
     RoutePath,
-    api::{Endpoint, route::Route, types::ApiTimestamp},
+    api::{
+        Endpoint,
+        route::Route,
+        types::{
+            ApiTimestamp,
+            validate::{
+                api_email::ApiEmail, api_raw_password::ApiRawPassword, api_username::ApiUsername,
+            },
+        },
+    },
     auth::claims::Claims,
     db::{
         DbConn, DbConnHolder,
@@ -14,38 +25,39 @@ use crate::{
     model::NewUser,
 };
 
-#[derive(TS, Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/user/")]
 pub struct ApiUser {
-    pub username: String,
-    pub email: String,
+    pub username: ApiUsername,
+    pub email: ApiEmail,
     pub created_at: ApiTimestamp,
     pub updated_at: ApiTimestamp,
 }
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/user/")]
 pub struct GetUser {}
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/user/")]
 pub enum PutUser {
-    Username(String),
-    HashedPassword(String),
-    Email(String),
+    Username(ApiUsername),
+    RawPassword(ApiRawPassword),
+    Email(ApiEmail),
 }
 
 /// Register User
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/user/")]
 pub struct PostUser {
-    pub username: String,
-    pub hashed_password: String,
-    pub email: String,
+    pub username: ApiUsername,
+    pub raw_password: ApiRawPassword,
+    pub email: ApiEmail,
 }
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, PartialEq, Validate)]
 #[ts(export, export_to = "./api/endpoints/user/")]
+// WARN: Do not acccept this in any endpoints
 pub enum NotUniqueUser {
     Username(String),
     Email(String),
@@ -76,8 +88,8 @@ impl User {
         let conn = &mut conn.0;
         let user = get_user(conn, Identifier::Username(&claims.username))?;
 
-        let username = user.username;
-        let email = user.email;
+        let username = user.username.into();
+        let email = user.email.into();
         let created_at = user.created_at.and_utc().timestamp() as usize;
         let updated_at = user.updated_at.and_utc().timestamp() as usize;
 
@@ -130,9 +142,9 @@ impl User {
 
         // Check for repeated fields
         let identifier = match &payload {
-            PutUser::Username(un) => Some(Identifier::Username(un)),
-            PutUser::HashedPassword(_) => None,
-            PutUser::Email(em) => Some(Identifier::Email(em)),
+            PutUser::Username(un) => Some(Identifier::Username(un.as_str())),
+            PutUser::RawPassword(_) => None,
+            PutUser::Email(em) => Some(Identifier::Email(em.as_str())),
         };
         if let Some(identifier) = identifier {
             match Self::user_field_exists_for_some_user(conn, identifier.clone(), Some(user.id)) {
@@ -167,6 +179,9 @@ impl User {
         let created_at = created_at.and_utc().timestamp() as ApiTimestamp;
         let updated_at = updated_at.and_utc().timestamp() as ApiTimestamp;
 
+        let username = username.into();
+        let email = email.into();
+
         Ok(Json(ApiUser {
             username,
             email,
@@ -185,40 +200,49 @@ impl User {
 
         let PostUser {
             username,
-            hashed_password,
+            raw_password,
             email,
         } = payload;
 
-        match Self::user_field_exists_for_some_user(conn, Identifier::Username(&username), None) {
+        match Self::user_field_exists_for_some_user(
+            conn,
+            Identifier::Username(username.as_str()),
+            None,
+        ) {
             Ok(exists) => {
                 if exists {
-                    log::trace!("username was repeated: {username}");
+                    log::trace!("username was repeated: {username:?}");
                     return (
                         StatusCode::CONFLICT,
-                        Json(Some(NotUniqueUser::Username(username))),
+                        Json(Some(NotUniqueUser::Username(username.into()))),
                     );
                 }
             }
             Err(e) => return (e.into(), Json(None)),
         }
 
-        match Self::user_field_exists_for_some_user(conn, Identifier::Email(&email), None) {
+        match Self::user_field_exists_for_some_user(conn, Identifier::Email(email.as_str()), None) {
             Ok(exists) => {
                 if exists {
-                    log::trace!("email was repeated: {email}");
+                    log::trace!("email was repeated: {email:?}");
                     return (
                         StatusCode::CONFLICT,
-                        Json(Some(NotUniqueUser::Email(email))),
+                        Json(Some(NotUniqueUser::Email(email.into()))),
                     );
                 }
             }
             Err(e) => return (e.into(), Json(None)),
         }
+
+        let hashed_password = match raw_password.hash() {
+            Ok(p) => p,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(None)),
+        };
 
         let new_user = NewUser {
-            username,
-            hashed_password,
-            email,
+            username: username.into(),
+            hashed_password: hashed_password.into(),
+            email: email.into(),
         };
 
         log::trace!("NewUser: {new_user:?}");
@@ -241,11 +265,16 @@ impl Endpoint for User {
 
 #[cfg(test)]
 mod test {
-    use axum::Json;
+    use axum_serde_valid::Json;
     use hyper::StatusCode;
 
     use crate::{
-        api::endpoints::user::{PostUser, PutUser, User},
+        api::{
+            endpoints::user::{PostUser, PutUser, User},
+            types::validate::{
+                api_email::ApiEmail, api_raw_password::ApiRawPassword, api_username::ApiUsername,
+            },
+        },
         auth::claims::Claims,
         db::{DbConnHolder, establish_connection, tests::create_test_user},
         model,
@@ -255,7 +284,7 @@ mod test {
     async fn test_user_get() {
         let mut conn = establish_connection(true).unwrap();
 
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
 
         let mut claims = Claims::new(user.username.clone());
 
@@ -263,8 +292,8 @@ mod test {
             .await
             .expect("Should not fail");
 
-        assert_eq!(res.username, user.username);
-        assert_eq!(res.email, user.email);
+        assert_eq!(res.username, user.username.into());
+        assert_eq!(res.email, user.email.into());
 
         let mut conn = establish_connection(true).unwrap();
         let _user = create_test_user(&mut conn);
@@ -281,10 +310,15 @@ mod test {
     async fn test_user_post() {
         let conn = establish_connection(true).unwrap();
 
+        let username = ApiUsername::random();
+        let raw_password = ApiRawPassword::random();
+        let _hashed_password = raw_password.hash().expect("Should hash");
+        let email = ApiEmail::random();
+
         let json = PostUser {
-            username: "newuser".into(),
-            hashed_password: "password".into(),
-            email: "email".into(),
+            username,
+            raw_password,
+            email,
         };
 
         let (code, _string) = User::user_post(DbConnHolder(conn), Json(json)).await;
@@ -292,19 +326,25 @@ mod test {
 
         let mut conn = establish_connection(true).unwrap();
 
-        let model::User {
-            id: _,
-            username,
-            hashed_password,
-            email,
-            created_at: _,
-            updated_at: _,
-            updated_auth_at: _,
-        } = create_test_user(&mut conn);
+        let (
+            model::User {
+                id: _,
+                username,
+                hashed_password: _,
+                email,
+                created_at: _,
+                updated_at: _,
+                updated_auth_at: _,
+            },
+            raw_password,
+        ) = create_test_user(&mut conn);
+
+        let username = username.into();
+        let email = email.into();
 
         let json = PostUser {
             username,
-            hashed_password,
+            raw_password,
             email,
         };
 
@@ -315,21 +355,24 @@ mod test {
     #[tokio::test]
     async fn test_user_put() {
         let mut conn = establish_connection(true).unwrap();
-        let model::User {
-            id: _,
-            username,
-            hashed_password: _,
-            email: _,
-            created_at: _,
-            updated_at: _,
-            updated_auth_at: _,
-        } = create_test_user(&mut conn);
+        let (
+            model::User {
+                id: _,
+                username,
+                hashed_password: _,
+                email: _,
+                created_at: _,
+                updated_at: _,
+                updated_auth_at: _,
+            },
+            _raw_password,
+        ) = create_test_user(&mut conn);
 
-        let new_username = "newusername".to_string();
+        let new_username = ApiUsername::random();
 
         let json = PutUser::Username(new_username.clone());
 
-        assert_ne!(&username, &new_username);
+        assert_ne!(&username, new_username.as_str());
 
         let claims = Claims::new(username);
 
@@ -343,12 +386,12 @@ mod test {
     async fn test_user_put_fail() {
         let mut conn = establish_connection(true).unwrap();
 
-        let user1 = create_test_user(&mut conn);
-        let user2 = create_test_user(&mut conn);
+        let (user1, _) = create_test_user(&mut conn);
+        let (user2, _) = create_test_user(&mut conn);
 
         let new_username_user2 = user1.username;
 
-        let json = PutUser::Username(new_username_user2.clone());
+        let json = PutUser::Username(new_username_user2.clone().into());
 
         let claims = Claims::new(user2.username);
 

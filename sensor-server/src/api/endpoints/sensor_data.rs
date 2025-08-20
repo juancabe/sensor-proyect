@@ -1,9 +1,10 @@
-use axum::{Json, extract::Query, routing::MethodRouter};
+use axum::{extract::Query, routing::MethodRouter};
+use axum_serde_valid::Json;
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use hyper::StatusCode;
 use jsonwebtoken::{Header, encode};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_valid::{Validate, json::json};
 use ts_rs::TS;
 
 use crate::{
@@ -22,21 +23,23 @@ use crate::{
     model::NewSensorData,
 };
 
-#[derive(TS, Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct ApiSensorData {
+    #[validate(max_length = 500)]
     pub data: String,
     pub added_at: ApiTimestamp,
 }
 
-#[derive(TS, Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct PostSensorDataResponse {
     pub api_data: ApiSensorData,
+    #[validate(max_length = 1000)]
     pub new_jwt: String,
 }
 
-#[derive(TS, Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct GetSensorData {
     #[serde(flatten)]
@@ -46,10 +49,11 @@ pub struct GetSensorData {
     pub upper_added_at: Option<ApiTimestamp>,
 }
 
-#[derive(TS, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Clone, Debug, serde::Serialize, serde::Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct PostSensorData {
     pub device_id: DeviceId,
+    #[validate(max_length = 500)]
     pub serialized_data: String,
     pub created_at: Option<ApiTimestamp>,
 }
@@ -216,7 +220,8 @@ impl Endpoint for SensorData {
 
 #[cfg(test)]
 mod test {
-    use axum::{Json, extract::Query};
+    use axum::extract::Query;
+    use axum_serde_valid::Json;
 
     use crate::{
         api::{
@@ -235,7 +240,7 @@ mod test {
         let mut conn_uref = establish_connection(true).unwrap();
         let conn = &mut conn_uref;
 
-        let user = create_test_user(conn);
+        let (user, _) = create_test_user(conn);
         let user_place = create_test_user_place(conn, &user);
         let sensor = create_test_user_sensor(conn, &user_place);
 
@@ -263,7 +268,7 @@ mod test {
         let mut conn_uref = establish_connection(true).unwrap();
         let conn = &mut conn_uref;
 
-        let user = create_test_user(conn);
+        let (user, _) = create_test_user(conn);
         let user_place = create_test_user_place(conn, &user);
         let sensor = create_test_user_sensor(conn, &user_place);
 

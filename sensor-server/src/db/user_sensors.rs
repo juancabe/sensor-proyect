@@ -18,7 +18,7 @@ pub fn insert_user_sensor(conn: &mut DbConn, sensor: NewUserSensor) -> Result<Us
 }
 
 pub enum Identifier<'a> {
-    PlaceNameAndUserId(&'a String, i32),
+    PlaceNameAndUserId(&'a str, i32),
     SensorDeviceId(&'a DeviceId),
 }
 
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn test_new_sensor() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
         let new_up: NewUserSensor = NewUserSensor {
@@ -166,7 +166,7 @@ mod tests {
     fn test_get_sensor() {
         let mut conn = establish_connection(true).unwrap();
 
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
         let _p1 = get_user_sensor(
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn test_delete_sensor() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
         let user_sensor = create_test_user_sensor(&mut conn, &user_place);
 

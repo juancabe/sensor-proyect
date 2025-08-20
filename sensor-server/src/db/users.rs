@@ -55,9 +55,13 @@ pub fn update_user(
     let mut db_user = get_user(conn, identifier)?;
 
     match update {
-        Update::Username(un) => db_user.username = un,
-        Update::HashedPassword(hp) => db_user.hashed_password = hp,
-        Update::Email(em) => db_user.email = em,
+        Update::Username(un) => db_user.username = un.into(),
+        Update::RawPassword(rp) => {
+            db_user.hashed_password = rp
+                .hash()
+                .or(Err(Error::InternalError("Could not hash".into())))?
+        }
+        Update::Email(em) => db_user.email = em.into(),
     }
 
     let rows = diesel::update(users_table)
@@ -84,7 +88,7 @@ mod test {
     fn test_get_user() {
         let mut conn = establish_connection(true).expect("Correct!!");
 
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
 
         let identifier = Identifier::Username(&user.username);
         let res1 = get_user(&mut conn, identifier).expect("Should work!");

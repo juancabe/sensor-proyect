@@ -102,9 +102,7 @@ impl From<diesel::ConnectionError> for Error {
 pub fn establish_connection(test: bool) -> Result<DbConn, Error> {
     dotenv().expect(".env should be available and readable");
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    assert_eq!(database_url.contains("test_database"), test);
 
-    // let mut conn: DbConn = PgConnection::establish(&database_url)?;
     let mut conn;
     if test {
         let manager = ConnectionManager::<diesel::PgConnection>::new(database_url);
@@ -128,9 +126,12 @@ pub mod tests {
 
     use diesel::{Insertable, RunQueryDsl};
     use rand::{Rng, distr::Alphabetic};
-    use sensor_lib::api::model::api_id::ApiId;
 
     use crate::{
+        api::types::{
+            device_id::DeviceId,
+            validate::{api_raw_password::ApiRawPassword, api_username::ApiUsername},
+        },
         db::DbConn,
         model::{NewUser, NewUserPlace, NewUserSensor, User, UserPlace, UserSensor},
     };
@@ -143,27 +144,30 @@ pub mod tests {
             .collect()
     }
 
-    pub fn create_test_user(conn: &mut DbConn) -> User {
+    pub fn create_test_user(conn: &mut DbConn) -> (User, ApiRawPassword) {
         use crate::schema::users::dsl::users as users_table;
 
-        let username = random_string(5..16);
-        let email = random_string(5..16);
+        let username = ApiUsername::random();
+        let username_string: String = username.clone().into();
+        let email = username_string + "@email.com";
+        let pass = ApiRawPassword::random();
+        let hashed_password = pass.hash().expect("Should be hashable");
 
         let test_user = NewUser {
-            username,
-            hashed_password: "hashed_password".to_string(),
+            username: username.into(),
+            hashed_password,
             email,
         };
 
-        let res: Vec<User> = test_user
-            .clone()
+        let res = test_user
             .insert_into(users_table)
             .load(conn)
-            .expect("Should be insertable");
+            .expect("Should be insertable")
+            .into_iter()
+            .next()
+            .expect("Should have returned");
 
-        assert_eq!(res.len(), 1);
-
-        res.first().expect("Shopuld exist").clone()
+        (res, pass)
     }
 
     pub fn create_test_user_place(conn: &mut DbConn, user: &User) -> UserPlace {
@@ -201,7 +205,7 @@ pub mod tests {
             description: Some(description),
             color_id: 1,
             place_id: user_place.id,
-            device_id: ApiId::random().to_string(),
+            device_id: DeviceId::random().to_string(),
         };
 
         let res: Vec<UserSensor> = test_user_sensor

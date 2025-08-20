@@ -1,52 +1,64 @@
-use axum::{Json, extract::Query, routing::MethodRouter};
+use axum::{extract::Query, routing::MethodRouter};
+use axum_serde_valid::Json;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
 use ts_rs::TS;
 
 use crate::{
     RoutePath,
-    api::{Endpoint, route::Route, types::ApiTimestamp},
+    api::{
+        Endpoint,
+        route::Route,
+        types::{
+            ApiTimestamp,
+            validate::{
+                api_color::ApiColor, api_description::ApiDescription,
+                api_entity_name::ApiEntityName,
+            },
+        },
+    },
     auth::claims::Claims,
     db::{self, DbConnHolder, user_places::Identifier},
-    model::{HexValue, NewUserPlace},
+    model::NewUserPlace,
 };
 
-#[derive(Debug, Serialize, Deserialize, TS)]
+#[derive(Debug, Serialize, Deserialize, TS, Validate)]
 #[ts(export, export_to = "./api/endpoints/place/")]
 pub struct ApiUserPlace {
-    pub name: String,
-    pub description: Option<String>,
-    pub color: String,
+    pub name: ApiEntityName,
+    pub description: Option<ApiDescription>,
+    pub color: ApiColor,
     pub created_at: ApiTimestamp,
     pub updated_at: ApiTimestamp,
 }
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
 pub enum GetPlaceEnum {
-    FromPlaceName(String),
+    FromPlaceName(ApiEntityName),
     UserPlaces,
 }
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/place/")]
 pub struct GetPlace {
     #[serde(flatten)]
     pub param: GetPlaceEnum,
 }
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/place/")]
 pub enum DeletePlace {
-    FromPlaceName(String),
+    FromPlaceName(ApiEntityName),
     UserPlaces,
 }
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(TS, Debug, Serialize, Deserialize, Clone, Validate)]
 #[ts(export, export_to = "./api/endpoints/place/")]
 pub struct PostPlace {
-    pub name: String,
-    pub description: Option<String>,
-    pub color: HexValue,
+    pub name: ApiEntityName,
+    pub description: Option<ApiDescription>,
+    pub color: ApiColor,
 }
 
 pub struct Place {
@@ -93,7 +105,9 @@ impl Place {
         let payload = payload.param;
 
         let id = match &payload {
-            GetPlaceEnum::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
+            GetPlaceEnum::FromPlaceName(name) => {
+                Identifier::PlaceNameAndUserId(name.as_str(), user_id)
+            }
             GetPlaceEnum::UserPlaces => Identifier::UserId(user_id),
         };
 
@@ -108,11 +122,11 @@ impl Place {
                                 db::Error::InternalError("Could not get color from id".into())
                             })?;
                         let aup = ApiUserPlace {
-                            name: up.name,
-                            description: up.description,
+                            name: up.name.into(),
+                            description: up.description.map(|d| d.into()),
                             created_at: up.created_at.and_utc().timestamp() as usize,
                             updated_at: up.updated_at.and_utc().timestamp() as usize,
-                            color: color,
+                            color: color.into(),
                         };
                         Ok(aup)
                     })
@@ -145,24 +159,27 @@ impl Place {
 
         let color_id = db::colors::get_color_id(
             &mut conn.0,
-            db::colors::Identifier::Hex(payload.color.clone()),
+            db::colors::Identifier::Hex(payload.color.clone().into()),
         )
         .inspect_err(|e| {
-            log::warn!("Error looking for ({color}): {e:?}", color = payload.color);
+            log::warn!(
+                "Error looking for ({color:?}): {e:?}",
+                color = payload.color
+            );
         })?;
 
         let place = NewUserPlace {
             user_id,
-            name: payload.name.clone(),
-            description: payload.description,
+            name: payload.name.clone().into(),
+            description: payload.description.map(|d| d.into()),
             color_id,
         };
 
         let res = db::user_places::insert_user_place(&mut conn.0, place)?;
 
         let res = ApiUserPlace {
-            name: res.name,
-            description: res.description,
+            name: res.name.into(),
+            description: res.description.map(|d| d.into()),
             color: payload.color,
             created_at: res.created_at.and_utc().timestamp() as usize,
             updated_at: res.updated_at.and_utc().timestamp() as usize,
@@ -187,7 +204,9 @@ impl Place {
         log::trace!("Deleting place: {payload:?}");
 
         let id = match &payload {
-            DeletePlace::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
+            DeletePlace::FromPlaceName(name) => {
+                Identifier::PlaceNameAndUserId(name.as_str(), user_id)
+            }
             DeletePlace::UserPlaces => Identifier::UserId(user_id),
         };
 
@@ -202,11 +221,11 @@ impl Place {
                                 db::Error::InternalError("Could not get color from id".into())
                             })?;
                         let aup = ApiUserPlace {
-                            name: up.name,
-                            description: up.description,
+                            name: up.name.into(),
+                            description: up.description.map(|d| d.into()),
                             created_at: up.created_at.and_utc().timestamp() as usize,
                             updated_at: up.updated_at.and_utc().timestamp() as usize,
-                            color: color,
+                            color: color.into(),
                         };
                         Ok(aup)
                     })
@@ -228,7 +247,9 @@ impl Place {
 #[cfg(test)]
 mod tests {
 
-    use axum::{Json, extract::Query};
+    use axum::extract::Query;
+    use axum_serde_valid::Json;
+    use serde_valid::json::ToJsonString;
 
     use crate::{
         api::endpoints::place::{DeletePlace, GetPlace, GetPlaceEnum, Place, PostPlace},
@@ -244,7 +265,7 @@ mod tests {
         let body = GetPlaceEnum::UserPlaces;
 
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
 
         let claims = Claims {
@@ -265,18 +286,18 @@ mod tests {
             res_body.len() == 1,
             "res_body.len(): {}\nres_body: {:?}",
             res_body.len(),
-            res_body
+            res_body.to_json_string()
         );
-        assert_eq!(res_body.first().unwrap().name, user_place.name);
+        assert_eq!(res_body.first().unwrap().name, user_place.name.into());
     }
 
     #[tokio::test]
     async fn test_place_get_api_id() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
 
-        let body = GetPlaceEnum::FromPlaceName(user_place.name.clone());
+        let body = GetPlaceEnum::FromPlaceName(user_place.name.clone().into());
 
         let claims = Claims {
             username: user.username,
@@ -296,20 +317,20 @@ mod tests {
             res_body.len() == 1,
             "res_body.len(): {}\nres_body: {:?}",
             res_body.len(),
-            res_body
+            res_body.to_json_string()
         );
-        assert_eq!(res_body.first().unwrap().name, user_place.name);
+        assert_eq!(res_body.first().unwrap().name, user_place.name.into());
     }
 
     #[tokio::test]
     async fn test_place_post() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
 
         let payload = PostPlace {
-            name: "My New Awesome Place".to_string(),
-            description: Some("A description for the new place.".to_string()),
-            color: "#FF0000".to_string(),
+            name: "My New Awesome Place".to_string().into(),
+            description: Some("A description for the new place.".to_string().into()),
+            color: "#FF0000".to_string().into(),
         };
 
         let claims = Claims {
@@ -332,10 +353,10 @@ mod tests {
     #[tokio::test]
     async fn test_place_delete() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let place_to_delete = create_test_user_place(&mut conn, &user);
 
-        let payload = DeletePlace::FromPlaceName(place_to_delete.name.clone());
+        let payload = DeletePlace::FromPlaceName(place_to_delete.name.clone().into());
 
         let claims = Claims {
             username: user.username,
@@ -358,7 +379,7 @@ mod tests {
         );
         assert_eq!(
             deleted_places_response.0.first().unwrap().name,
-            place_to_delete.name
+            place_to_delete.name.into()
         );
     }
 }

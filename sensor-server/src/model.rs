@@ -22,7 +22,7 @@ pub const COLOR_HEX_STRS: [&'static str; 9] = [
 pub struct SensorData {
     pub id: i64,
     pub sensor_id: i32,
-    pub data: serde_json::value::Value,
+    pub data: serde_valid::json::Value,
     pub added_at: NaiveDateTime,
 }
 
@@ -30,7 +30,7 @@ pub struct SensorData {
 #[diesel(table_name = crate::schema::sensor_data)]
 pub struct NewSensorData {
     pub sensor_id: i32,
-    pub data: serde_json::value::Value,
+    pub data: serde_valid::json::Value,
     pub added_at: Option<NaiveDateTime>, // UNIX timestamp in seconds
 }
 

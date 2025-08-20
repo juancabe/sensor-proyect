@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn test_new_place() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
 
         let new_up: NewUserPlace = NewUserPlace {
             user_id: user.id,
@@ -142,7 +142,7 @@ mod tests {
     fn test_get_place() {
         let mut conn = establish_connection(true).unwrap();
 
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
         let _p1 = get_user_place(
@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn test_delete_place() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
         let deleted_places = delete_user_place(

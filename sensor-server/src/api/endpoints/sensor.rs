@@ -1,6 +1,8 @@
-use axum::{Json, extract::Query, routing::MethodRouter};
+use axum::{extract::Query, routing::MethodRouter};
+use axum_serde_valid::Json;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
 use ts_rs::TS;
 
 use crate::{
@@ -9,52 +11,59 @@ use crate::{
         Endpoint,
         endpoints::authorized_sensor,
         route::Route,
-        types::{ApiTimestamp, device_id::DeviceId},
+        types::{
+            ApiTimestamp,
+            device_id::DeviceId,
+            validate::{
+                api_color::ApiColor, api_description::ApiDescription,
+                api_entity_name::ApiEntityName,
+            },
+        },
     },
     auth::claims::Claims,
     db::{self, DbConnHolder, Error, user_sensors::Identifier},
-    model::{HexValue, NewUserSensor},
+    model::NewUserSensor,
 };
 
-#[derive(TS, Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor/")]
 pub struct ApiUserSensor {
     pub device_id: DeviceId,
-    pub name: String,
-    pub description: Option<String>,
-    pub color: HexValue,
+    pub name: ApiEntityName,
+    pub description: Option<ApiDescription>,
+    pub color: ApiColor,
     pub created_at: ApiTimestamp,
     pub updated_at: ApiTimestamp,
 }
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
 pub enum GetSensorEnum {
     FromSensorDeviceId(DeviceId),
-    FromPlaceName(String),
+    FromPlaceName(ApiEntityName),
 }
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor/")]
 pub struct GetSensor {
     #[serde(flatten)]
     pub param: GetSensorEnum,
 }
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Clone, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor/")]
 pub struct PostSensor {
-    pub place_name: String,
+    pub place_name: ApiEntityName,
     pub device_id: DeviceId,
-    pub name: String,
-    pub description: Option<String>,
-    pub color: HexValue,
+    pub name: ApiEntityName,
+    pub description: Option<ApiDescription>,
+    pub color: ApiColor,
 }
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor/")]
 pub enum DeleteSensor {
     FromSensorDeviceId(DeviceId),
-    FromPlaceName(String),
+    FromPlaceName(ApiEntityName),
 }
 
 pub struct Sensor {
@@ -93,7 +102,9 @@ impl Sensor {
 
         let id = match &payload {
             GetSensorEnum::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),
-            GetSensorEnum::FromPlaceName(name) => Identifier::PlaceNameAndUserId(name, user_id),
+            GetSensorEnum::FromPlaceName(name) => {
+                Identifier::PlaceNameAndUserId(name.as_str(), user_id)
+            }
         };
 
         let vec = match db::user_sensors::get_user_sensor(&mut conn.0, id) {
@@ -107,11 +118,11 @@ impl Sensor {
                                 db::Error::InternalError("Could not get color from id".into())
                             })?;
                         let aus = ApiUserSensor {
-                            name: sensor.name,
-                            description: sensor.description,
+                            name: sensor.name.into(),
+                            description: sensor.description.map(|d| d.into()),
                             created_at: sensor.created_at.and_utc().timestamp() as usize,
                             updated_at: sensor.updated_at.and_utc().timestamp() as usize,
-                            color: color,
+                            color: color.into(),
                             device_id: DeviceId::from_string(&sensor.device_id)
                                 .expect("Should be valid"),
                         };
@@ -145,58 +156,39 @@ impl Sensor {
 
         let color_id = db::colors::get_color_id(
             &mut conn.0,
-            db::colors::Identifier::Hex(payload.color.clone()),
+            db::colors::Identifier::Hex(payload.color.clone().into()),
         )?;
 
         let place_id = db::user_places::get_user_place_id(
             &mut conn.0,
-            db::user_places::Identifier::PlaceNameAndUserId(&payload.place_name, user_id),
+            db::user_places::Identifier::PlaceNameAndUserId(&payload.place_name.as_str(), user_id),
         )?
         .into_iter()
         .next()
         .ok_or(Error::NotFound(
             format!(
-                "Place Id not found for place {} of user {}",
+                "Place Id not found for place {:?} of user {}",
                 payload.place_name, user_id
             )
             .into(),
         ))?;
 
         let sensor = NewUserSensor {
-            name: payload.name,
-            description: payload.description,
+            name: payload.name.into(),
+            description: payload.description.map(|d| d.into()),
             color_id,
             place_id,
             device_id: payload.device_id.to_string(),
         };
 
         log::trace!("NewUserSensor: {sensor:?}");
-        //
-        // match db::user_sensors::get_user_sensor(
-        //     &mut conn.0,
-        //     Identifier::SensorDeviceId(&payload.device_id),
-        // ) {
-        //     Ok(v) => {
-        //         if !v.is_empty() {
-        //             return Err(StatusCode::CONFLICT);
-        //         }
-        //     }
-        //     Err(e) => match e {
-        //         Error::NotFound(error) => {
-        //             log::trace!(
-        //                 "New sensor can be inserted, no other present with same device id: {error:?}"
-        //             );
-        //         }
-        //         _ => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-        //     },
-        // }
 
         let res = db::user_sensors::insert_user_sensor(&mut conn.0, sensor)?;
 
         let res = ApiUserSensor {
-            name: res.name,
-            description: res.description,
-            color: payload.color,
+            name: res.name.into(),
+            description: res.description.map(|d| d.into()),
+            color: payload.color.into(),
             created_at: res.created_at.and_utc().timestamp() as usize,
             updated_at: res.updated_at.and_utc().timestamp() as usize,
             device_id: DeviceId::from_string(&res.device_id).map_err(|e| {
@@ -229,8 +221,8 @@ impl Sensor {
                 Identifier::SensorDeviceId(device_id)
             }
             DeleteSensor::FromPlaceName(name) => {
-                log::trace!("Deleting all sensors from place {name}");
-                Identifier::PlaceNameAndUserId(name, user_id)
+                log::trace!("Deleting all sensors from place {name:?}");
+                Identifier::PlaceNameAndUserId(name.as_str(), user_id)
             }
         };
 
@@ -245,11 +237,11 @@ impl Sensor {
                                 db::Error::InternalError("Could not get color from id".into())
                             })?;
                         let aup = ApiUserSensor {
-                            name: up.name,
-                            description: up.description,
+                            name: up.name.into(),
+                            description: up.description.map(|d| d.into()),
                             created_at: up.created_at.and_utc().timestamp() as usize,
                             updated_at: up.updated_at.and_utc().timestamp() as usize,
-                            color: color,
+                            color: color.into(),
                             device_id: DeviceId::from_string(&us.device_id)
                                 .expect("Should be valid ApiId"),
                         };
@@ -283,7 +275,9 @@ impl Endpoint for Sensor {
 #[cfg(test)]
 mod tests {
 
-    use axum::{Json, extract::Query};
+    use axum::extract::Query;
+    use axum_serde_valid::Json;
+    use serde_valid::json::ToJsonString;
 
     use crate::{
         api::{
@@ -300,7 +294,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_by_api_id() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
         let user_sensor = create_test_user_sensor(&mut conn, &user_place);
 
@@ -326,7 +320,7 @@ mod tests {
             res_body.len() == 1,
             "res_body.len(): {}\nres_body: {:?}",
             res_body.len(),
-            res_body
+            res_body.to_json_string()
         );
         assert_eq!(
             res_body.first().unwrap().device_id,
@@ -337,11 +331,11 @@ mod tests {
     #[tokio::test]
     async fn test_get_by_place_api_id() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
         let user_sensor = create_test_user_sensor(&mut conn, &user_place);
 
-        let body = GetSensorEnum::FromPlaceName(user_place.name.clone());
+        let body = GetSensorEnum::FromPlaceName(user_place.name.clone().into());
 
         let claims = Claims {
             username: user.username,
@@ -361,7 +355,7 @@ mod tests {
             res_body.len() == 1,
             "res_body.len(): {}\nres_body: {:?}",
             res_body.len(),
-            res_body
+            res_body.to_json_string()
         );
         assert_eq!(
             res_body.first().unwrap().device_id,
@@ -372,14 +366,14 @@ mod tests {
     #[tokio::test]
     async fn test_post() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
         let payload = PostSensor {
-            place_name: place.name.clone(),
-            name: "My New Awesome Sensor".to_string(),
-            description: Some("A description for the new sensor.".to_string()),
-            color: "#FF0000".to_string(),
+            place_name: place.name.clone().into(),
+            name: "My New Awesome Sensor".to_string().into(),
+            description: Some("A description for the new sensor.".to_string().into()),
+            color: "#FF0000".to_string().into(),
             device_id: DeviceId::random(),
         };
 
@@ -396,16 +390,16 @@ mod tests {
             .await
             .expect("Should create a new place successfully");
 
-        assert_eq!(res_body.name, payload.name);
-        assert_eq!(res_body.description, payload.description);
-        assert_eq!(res_body.color, payload.color);
+        assert_eq!(res_body.name, payload.name.into());
+        assert_eq!(res_body.description, payload.description.map(|d| d.into()));
+        assert_eq!(res_body.color, payload.color.into());
         assert_eq!(res_body.device_id, payload.device_id);
     }
 
     #[tokio::test]
     async fn test_delete() {
         let mut conn = establish_connection(true).unwrap();
-        let user = create_test_user(&mut conn);
+        let (user, _) = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
         let user_sensor = create_test_user_sensor(&mut conn, &user_place);
         let sensor_to_delete_device_id =
