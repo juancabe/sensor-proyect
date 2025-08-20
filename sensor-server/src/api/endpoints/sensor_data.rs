@@ -34,6 +34,7 @@ pub struct ApiSensorData {
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct PostSensorDataResponse {
+    #[validate]
     pub api_data: ApiSensorData,
     #[validate(max_length = 1000)]
     pub new_jwt: String,

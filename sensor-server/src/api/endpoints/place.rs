@@ -26,8 +26,11 @@ use crate::{
 #[derive(Debug, Serialize, Deserialize, TS, Validate)]
 #[ts(export, export_to = "./api/endpoints/place/")]
 pub struct ApiUserPlace {
+    #[validate]
     pub name: ApiEntityName,
+    #[validate]
     pub description: Option<ApiDescription>,
+    #[validate]
     pub color: ApiColor,
     pub created_at: ApiTimestamp,
     pub updated_at: ApiTimestamp,
@@ -35,7 +38,7 @@ pub struct ApiUserPlace {
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 pub enum GetPlaceEnum {
-    FromPlaceName(ApiEntityName),
+    FromPlaceName(#[validate] ApiEntityName),
     UserPlaces,
 }
 
@@ -43,21 +46,25 @@ pub enum GetPlaceEnum {
 #[ts(export, export_to = "./api/endpoints/place/")]
 pub struct GetPlace {
     #[serde(flatten)]
+    #[validate]
     pub param: GetPlaceEnum,
 }
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/place/")]
 pub enum DeletePlace {
-    FromPlaceName(ApiEntityName),
+    FromPlaceName(#[validate] ApiEntityName),
     UserPlaces,
 }
 
 #[derive(TS, Debug, Serialize, Deserialize, Clone, Validate)]
 #[ts(export, export_to = "./api/endpoints/place/")]
 pub struct PostPlace {
+    #[validate]
     pub name: ApiEntityName,
+    #[validate]
     pub description: Option<ApiDescription>,
+    #[validate]
     pub color: ApiColor,
 }
 

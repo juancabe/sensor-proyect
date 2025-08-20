@@ -13,12 +13,12 @@ impl ApiDescription {
 
     fn valid(val: &String) -> Result<(), serde_valid::validation::Error> {
         if val.len() < Self::MIN_LEN
-            && val.len() > Self::MAX_LEN
-            && val.chars().all(|c| c.is_alphanumeric() || c == ' ')
+            || val.len() > Self::MAX_LEN
+            || val.chars().any(|c| !(c.is_alphanumeric() || c == ' '))
         {
-            Ok(())
-        } else {
             Err(Error::Custom("Invalid description".into()))
+        } else {
+            Ok(())
         }
     }
 

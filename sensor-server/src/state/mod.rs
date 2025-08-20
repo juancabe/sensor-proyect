@@ -67,7 +67,7 @@ impl PoisonableIdentifiers {
             .map_err(|e| Error::LockError(e.to_string().into()))?
             .get(key)
             .and_then(|p_until| Some(*p_until > Self::now()));
-        Ok(res.is_none_or(|time_remained| time_remained))
+        Ok(res.is_some_and(|time_remained| time_remained))
     }
 
     fn as_key(&self) -> &String {

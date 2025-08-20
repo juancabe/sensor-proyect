@@ -28,7 +28,9 @@ use crate::{
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/user/")]
 pub struct ApiUser {
+    #[validate]
     pub username: ApiUsername,
+    #[validate]
     pub email: ApiEmail,
     pub created_at: ApiTimestamp,
     pub updated_at: ApiTimestamp,
@@ -41,17 +43,20 @@ pub struct GetUser {}
 #[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/user/")]
 pub enum PutUser {
-    Username(ApiUsername),
-    RawPassword(ApiRawPassword),
-    Email(ApiEmail),
+    Username(#[validate] ApiUsername),
+    RawPassword(#[validate] ApiRawPassword),
+    Email(#[validate] ApiEmail),
 }
 
 /// Register User
 #[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/user/")]
 pub struct PostUser {
+    #[validate]
     pub username: ApiUsername,
+    #[validate]
     pub raw_password: ApiRawPassword,
+    #[validate]
     pub email: ApiEmail,
 }
 

@@ -20,7 +20,9 @@ use crate::{
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/session/")]
 pub struct GetSession {
+    #[validate]
     pub username: ApiUsername,
+    #[validate]
     pub raw_password: ApiRawPassword,
 }
 

@@ -14,7 +14,7 @@ impl ApiRawPassword {
     pub const MAX_LEN: usize = 64;
 
     fn valid(val: &String) -> Result<(), serde_valid::validation::Error> {
-        if val.len() < Self::MIN_LEN && val.len() > Self::MAX_LEN {
+        if val.len() < Self::MIN_LEN || val.len() > Self::MAX_LEN {
             Err(Error::Custom(format!(
                 "Password must have between {min}-{max} characters",
                 min = Self::MIN_LEN,

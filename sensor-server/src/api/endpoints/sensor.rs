@@ -29,8 +29,11 @@ use crate::{
 #[ts(export, export_to = "./api/endpoints/sensor/")]
 pub struct ApiUserSensor {
     pub device_id: DeviceId,
+    #[validate]
     pub name: ApiEntityName,
+    #[validate]
     pub description: Option<ApiDescription>,
+    #[validate]
     pub color: ApiColor,
     pub created_at: ApiTimestamp,
     pub updated_at: ApiTimestamp,
@@ -39,23 +42,28 @@ pub struct ApiUserSensor {
 #[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
 pub enum GetSensorEnum {
     FromSensorDeviceId(DeviceId),
-    FromPlaceName(ApiEntityName),
+    FromPlaceName(#[validate] ApiEntityName),
 }
 
 #[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor/")]
 pub struct GetSensor {
     #[serde(flatten)]
+    #[validate]
     pub param: GetSensorEnum,
 }
 
 #[derive(TS, Debug, serde::Serialize, serde::Deserialize, Clone, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor/")]
 pub struct PostSensor {
+    #[validate]
     pub place_name: ApiEntityName,
     pub device_id: DeviceId,
+    #[validate]
     pub name: ApiEntityName,
+    #[validate]
     pub description: Option<ApiDescription>,
+    #[validate]
     pub color: ApiColor,
 }
 
@@ -63,7 +71,7 @@ pub struct PostSensor {
 #[ts(export, export_to = "./api/endpoints/sensor/")]
 pub enum DeleteSensor {
     FromSensorDeviceId(DeviceId),
-    FromPlaceName(ApiEntityName),
+    FromPlaceName(#[validate] ApiEntityName),
 }
 
 pub struct Sensor {

@@ -58,6 +58,7 @@ where
         // Check state poisoned status
         if state::PoisonableIdentifiers::JWT(jwt.to_string()).is_poisoned()? {
             log::warn!("Tried to access with poisoned JWT: {jwt}, token_data: {token_data:?}");
+            return Err(StatusCode::UNAUTHORIZED);
         }
         if state::PoisonableIdentifiers::Username(token_data.claims.username.clone())
             .is_poisoned()?
@@ -65,6 +66,7 @@ where
             log::warn!(
                 "Tried to access with poisoned username, JWT: {jwt}, token_data: {token_data:?}"
             );
+            return Err(StatusCode::UNAUTHORIZED);
         }
 
         Ok(token_data.claims)

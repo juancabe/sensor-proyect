@@ -198,9 +198,9 @@ mod tests {
             .json(&body)
             .expect_failure()
             .await;
-        assert_eq!(StatusCode::CONFLICT, res.status_code());
-        let resp: Option<NotUniqueUser> = res.json();
-        assert_eq!(NotUniqueUser::Email(email.clone().into()), resp.unwrap());
+        assert_eq!(StatusCode::UNPROCESSABLE_ENTITY, res.status_code());
+        let resp: String = res.text();
+        assert!(resp.contains("Invalid username"));
 
         // Get the session
         let path = format!(
@@ -293,13 +293,13 @@ mod tests {
             endpoints::sensor::Sensor::API_PATH
         );
 
-        let sensor_name = random_string(15..20);
-        let sensor_description = random_string(30..50);
+        let sensor_name = ApiEntityName::random();
+        let sensor_description = ApiDescription::random();
         let sensor_device_id = DeviceId::random();
 
         let body = PostSensor {
             name: sensor_name.clone().into(),
-            description: Some(sensor_description.clone().into()),
+            description: Some(sensor_description.clone()),
             color: COLOR_HEX_STRS[0].to_string().into(),
             place_name: name.clone().into(),
             device_id: sensor_device_id.clone(),
@@ -479,8 +479,8 @@ mod tests {
         assert_eq!(sensor_list.len(), 1);
         let fetched_sensor = &sensor_list[0];
         assert_eq!(
-            fetched_sensor.description.as_ref().unwrap().as_str(),
-            &sensor_description
+            &fetched_sensor.description.as_ref().unwrap().as_str(),
+            &sensor_description.as_str()
         );
         assert_eq!(fetched_sensor.device_id, sensor_device_id);
 

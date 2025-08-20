@@ -19,7 +19,7 @@ impl ApiEmail {
         Self(
             rand::rng()
                 .sample_iter(&Alphanumeric)
-                .take(rand::random_range(Self::MIN_LEN..=Self::MAX_LEN))
+                .take(rand::random_range(Self::MIN_LEN..=Self::MAX_LEN - 20))
                 .map(char::from)
                 .collect::<String>()
                 + "@email.com",
