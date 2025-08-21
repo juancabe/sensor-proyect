@@ -128,9 +128,8 @@ pub mod tests {
     use rand::{Rng, distr::Alphabetic};
 
     use crate::{
-        api::types::{
-            device_id::DeviceId,
-            validate::{api_raw_password::ApiRawPassword, api_username::ApiUsername},
+        api::types::validate::{
+            api_raw_password::ApiRawPassword, api_username::ApiUsername, device_id::DeviceId,
         },
         db::DbConn,
         model::{NewUser, NewUserPlace, NewUserSensor, User, UserPlace, UserSensor},

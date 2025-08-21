@@ -1,7 +1,7 @@
 use diesel::prelude::*;
 
 use crate::{
-    api::{endpoints::sensor::SensorChange, types::device_id::DeviceId},
+    api::{endpoints::sensor::SensorChange, types::validate::device_id::DeviceId},
     db::{DbConn, Error, colors, user_places, users},
     model::{self, NewUserSensor, UserPlace, UserSensor},
 };

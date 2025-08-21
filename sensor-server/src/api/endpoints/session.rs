@@ -1,8 +1,10 @@
 use axum::{extract::Query, routing::MethodRouter};
+use axum_extra::extract::{CookieJar, cookie::Cookie};
 use axum_serde_valid::Json;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
+use time::Duration;
 use ts_rs::TS;
 
 use crate::{
@@ -33,6 +35,7 @@ pub struct PostSession {}
 #[derive(TS, Debug, Serialize, Deserialize, Clone)]
 #[ts(export, export_to = "./api/endpoints/session/")]
 // WARN: Dont accept this in any endpoint
+// WARN Every time this struct is returned, the response MUST return a Set-Cookie with the JWT
 pub struct ApiSession {
     pub access_token: String,
     pub expires_in: usize,
@@ -51,6 +54,16 @@ impl ApiSession {
     pub fn from_claims(claims: Claims) -> Result<Self, jsonwebtoken::errors::Error> {
         let jwt = claims.encode_jwt()?;
         Ok(Self::new(jwt, claims.exp - claims.iat))
+    }
+
+    pub fn build_cookie<'a, 'b>(&'a self) -> Cookie<'b> {
+        Cookie::build(("access_token", self.access_token.clone()))
+            .path("/")
+            .http_only(true)
+            .secure(true)
+            .same_site(axum_extra::extract::cookie::SameSite::Lax)
+            .max_age(Duration::seconds(self.expires_in as i64))
+            .into()
     }
 }
 
@@ -74,9 +87,9 @@ impl Session {
     }
 
     async fn session_post(
-        // mut conn: DbConnHolder,
+        jar: CookieJar,
         claims: Claims,
-    ) -> Result<Json<ApiSession>, StatusCode> {
+    ) -> Result<(CookieJar, Json<ApiSession>), StatusCode> {
         log::trace!("Renewing JWT for user: {}", claims.username);
         // Poison outdated JWT
         PoisonableIdentifier::JWTId(claims.jwt_id_hex()).poison()?;
@@ -86,7 +99,7 @@ impl Session {
         let claims = Claims::new(claims.username);
 
         match ApiSession::from_claims(claims) {
-            Ok(ass) => Ok(Json(ass)),
+            Ok(ass) => Ok((jar.add(ass.build_cookie()), Json(ass))),
             Err(e) => {
                 log::error!(
                     "Error generating new session from_claims for username ({username}): {e:?}"
@@ -98,8 +111,9 @@ impl Session {
 
     pub async fn session_get(
         mut conn: DbConnHolder,
+        jar: CookieJar,
         Query(payload): Query<GetSession>,
-    ) -> Result<Json<ApiSession>, StatusCode> {
+    ) -> Result<(CookieJar, Json<ApiSession>), StatusCode> {
         log::trace!("Generating new JWT");
 
         let db_hashed_password = users::get_user(
@@ -136,12 +150,10 @@ impl Session {
 
         let claims = Claims::new(payload.username.into());
 
-        match claims.encode_jwt() {
-            Ok(jwt) => Ok(Json(ApiSession::new(jwt, claims.exp - claims.iat))),
+        match ApiSession::from_claims(claims) {
+            Ok(ass) => Ok((jar.add(ass.build_cookie()), Json(ass))),
             Err(e) => {
-                log::error!(
-                    "Error generating new claims for encode(default, {claims:?}, &KEYS.encoding): {e:?}"
-                );
+                log::error!("Error generating new claims: {e:?}");
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
             }
         }
@@ -187,7 +199,7 @@ mod test {
             exp: now.checked_add_signed(half_day).unwrap().timestamp() as usize,
         };
 
-        Session::session_post(claims)
+        Session::session_post(CookieJar::new(), claims)
             .await
             .expect("Should not fail");
     }
@@ -204,7 +216,7 @@ mod test {
         };
 
         let conn = DbConnHolder(conn_nref);
-        let _res = Session::session_get(conn, Query(json))
+        let _res = Session::session_get(conn, CookieJar::new(), Query(json))
             .await
             .expect("Should not fail");
     }

@@ -44,8 +44,6 @@ impl From<Error> for StatusCode {
     }
 }
 
-// TODO: Use this PoisonableIdentifiers correctly
-
 #[derive(Debug, Clone)]
 pub enum PoisonableIdentifier {
     // Hex that identifies a JWT

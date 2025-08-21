@@ -1,4 +1,5 @@
 use axum::{extract::Query, routing::MethodRouter};
+use axum_extra::extract::CookieJar;
 use axum_serde_valid::Json;
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use hyper::StatusCode;
@@ -12,7 +13,7 @@ use crate::{
         Endpoint,
         endpoints::session::ApiSession,
         route::Route,
-        types::{ApiTimestamp, device_id::DeviceId},
+        types::{ApiTimestamp, validate::device_id::DeviceId},
     },
     auth::claims::Claims,
     db::{
@@ -42,7 +43,6 @@ pub struct PostSensorDataResponse {
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct GetSensorData {
-    #[serde(flatten)]
     pub device_id: DeviceId,
     // Not included if added_at == [upper | lowest]_added_at
     pub lowest_added_at: Option<ApiTimestamp>,
@@ -169,10 +169,11 @@ impl SensorData {
     }
 
     pub async fn sensor_data_post(
+        jar: CookieJar,
         claims: Claims,
         mut conn: DbConnHolder,
         Json(payload): Json<PostSensorData>,
-    ) -> Result<Json<PostSensorDataResponse>, StatusCode> {
+    ) -> Result<(CookieJar, Json<PostSensorDataResponse>), StatusCode> {
         let conn = &mut conn.0;
 
         let sensor = AuthorizedSensor::new(conn, &payload.device_id, &claims.username)?;
@@ -209,10 +210,13 @@ impl SensorData {
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        Ok(Json(PostSensorDataResponse {
-            api_data,
-            new_session,
-        }))
+        Ok((
+            jar.add(new_session.build_cookie()),
+            Json(PostSensorDataResponse {
+                api_data,
+                new_session,
+            }),
+        ))
     }
 }
 
@@ -228,12 +232,13 @@ impl Endpoint for SensorData {
 #[cfg(test)]
 mod test {
     use axum::extract::Query;
+    use axum_extra::extract::CookieJar;
     use axum_serde_valid::Json;
 
     use crate::{
         api::{
             endpoints::sensor_data::{GetSensorData, PostSensorData, SensorData},
-            types::device_id::DeviceId,
+            types::validate::device_id::DeviceId,
         },
         auth::claims::Claims,
         db::{
@@ -291,7 +296,7 @@ mod test {
 
         let conn = DbConnHolder(conn_uref);
 
-        let _res = SensorData::sensor_data_post(claims, conn, Json(json.clone()))
+        let _res = SensorData::sensor_data_post(CookieJar::new(), claims, conn, Json(json.clone()))
             .await
             .expect("Should not fail");
     }

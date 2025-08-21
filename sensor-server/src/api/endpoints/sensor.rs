@@ -12,10 +12,11 @@ use crate::{
         route::Route,
         types::{
             ApiTimestamp,
-            device_id::{self, DeviceId},
             validate::{
-                api_color::ApiColor, api_description::ApiDescription,
+                api_color::ApiColor,
+                api_description::ApiDescription,
                 api_entity_name::ApiEntityName,
+                device_id::{self, DeviceId},
             },
         },
     },
@@ -353,7 +354,7 @@ mod tests {
     use crate::{
         api::{
             endpoints::sensor::{DeleteSensor, GetSensor, GetSensorEnum, PostSensor, Sensor},
-            types::device_id::DeviceId,
+            types::validate::device_id::DeviceId,
         },
         auth::claims::{Claims, get_new_id},
         db::{

@@ -23,7 +23,9 @@ impl SensorServer {
         dotenv().expect(".env should be available and readable");
 
         let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        assert!(!database_url.contains("test"));
+        if database_url.contains("test") {
+            log::warn!("\"test\" found in DATABASE_URL");
+        }
         establish_connection(false).expect("Connection should be available");
         log::info!("Loaded DB_POOL");
 
@@ -91,13 +93,10 @@ mod tests {
                 session::{ApiSession, GetSession},
                 user::{ApiUser, GetUser, NotUniqueUser, PostUser},
             },
-            types::{
-                device_id::DeviceId,
-                validate::{
-                    api_color::ApiColor, api_description::ApiDescription, api_email::ApiEmail,
-                    api_entity_name::ApiEntityName, api_raw_password::ApiRawPassword,
-                    api_username::ApiUsername,
-                },
+            types::validate::{
+                api_color::ApiColor, api_description::ApiDescription, api_email::ApiEmail,
+                api_entity_name::ApiEntityName, api_raw_password::ApiRawPassword,
+                api_username::ApiUsername, device_id::DeviceId,
             },
         },
         db::tests::random_string,

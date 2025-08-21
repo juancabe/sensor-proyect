@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
 use ts_rs::TS;
 
 #[derive(Debug)]
@@ -8,12 +9,9 @@ pub enum Error {
     NotLowercase,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, TS, Eq, PartialEq, Hash)]
+#[derive(Deserialize, Serialize, Debug, Clone, TS, Eq, PartialEq, Hash, Validate)]
 #[ts(export, export_to = "./api/types/")]
-pub struct DeviceId {
-    // ID_LENGTH lowercase hex characters for a unique identifier
-    id: String,
-}
+pub struct DeviceId(#[validate(custom(DeviceId::valid))] String);
 
 impl DeviceId {
     pub const ID_LENGTH: usize = 40;
@@ -24,11 +22,16 @@ impl DeviceId {
         let id: String = (0..Self::ID_LENGTH)
             .map(|_| format!("{:x}", rng.random_range(0..16)))
             .collect();
-        Self { id }
+        Self(id)
     }
 
     pub fn to_string(&self) -> String {
-        self.id.clone()
+        self.0.clone()
+    }
+
+    pub fn valid(val: &String) -> Result<(), serde_valid::validation::Error> {
+        Self::test(val)
+            .map_err(|e| serde_valid::validation::Error::Custom(format!("Invalid ApiId: {e:?}")))
     }
 
     /// Tests wether the id &str can be turned into ApiId
@@ -53,11 +56,11 @@ impl DeviceId {
 
     pub fn from_string(id: &str) -> Result<Self, Error> {
         Self::test(id)?;
-        Ok(Self { id: id.to_string() })
+        Ok(Self(id.to_string()))
     }
 
     pub fn as_str(&self) -> &str {
-        &self.id
+        &self.0
     }
 }
 
@@ -69,8 +72,8 @@ mod tests {
     #[test]
     fn test_api_id_creation() {
         let api_id = DeviceId::random();
-        assert_eq!(api_id.id.len(), DeviceId::ID_LENGTH);
-        assert!(api_id.id.chars().all(|c| c.is_ascii_hexdigit()
+        assert_eq!(api_id.0.len(), DeviceId::ID_LENGTH);
+        assert!(api_id.0.chars().all(|c| c.is_ascii_hexdigit()
             && ((c.is_alphabetic() && c.is_lowercase()) || c.is_numeric())));
     }
 }

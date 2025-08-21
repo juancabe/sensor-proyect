@@ -1,4 +1,5 @@
 use axum::routing::MethodRouter;
+use axum_extra::extract::CookieJar;
 use axum_serde_valid::Json;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -145,10 +146,11 @@ impl User {
 
     /// Update a user attribute
     async fn user_put(
+        jar: CookieJar,
         mut conn: DbConnHolder,
         claims: Claims,
         Json(payload): Json<PutUser>,
-    ) -> Result<Json<PutUserResponse>, StatusCode> {
+    ) -> Result<(CookieJar, Json<PutUserResponse>), StatusCode> {
         let conn = &mut conn.0;
 
         let user = get_user(conn, Identifier::Username(&claims.username))?;
@@ -252,10 +254,13 @@ impl User {
             updated_at,
         };
 
-        Ok(Json(PutUserResponse {
-            updated,
-            new_session,
-        }))
+        Ok((
+            jar.add(new_session.build_cookie()),
+            Json(PutUserResponse {
+                updated,
+                new_session,
+            }),
+        ))
     }
 
     async fn user_post(
@@ -367,6 +372,7 @@ impl Endpoint for User {
 
 #[cfg(test)]
 mod test {
+    use axum_extra::extract::CookieJar;
     use axum_serde_valid::Json;
     use hyper::StatusCode;
 
@@ -478,7 +484,7 @@ mod test {
 
         let claims = Claims::new(username);
 
-        let res = User::user_put(DbConnHolder(conn), claims, Json(json))
+        let (_jar, res) = User::user_put(CookieJar::new(), DbConnHolder(conn), claims, Json(json))
             .await
             .expect("Should not fail");
         assert_eq!(res.updated.username, new_username);
@@ -497,7 +503,7 @@ mod test {
 
         let claims = Claims::new(user2.username);
 
-        let res = User::user_put(DbConnHolder(conn), claims, Json(json))
+        let res = User::user_put(CookieJar::new(), DbConnHolder(conn), claims, Json(json))
             .await
             .err()
             .expect("Should fail");
