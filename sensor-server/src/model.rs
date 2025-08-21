@@ -34,7 +34,7 @@ pub struct NewSensorData {
     pub added_at: Option<NaiveDateTime>, // UNIX timestamp in seconds
 }
 
-#[derive(Queryable, Selectable, Debug, Clone)]
+#[derive(Queryable, Selectable, Debug, Clone, AsChangeset)]
 #[diesel(table_name = crate::schema::user_places)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserPlace {
@@ -56,7 +56,7 @@ pub struct NewUserPlace {
     pub color_id: i32,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone)]
+#[derive(Queryable, Selectable, Debug, Clone, AsChangeset)]
 #[diesel(table_name = crate::schema::user_sensors)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserSensor {

@@ -8,7 +8,8 @@ Rust implementation for the sernsors server
 - [x] Refactor so that API Endpoints return API Path
 - [x] Add better log information for the endpoints
 - [x] Export bindings to TS
-- [ ] Add Put endpoints where needed
+- [x] Add Put endpoints where needed
+- [ ] Test new Put endpoints
 - [x] Use PoisonedIdentifiers correctly
 - [ ] Test PoisonedIdentifiers integration
 <!-- - [ ] Try to refactor DB to LazyLock<Mutex<...>> or something to share a DbConn on the state (maybe no) -->

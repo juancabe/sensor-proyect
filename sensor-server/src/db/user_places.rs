@@ -1,7 +1,8 @@
 use diesel::prelude::*;
 
 use crate::{
-    db::{DbConn, Error},
+    api::endpoints::place::PlaceChange,
+    db::{DbConn, Error, colors},
     model::{self, NewUserPlace, UserPlace},
 };
 #[derive(Debug)]
@@ -28,6 +29,47 @@ pub fn get_user_place_id(conn: &mut DbConn, identifier: Identifier) -> Result<Ve
     };
 
     Ok(r)
+}
+
+pub type Update = PlaceChange;
+
+pub fn update_user_place(
+    conn: &mut DbConn,
+    update: Update,
+    place_name: &str,
+    user_id: i32,
+) -> Result<UserPlace, Error> {
+    use crate::schema::{
+        user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
+    };
+
+    let mut place = get_user_place(conn, Identifier::PlaceNameAndUserId(place_name, user_id))?
+        .into_iter()
+        .next()
+        .ok_or(Error::NotFound("Place not found".into()))?;
+
+    match update {
+        PlaceChange::Name(api_entity_name) => place.name = api_entity_name.into(),
+        PlaceChange::Description(api_description) => {
+            place.description = api_description.map(|d| d.into())
+        }
+        PlaceChange::Color(api_color) => {
+            place.color_id = colors::get_color_id(conn, colors::Identifier::Hex(api_color.into()))?
+        }
+    }
+
+    let rows = diesel::update(user_places_table)
+        .filter(user_place::id.eq(place.id))
+        .set(&place)
+        .execute(conn)?;
+
+    if rows == 0 {
+        Err(Error::NotFound(
+            "Not found, update didn't affect any rows".into(),
+        ))?
+    }
+
+    Ok(place)
 }
 
 pub fn insert_user_place(conn: &mut DbConn, place: NewUserPlace) -> Result<UserPlace, Error> {

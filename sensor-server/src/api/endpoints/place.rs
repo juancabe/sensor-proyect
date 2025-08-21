@@ -19,8 +19,11 @@ use crate::{
         },
     },
     auth::claims::Claims,
-    db::{self, DbConnHolder, user_places::Identifier},
-    model::NewUserPlace,
+    db::{
+        self, DbConnHolder,
+        user_places::{Identifier, Update, update_user_place},
+    },
+    model::{NewUserPlace, UserPlace},
 };
 
 #[derive(Debug, Serialize, Deserialize, TS, Validate)]
@@ -34,6 +37,33 @@ pub struct ApiUserPlace {
     pub color: ApiColor,
     pub created_at: ApiTimestamp,
     pub updated_at: ApiTimestamp,
+}
+
+impl ApiUserPlace {
+    pub fn from_user_place_and_color(place: UserPlace, color: String) -> Self {
+        Self {
+            name: place.name.into(),
+            description: place.description.map(|d| d.into()),
+            color: color.into(),
+            created_at: place.created_at.and_utc().timestamp() as ApiTimestamp,
+            updated_at: place.updated_at.and_utc().timestamp() as ApiTimestamp,
+        }
+    }
+}
+
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Clone, Validate)]
+pub enum PlaceChange {
+    Name(#[validate] ApiEntityName),
+    Description(#[validate] Option<ApiDescription>),
+    Color(#[validate] ApiColor),
+}
+
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
+#[ts(export, export_to = "./api/endpoints/sensor/")]
+pub struct PutPlace {
+    pub place_name: ApiEntityName,
+    #[validate]
+    pub change: PlaceChange,
 }
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
@@ -87,6 +117,7 @@ impl Place {
         let mr = MethodRouter::new()
             .get(Self::place_get)
             .post(Self::place_post)
+            .put(Self::place_put)
             .delete(Self::place_delete);
 
         Self {
@@ -96,6 +127,19 @@ impl Place {
                 mr,
             )],
         }
+    }
+
+    async fn place_put(
+        claims: Claims,
+        mut conn: DbConnHolder,
+        Query(PutPlace { place_name, change }): Query<PutPlace>,
+    ) -> Result<Json<ApiUserPlace>, StatusCode> {
+        let conn = &mut conn.0;
+        let user_id =
+            db::users::get_user(conn, db::users::Identifier::Username(&claims.username))?.id;
+        let place = update_user_place(conn, change as Update, place_name.as_str(), user_id)?;
+        let color = db::colors::get_color_by_id(conn, place.color_id)?;
+        Ok(Json(ApiUserPlace::from_user_place_and_color(place, color)))
     }
 
     async fn place_get(

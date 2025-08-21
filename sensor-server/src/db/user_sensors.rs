@@ -1,8 +1,8 @@
 use diesel::prelude::*;
 
 use crate::{
-    api::types::device_id::DeviceId,
-    db::{DbConn, Error, users},
+    api::{endpoints::sensor::SensorChange, types::device_id::DeviceId},
+    db::{DbConn, Error, colors, user_places, users},
     model::{self, NewUserSensor, UserPlace, UserSensor},
 };
 
@@ -117,6 +117,54 @@ pub fn get_user_sensor_and_place(
             Ok(res)
         }
     }
+}
+
+pub type Update = SensorChange;
+
+pub fn update_user_sensor(
+    conn: &mut DbConn,
+    auth_sensor: AuthorizedSensor,
+    update: Update,
+    user_id: i32,
+) -> Result<UserSensor, Error> {
+    use crate::schema::{
+        user_sensors::dsl as user_sensor, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
+
+    let mut sensor = auth_sensor.get();
+
+    match update {
+        SensorChange::PlaceName(api_entity_name) => {
+            sensor.place_id = user_places::get_user_place(
+                conn,
+                user_places::Identifier::PlaceNameAndUserId(api_entity_name.as_str(), user_id),
+            )?
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::NotFound("Place not found".into()))?
+            .id
+        }
+        SensorChange::Name(api_entity_name) => sensor.name = api_entity_name.into(),
+        SensorChange::Description(api_description) => {
+            sensor.description = api_description.map(|d| d.into())
+        }
+        SensorChange::Color(api_color) => {
+            sensor.color_id = colors::get_color_id(conn, colors::Identifier::Hex(api_color.into()))?
+        }
+    }
+
+    let rows = diesel::update(user_sensors_table)
+        .filter(user_sensor::id.eq(sensor.id))
+        .set(&sensor)
+        .execute(conn)?;
+
+    if rows == 0 {
+        Err(Error::NotFound(
+            "Not found, update didn't affect any rows".into(),
+        ))?
+    }
+
+    Ok(sensor)
 }
 
 pub fn delete_user_sensor(
