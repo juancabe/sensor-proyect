@@ -377,6 +377,11 @@ mod tests {
             upper_added_at: Some(resp2.api_data.added_at + 1),
         };
 
+        server.clear_headers();
+        server.add_header(
+            "Authorization",
+            "Bearer ".to_string() + resp2.new_session.access_token.as_str(),
+        );
         let res = server.get(&path).add_query_params(query).await;
         server.clear_query_params();
 
@@ -486,7 +491,7 @@ mod tests {
         // Unauthorized access to protected endpoints
         server.clear_headers();
         let res = server.get(&place_list_path).expect_failure().await;
-        assert_eq!(res.status_code(), StatusCode::BAD_REQUEST);
+        assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED);
 
         server.add_header("Authorization", "Bearer invalidjwt");
         let res = server.get(&sensor_list_path).expect_failure().await;

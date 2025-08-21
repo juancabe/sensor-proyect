@@ -9,13 +9,12 @@ Rust implementation for the sernsors server
 - [x] Add better log information for the endpoints
 - [x] Export bindings to TS
 - [x] Add Put endpoints where needed
-- [ ] Test new Put endpoints
 - [x] Use PoisonedIdentifiers correctly
-- [ ] Test PoisonedIdentifiers integration
-<!-- - [ ] Try to refactor DB to LazyLock<Mutex<...>> or something to share a DbConn on the state (maybe no) -->
+- [x] Transform other api-input types into Validated types
 - [x] Impose restrictions on user-input fields
+- [ ] Test new Put endpoints
+- [ ] Test PoisonedIdentifiers integration
 - [ ] Test Api... types and PoisonedIdentifiers better
-- [ ] Transform other api-input types into Validated types
 
 ## Main dependencies
 

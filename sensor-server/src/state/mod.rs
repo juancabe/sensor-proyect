@@ -60,6 +60,7 @@ impl PoisonableIdentifier {
     }
 
     fn poison_key(map: &PoisoningMap, key: String) -> Result<(), Error> {
+        log::trace!("Poisoning key: {key}");
         map.lock()
             .map_err(|e| Error::LockError(e.to_string().into()))?
             .insert(key, Self::now() + Self::POISON_TIME);

@@ -22,6 +22,7 @@ use crate::{
         user_sensors::AuthorizedSensor,
     },
     model::NewSensorData,
+    state::PoisonableIdentifier,
 };
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
@@ -203,12 +204,16 @@ impl SensorData {
             added_at: data.added_at.and_utc().timestamp() as usize,
         };
 
+        let jwt_id_hex = claims.jwt_id_hex(); // ID to Poison
         let claims = Claims::new(claims.username);
 
         let new_session = ApiSession::from_claims(claims).map_err(|e| {
             log::error!("Error generating new session from_claims: {e:?}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+        // Poison used JWT
+        PoisonableIdentifier::JWTId(jwt_id_hex).poison()?;
 
         Ok((
             jar.add(new_session.build_cookie()),
