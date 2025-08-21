@@ -1,10 +1,4 @@
-use hyper::StatusCode;
-
-use crate::{
-    api::{Endpoint, types::device_id::DeviceId},
-    db::{self, DbConn, Error},
-    model::UserSensor,
-};
+use crate::api::Endpoint;
 
 pub mod health;
 pub mod place;
@@ -24,33 +18,4 @@ pub fn generate_endpoints() -> Vec<Box<dyn Endpoint>> {
     endpoints.push(Box::new(health::Health::new()));
 
     endpoints
-}
-
-fn authorized_sensor(
-    conn: &mut DbConn,
-    device_id: &DeviceId,
-    username: &str,
-) -> Result<UserSensor, StatusCode> {
-    let db_res = db::user_sensors::get_user_sensor(
-        conn,
-        db::user_sensors::Identifier::SensorDeviceId(device_id),
-    )?;
-
-    let (place, sensor) = db_res
-        .into_iter()
-        .next()
-        .ok_or(Error::NotFound("NotFound".into()))?;
-
-    let user_id = db::users::get_user(conn, db::users::Identifier::Username(username))?.id;
-
-    if user_id != place.user_id {
-        log::warn!(
-            "User ({}) tried to operate with sensor ({}) that didn't belong to him",
-            username,
-            device_id.as_str()
-        );
-        Err(StatusCode::UNAUTHORIZED)
-    } else {
-        Ok(sensor)
-    }
 }

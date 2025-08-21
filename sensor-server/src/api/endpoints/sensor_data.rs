@@ -10,7 +10,7 @@ use crate::{
     RoutePath,
     api::{
         Endpoint,
-        endpoints::{authorized_sensor, session::ApiSession},
+        endpoints::session::ApiSession,
         route::Route,
         types::{ApiTimestamp, device_id::DeviceId},
     },
@@ -18,6 +18,7 @@ use crate::{
     db::{
         DbConnHolder,
         sensor_data::{Identifier, get_sensor_data, insert_sensor_data},
+        user_sensors::AuthorizedSensor,
     },
     model::NewSensorData,
 };
@@ -136,7 +137,7 @@ impl SensorData {
         Query(payload): Query<GetSensorData>,
     ) -> Result<Json<Vec<ApiSensorData>>, StatusCode> {
         let conn = &mut conn.0;
-        let sensor = authorized_sensor(conn, &payload.device_id, &claims.username)?;
+        let sensor = AuthorizedSensor::new(conn, &payload.device_id, &claims.username)?;
 
         log::trace!("Getting data for sensor: {sensor:?}");
 
@@ -150,6 +151,8 @@ impl SensorData {
         let range = low..up;
 
         log::trace!("Range was: {range:?}");
+
+        let sensor = sensor.get();
 
         let sensor_data: Vec<ApiSensorData> =
             get_sensor_data(conn, Identifier::SensorId(sensor.id), low..up)?
@@ -172,7 +175,7 @@ impl SensorData {
     ) -> Result<Json<PostSensorDataResponse>, StatusCode> {
         let conn = &mut conn.0;
 
-        let sensor = authorized_sensor(conn, &payload.device_id, &claims.username)?;
+        let sensor = AuthorizedSensor::new(conn, &payload.device_id, &claims.username)?;
 
         log::trace!(
             "Adding data to sensor {sensor:?}, data: {:?}",
@@ -183,6 +186,8 @@ impl SensorData {
             .created_at
             .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp as i64, 0))
             .and_then(|date| Some(date.naive_utc()));
+
+        let sensor = sensor.get();
 
         let new_data = NewSensorData {
             sensor_id: sensor.id,

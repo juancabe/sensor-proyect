@@ -2,9 +2,35 @@ use diesel::prelude::*;
 
 use crate::{
     api::types::device_id::DeviceId,
-    db::{DbConn, Error},
+    db::{DbConn, Error, users},
     model::{self, NewUserSensor, UserPlace, UserSensor},
 };
+
+#[derive(Debug, Clone)]
+pub struct AuthorizedSensor(UserSensor);
+
+impl AuthorizedSensor {
+    pub fn new(conn: &mut DbConn, device_id: &DeviceId, username: &str) -> Result<Self, Error> {
+        let (place, sensor) = _get_user_sensor_and_place_unauthorized(conn, device_id.as_str())?;
+
+        let user_id = users::get_user(conn, users::Identifier::Username(username))?.id;
+
+        if user_id != place.user_id {
+            log::warn!(
+                "User ({}) tried to operate with sensor ({}) that didn't belong to him",
+                username,
+                device_id.as_str()
+            );
+            Err(Error::NotFound("Sensor not found".into()))
+        } else {
+            Ok(Self(sensor))
+        }
+    }
+
+    pub fn get(self) -> UserSensor {
+        self.0
+    }
+}
 
 pub fn insert_user_sensor(conn: &mut DbConn, sensor: NewUserSensor) -> Result<UserSensor, Error> {
     use crate::schema::user_sensors::dsl::user_sensors as user_sensors_table;
@@ -17,25 +43,52 @@ pub fn insert_user_sensor(conn: &mut DbConn, sensor: NewUserSensor) -> Result<Us
         .map(|e| e.clone())
 }
 
-pub enum Identifier<'a> {
-    PlaceNameAndUserId(&'a str, i32),
-    SensorDeviceId(&'a DeviceId),
+fn _get_user_sensor_and_place_unauthorized(
+    conn: &mut DbConn,
+    device_id: &str,
+) -> Result<(UserPlace, UserSensor), Error> {
+    use crate::schema::{
+        user_sensors::dsl as user_sensor, user_sensors::dsl::user_sensors as user_sensors_table,
+    };
+
+    use crate::schema::user_places::dsl::user_places as user_places_table;
+
+    let res = user_sensors_table
+        .filter(user_sensor::device_id.eq(device_id))
+        .inner_join(user_places_table)
+        .select((
+            model::UserPlace::as_select(),
+            model::UserSensor::as_select(),
+        ))
+        .load(conn)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::NotFound("Sensor not found".into()))?;
+
+    Ok(res)
 }
 
-pub fn get_user_sensor(
+pub enum Identifier<'a> {
+    PlaceNameAndUserId(&'a str, i32),
+    SensorDeviceId(AuthorizedSensor),
+}
+
+pub fn get_user_sensor_and_place(
     conn: &mut DbConn,
     identifier: Identifier,
 ) -> Result<Vec<(UserPlace, UserSensor)>, Error> {
     match identifier {
-        Identifier::SensorDeviceId(device_id) => {
+        Identifier::SensorDeviceId(auth_sensor) => {
             use crate::schema::user_places::dsl::user_places as user_places_table;
             use crate::schema::{
                 user_sensors::dsl as user_sensor,
                 user_sensors::dsl::user_sensors as user_sensors_table,
             };
 
+            let sensor = auth_sensor.get();
+
             let res = user_sensors_table
-                .filter(user_sensor::device_id.eq(device_id.as_str()))
+                .filter(user_sensor::device_id.eq(sensor.device_id))
                 .inner_join(user_places_table)
                 .select((
                     model::UserPlace::as_select(),
@@ -71,7 +124,7 @@ pub fn delete_user_sensor(
     identifier: Identifier,
 ) -> Result<Vec<(UserPlace, UserSensor)>, Error> {
     match identifier {
-        Identifier::SensorDeviceId(device_id) => {
+        Identifier::SensorDeviceId(auth_sensor) => {
             use crate::schema::{
                 user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
             };
@@ -80,8 +133,10 @@ pub fn delete_user_sensor(
                 user_sensors::dsl::user_sensors as user_sensors_table,
             };
 
+            let sensor = auth_sensor.get();
+
             let sensor = user_sensors_table
-                .filter(user_sensor::device_id.eq(device_id.as_str()))
+                .filter(user_sensor::device_id.eq(sensor.device_id))
                 .first::<UserSensor>(conn)?;
 
             let place = user_places_table
@@ -169,7 +224,7 @@ mod tests {
         let (user, _) = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
-        let _p1 = get_user_sensor(
+        let _p1 = get_user_sensor_and_place(
             &mut conn,
             Identifier::PlaceNameAndUserId(&place.name, user.id),
         )

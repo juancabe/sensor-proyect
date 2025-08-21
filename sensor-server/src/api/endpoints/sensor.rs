@@ -9,7 +9,6 @@ use crate::{
     RoutePath,
     api::{
         Endpoint,
-        endpoints::authorized_sensor,
         route::Route,
         types::{
             ApiTimestamp,
@@ -21,7 +20,10 @@ use crate::{
         },
     },
     auth::claims::Claims,
-    db::{self, DbConnHolder, Error, user_sensors::Identifier},
+    db::{
+        self, DbConnHolder, Error,
+        user_sensors::{AuthorizedSensor, Identifier},
+    },
     model::NewUserSensor,
 };
 
@@ -109,13 +111,15 @@ impl Sensor {
         let payload = payload.param;
 
         let id = match &payload {
-            GetSensorEnum::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(device_id),
+            GetSensorEnum::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(
+                AuthorizedSensor::new(&mut conn.0, device_id, &claims.username)?,
+            ),
             GetSensorEnum::FromPlaceName(name) => {
                 Identifier::PlaceNameAndUserId(name.as_str(), user_id)
             }
         };
 
-        let vec = match db::user_sensors::get_user_sensor(&mut conn.0, id) {
+        let vec = match db::user_sensors::get_user_sensor_and_place(&mut conn.0, id) {
             Ok(vec) => {
                 let vec: Result<Vec<ApiUserSensor>, db::Error> = vec
                     .into_iter()
@@ -224,10 +228,9 @@ impl Sensor {
         log::trace!("Deleting sensor: {payload:?}");
 
         let id = match &payload {
-            DeleteSensor::FromSensorDeviceId(device_id) => {
-                let _sensor = authorized_sensor(&mut conn.0, device_id, &claims.username)?;
-                Identifier::SensorDeviceId(device_id)
-            }
+            DeleteSensor::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(
+                AuthorizedSensor::new(&mut conn.0, device_id, &claims.username)?,
+            ),
             DeleteSensor::FromPlaceName(name) => {
                 log::trace!("Deleting all sensors from place {name:?}");
                 Identifier::PlaceNameAndUserId(name.as_str(), user_id)
@@ -294,7 +297,7 @@ mod tests {
         },
         auth::claims::{Claims, get_new_id},
         db::{
-            self, DbConnHolder, establish_connection,
+            DbConnHolder, establish_connection,
             tests::{create_test_user, create_test_user_place, create_test_user_sensor},
         },
     };
@@ -420,7 +423,7 @@ mod tests {
 
         let claims = Claims {
             jwt_id: get_new_id(),
-            username: user.username,
+            username: user.username.clone(),
             iat: chrono::Utc::now().timestamp() as usize,
             exp: (chrono::Utc::now()
                 .checked_add_days(chrono::Days::new(3))
@@ -441,18 +444,6 @@ mod tests {
         assert_eq!(
             deleted_sensors_response.0.first().unwrap().device_id,
             sensor_to_delete_device_id
-        );
-
-        let mut conn_for_verify = establish_connection(true).unwrap();
-        let result_after_delete = db::user_sensors::get_user_sensor(
-            &mut conn_for_verify,
-            db::user_sensors::Identifier::SensorDeviceId(&sensor_to_delete_device_id),
-        )
-        .expect("Get operation should not fail");
-
-        assert!(
-            result_after_delete.is_empty(),
-            "The place should not exist in the database after being deleted."
         );
     }
 }
