@@ -2,7 +2,6 @@ use axum::{extract::Query, routing::MethodRouter};
 use axum_serde_valid::Json;
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use hyper::StatusCode;
-use jsonwebtoken::{Header, encode};
 use serde::{Deserialize, Serialize};
 use serde_valid::{Validate, json::json};
 use ts_rs::TS;
@@ -11,11 +10,11 @@ use crate::{
     RoutePath,
     api::{
         Endpoint,
-        endpoints::authorized_sensor,
+        endpoints::{authorized_sensor, session::ApiSession},
         route::Route,
         types::{ApiTimestamp, device_id::DeviceId},
     },
-    auth::{claims::Claims, keys::KEYS},
+    auth::claims::Claims,
     db::{
         DbConnHolder,
         sensor_data::{Identifier, get_sensor_data, insert_sensor_data},
@@ -33,11 +32,10 @@ pub struct ApiSensorData {
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor_data/")]
+// WARN: Dont accept this in any endpoint
 pub struct PostSensorDataResponse {
-    #[validate]
     pub api_data: ApiSensorData,
-    #[validate(max_length = 1000)]
-    pub new_jwt: String,
+    pub new_session: ApiSession,
 }
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
@@ -201,12 +199,15 @@ impl SensorData {
 
         let claims = Claims::new(claims.username);
 
-        let new_jwt = encode(&Header::default(), &claims, &KEYS.encoding).map_err(|e| {
-            log::error!("Error encoding JWT from {claims:?}: {e:?}");
+        let new_session = ApiSession::from_claims(claims).map_err(|e| {
+            log::error!("Error generating new session from_claims: {e:?}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        Ok(Json(PostSensorDataResponse { api_data, new_jwt }))
+        Ok(Json(PostSensorDataResponse {
+            api_data,
+            new_session,
+        }))
     }
 }
 

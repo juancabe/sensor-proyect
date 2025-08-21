@@ -9,10 +9,11 @@ Rust implementation for the sernsors server
 - [x] Add better log information for the endpoints
 - [x] Export bindings to TS
 - [ ] Add Put endpoints where needed
-- [ ] Use PoisonedIdentifiers correctly
-- [ ] Try to refactor DB to LazyLock<Mutex<...>> or something to share a DbConn on the state (maybe no)
+- [x] Use PoisonedIdentifiers correctly
+- [ ] Test PoisonedIdentifiers integration
+<!-- - [ ] Try to refactor DB to LazyLock<Mutex<...>> or something to share a DbConn on the state (maybe no) -->
 - [x] Impose restrictions on user-input fields
-- [ ] Test Api... types and Poisoning Middleware better
+- [ ] Test Api... types and PoisonedIdentifiers better
 - [ ] Transform other api-input types into Validated types
 
 ## Main dependencies
@@ -25,6 +26,7 @@ Rust implementation for the sernsors server
 
 - diesel-rs: database ORM
 - axum: providing HTTP server abstractions and implementations
+- and more
 
 ## How to setup
 

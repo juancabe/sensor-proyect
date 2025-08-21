@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
-use dotenv::dotenv;
 use jsonwebtoken::{DecodingKey, EncodingKey};
+use rand::{TryRngCore, rngs::OsRng};
 
 pub struct Keys {
     pub encoding: EncodingKey,
@@ -18,7 +18,12 @@ impl Keys {
 }
 
 pub static KEYS: LazyLock<Keys> = LazyLock::new(|| {
-    dotenv().expect("Should have a .env in proyect root");
-    let secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-    Keys::new(secret.as_bytes())
+    // Generate per-runtime Keys
+    const LEN: usize = 512;
+
+    let mut buff = vec![0u8; LEN];
+    OsRng
+        .try_fill_bytes(&mut buff)
+        .expect("OsRng should be able to generate random");
+    Keys::new(&buff)
 });

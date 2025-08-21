@@ -9,6 +9,7 @@ use crate::{
     RoutePath,
     api::{
         Endpoint,
+        endpoints::session::ApiSession,
         route::Route,
         types::{
             ApiTimestamp,
@@ -23,9 +24,10 @@ use crate::{
         users::{Identifier, Update, get_user, insert_user, update_user},
     },
     model::NewUser,
+    state::PoisonableIdentifier,
 };
 
-#[derive(TS, Debug, Serialize, Deserialize, Validate)]
+#[derive(TS, Debug, Serialize, Deserialize, Validate, Clone)]
 #[ts(export, export_to = "./api/endpoints/user/")]
 pub struct ApiUser {
     #[validate]
@@ -40,12 +42,20 @@ pub struct ApiUser {
 #[ts(export, export_to = "./api/endpoints/user/")]
 pub struct GetUser {}
 
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate, Clone)]
 #[ts(export, export_to = "./api/endpoints/user/")]
 pub enum PutUser {
     Username(#[validate] ApiUsername),
     RawPassword(#[validate] ApiRawPassword),
     Email(#[validate] ApiEmail),
+}
+
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate, Clone)]
+#[ts(export, export_to = "./api/endpoints/user/")]
+// WARN: Dont accept this in any endpoint
+pub struct PutUserResponse {
+    pub updated: ApiUser,
+    pub new_session: ApiSession,
 }
 
 /// Register User
@@ -77,8 +87,8 @@ impl User {
     pub fn new() -> User {
         let mr = MethodRouter::new()
             .get(Self::user_get)
-            .post(Self::user_post)
-            .put(Self::user_put);
+            .post(Self::user_post) // Register
+            .put(Self::user_put); // Update
 
         Self {
             resources: vec![Route::new(
@@ -138,7 +148,7 @@ impl User {
         mut conn: DbConnHolder,
         claims: Claims,
         Json(payload): Json<PutUser>,
-    ) -> Result<Json<ApiUser>, StatusCode> {
+    ) -> Result<Json<PutUserResponse>, StatusCode> {
         let conn = &mut conn.0;
 
         let user = get_user(conn, Identifier::Username(&claims.username))?;
@@ -151,6 +161,7 @@ impl User {
             PutUser::RawPassword(_) => None,
             PutUser::Email(em) => Some(Identifier::Email(em.as_str())),
         };
+
         if let Some(identifier) = identifier {
             match Self::user_field_exists_for_some_user(conn, identifier.clone(), Some(user.id)) {
                 Ok(exists) => {
@@ -163,14 +174,55 @@ impl User {
             }
         }
 
+        // Check for poisoned
+        let identifier = match &payload {
+            PutUser::Username(un) => Some(PoisonableIdentifier::Username(un.clone().into())),
+            PutUser::RawPassword(_) => None,
+            PutUser::Email(em) => Some(PoisonableIdentifier::Email(em.clone().into())),
+        };
+
+        if let Some(identifier) = identifier {
+            match identifier.is_poisoned() {
+                Ok(poisoned) => {
+                    if poisoned {
+                        log::warn!("user_put failed, poisoned value: {identifier:?}");
+                        Err(StatusCode::CONFLICT)?
+                    }
+                }
+                Err(e) => Err(e)?,
+            }
+        }
+
         let user = update_user(
             conn,
             Identifier::Username(&claims.username),
-            payload as Update,
+            payload.clone() as Update,
         )?;
 
         log::trace!("User updated to: {user:?}");
 
+        // Poison last identifier
+        let identifier = match &payload {
+            PutUser::Username(un) => Some(PoisonableIdentifier::Username(un.clone().into())),
+            PutUser::RawPassword(_) => None,
+            PutUser::Email(em) => Some(PoisonableIdentifier::Email(em.clone().into())),
+        };
+
+        if let Some(identifier) = identifier {
+            match identifier.poison() {
+                Ok(()) => {
+                    log::trace!("Identifier: {identifier:?} poisoned");
+                }
+                Err(e) => Err(e)?,
+            }
+        }
+
+        // Poison used JWT Id
+        let id = PoisonableIdentifier::JWTId(claims.jwt_id_hex());
+        id.poison()?;
+        log::trace!("Identifier: {id:?} poisoned");
+
+        // Return updated
         let crate::model::User {
             id: _,
             username,
@@ -184,14 +236,25 @@ impl User {
         let created_at = created_at.and_utc().timestamp() as ApiTimestamp;
         let updated_at = updated_at.and_utc().timestamp() as ApiTimestamp;
 
-        let username = username.into();
+        let username: ApiUsername = username.into();
         let email = email.into();
 
-        Ok(Json(ApiUser {
+        let new_session =
+            ApiSession::from_claims(Claims::new(username.clone().into())).map_err(|e| {
+                log::error!("Could not construct new_session from claims: {e:?}");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+        let updated = ApiUser {
             username,
             email,
             created_at,
             updated_at,
+        };
+
+        Ok(Json(PutUserResponse {
+            updated,
+            new_session,
         }))
     }
 
@@ -208,6 +271,40 @@ impl User {
             raw_password,
             email,
         } = payload;
+
+        // Check if attempting to register with poisoned username
+        match PoisonableIdentifier::Username(username.clone().into()).is_poisoned() {
+            Ok(is) => {
+                if is {
+                    log::warn!("User tried to register poisoned username: {username:?}");
+                    return (
+                        StatusCode::CONFLICT,
+                        Json(Some(NotUniqueUser::Username(username.into()))),
+                    );
+                }
+            }
+            Err(e) => {
+                log::error!("Error checking is_poisoned: {e:?}");
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(None));
+            }
+        }
+
+        // Check if attempting to register with poisoned email
+        match PoisonableIdentifier::Email(email.clone().into()).is_poisoned() {
+            Ok(is) => {
+                if is {
+                    log::warn!("User tried to register poisoned email: {email:?}");
+                    return (
+                        StatusCode::CONFLICT,
+                        Json(Some(NotUniqueUser::Email(email.into()))),
+                    );
+                }
+            }
+            Err(e) => {
+                log::error!("Error checking is_poisoned: {e:?}");
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(None));
+            }
+        }
 
         match Self::user_field_exists_for_some_user(
             conn,
@@ -384,7 +481,7 @@ mod test {
         let res = User::user_put(DbConnHolder(conn), claims, Json(json))
             .await
             .expect("Should not fail");
-        assert_eq!(res.username, new_username);
+        assert_eq!(res.updated.username, new_username);
     }
 
     #[tokio::test]

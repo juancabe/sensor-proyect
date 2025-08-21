@@ -59,7 +59,7 @@ impl ApiRawPassword {
         Ok(hash.to_string())
     }
 
-    pub fn password_matches(&self, stored_hash: &str) -> bool {
+    pub fn password_matches_raw(&self, stored_hash: &str) -> bool {
         if let Ok(parsed_hash) = PasswordHash::new(stored_hash) {
             Argon2::default()
                 .verify_password(self.as_str().as_bytes(), &parsed_hash)

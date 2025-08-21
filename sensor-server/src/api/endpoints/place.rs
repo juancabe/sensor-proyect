@@ -260,7 +260,7 @@ mod tests {
 
     use crate::{
         api::endpoints::place::{DeletePlace, GetPlace, GetPlaceEnum, Place, PostPlace},
-        auth::claims::Claims,
+        auth::claims::{Claims, get_new_id},
         db::{
             DbConnHolder, establish_connection,
             tests::{create_test_user, create_test_user_place},
@@ -276,6 +276,7 @@ mod tests {
         let user_place = create_test_user_place(&mut conn, &user);
 
         let claims = Claims {
+            jwt_id: get_new_id(),
             username: user.username,
             iat: chrono::Utc::now().timestamp() as usize,
             exp: (chrono::Utc::now()
@@ -307,6 +308,7 @@ mod tests {
         let body = GetPlaceEnum::FromPlaceName(user_place.name.clone().into());
 
         let claims = Claims {
+            jwt_id: get_new_id(),
             username: user.username,
             iat: chrono::Utc::now().timestamp() as usize,
             exp: (chrono::Utc::now()
@@ -341,6 +343,7 @@ mod tests {
         };
 
         let claims = Claims {
+            jwt_id: get_new_id(),
             username: user.username,
             iat: chrono::Utc::now().timestamp() as usize,
             exp: (chrono::Utc::now()
@@ -366,6 +369,7 @@ mod tests {
         let payload = DeletePlace::FromPlaceName(place_to_delete.name.clone().into());
 
         let claims = Claims {
+            jwt_id: get_new_id(),
             username: user.username,
             iat: chrono::Utc::now().timestamp() as usize,
             exp: (chrono::Utc::now()

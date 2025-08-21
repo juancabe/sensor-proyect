@@ -34,20 +34,27 @@ impl std::error::Error for Error {}
 impl From<Error> for StatusCode {
     fn from(value: Error) -> Self {
         match value {
-            Error::LockError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::LockError(e) => {
+                log::error!(
+                    "Turning PoisonableIdentifier Error::LockError into INTERNAL_SERVER_ERROR, e: {e:?}"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         }
     }
 }
 
 // TODO: Use this PoisonableIdentifiers correctly
 
-pub enum PoisonableIdentifiers {
-    JWT(String),
+#[derive(Debug, Clone)]
+pub enum PoisonableIdentifier {
+    // Hex that identifies a JWT
+    JWTId(String),
     Username(String),
     Email(String),
 }
 
-impl PoisonableIdentifiers {
+impl PoisonableIdentifier {
     pub const POISON_TIME: ApiTimestamp = 10 * 60; // 10 minutes
 
     fn now() -> ApiTimestamp {
@@ -72,25 +79,25 @@ impl PoisonableIdentifiers {
 
     fn as_key(&self) -> &String {
         match self {
-            PoisonableIdentifiers::JWT(k) => k,
-            PoisonableIdentifiers::Username(k) => k,
-            PoisonableIdentifiers::Email(k) => k,
+            PoisonableIdentifier::JWTId(k) => k,
+            PoisonableIdentifier::Username(k) => k,
+            PoisonableIdentifier::Email(k) => k,
         }
     }
 
     fn into_key(&self) -> String {
         match self {
-            PoisonableIdentifiers::JWT(k) => k.clone(),
-            PoisonableIdentifiers::Username(k) => k.clone(),
-            PoisonableIdentifiers::Email(k) => k.clone(),
+            PoisonableIdentifier::JWTId(k) => k.clone(),
+            PoisonableIdentifier::Username(k) => k.clone(),
+            PoisonableIdentifier::Email(k) => k.clone(),
         }
     }
 
     fn associated_map(&self) -> &PoisoningMap {
         match self {
-            PoisonableIdentifiers::JWT(_) => &POISONED_JWTS,
-            PoisonableIdentifiers::Username(_) => &POISONED_USERNAMES,
-            PoisonableIdentifiers::Email(_) => &POISONED_EMAILS,
+            PoisonableIdentifier::JWTId(_) => &POISONED_JWTS,
+            PoisonableIdentifier::Username(_) => &POISONED_USERNAMES,
+            PoisonableIdentifier::Email(_) => &POISONED_EMAILS,
         }
     }
 

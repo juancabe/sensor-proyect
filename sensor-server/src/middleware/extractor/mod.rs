@@ -56,11 +56,11 @@ where
             .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
         // Check state poisoned status
-        if state::PoisonableIdentifiers::JWT(jwt.to_string()).is_poisoned()? {
+        if state::PoisonableIdentifier::JWTId(token_data.claims.jwt_id_hex()).is_poisoned()? {
             log::warn!("Tried to access with poisoned JWT: {jwt}, token_data: {token_data:?}");
             return Err(StatusCode::UNAUTHORIZED);
         }
-        if state::PoisonableIdentifiers::Username(token_data.claims.username.clone())
+        if state::PoisonableIdentifier::Username(token_data.claims.username.clone())
             .is_poisoned()?
         {
             log::warn!(

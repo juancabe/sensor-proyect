@@ -1,7 +1,6 @@
 use axum::{extract::Query, routing::MethodRouter};
 use axum_serde_valid::Json;
 use hyper::StatusCode;
-use jsonwebtoken::{Header, encode};
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
 use ts_rs::TS;
@@ -13,8 +12,9 @@ use crate::{
         route::Route,
         types::validate::{api_raw_password::ApiRawPassword, api_username::ApiUsername},
     },
-    auth::{claims::Claims, keys::KEYS},
+    auth::claims::Claims,
     db::{self, DbConnHolder, users},
+    state::PoisonableIdentifier,
 };
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
@@ -30,7 +30,7 @@ pub struct GetSession {
 #[ts(export, export_to = "./api/endpoints/session/")]
 pub struct PostSession {}
 
-#[derive(TS, Debug, Serialize, Deserialize)]
+#[derive(TS, Debug, Serialize, Deserialize, Clone)]
 #[ts(export, export_to = "./api/endpoints/session/")]
 // WARN: Dont accept this in any endpoint
 pub struct ApiSession {
@@ -46,6 +46,11 @@ impl ApiSession {
             expires_in,
             token_type: "Bearer".to_string(),
         }
+    }
+
+    pub fn from_claims(claims: Claims) -> Result<Self, jsonwebtoken::errors::Error> {
+        let jwt = claims.encode_jwt()?;
+        Ok(Self::new(jwt, claims.exp - claims.iat))
     }
 }
 
@@ -69,40 +74,22 @@ impl Session {
     }
 
     async fn session_post(
-        mut conn: DbConnHolder,
+        // mut conn: DbConnHolder,
         claims: Claims,
     ) -> Result<Json<ApiSession>, StatusCode> {
         log::trace!("Renewing JWT for user: {}", claims.username);
-        {
-            // Check if the user changed auth between JWT renewals
-            let user = db::users::get_user(
-                &mut conn.0,
-                db::users::Identifier::Username(&claims.username),
-            )
-            .map_err(|e| match e {
-                db::Error::NotFound(e) => {
-                    log::info!("The user didn't exist so the DB returned the code: {e:?}");
-                    StatusCode::UNAUTHORIZED
-                }
-                _ => e.into(),
-            })?;
+        // Poison outdated JWT
+        PoisonableIdentifier::JWTId(claims.jwt_id_hex()).poison()?;
 
-            if user.updated_auth_at.and_utc().timestamp() as usize > claims.iat {
-                log::warn!(
-                    "User {} tried to session_post when his user.updated_auth_at > claims.iat",
-                    user.username
-                );
-                Err(StatusCode::UNAUTHORIZED)?
-            }
-        }
+        let username = claims.username.clone();
 
         let claims = Claims::new(claims.username);
 
-        match encode(&Header::default(), &claims, &KEYS.encoding) {
-            Ok(jwt) => Ok(Json(ApiSession::new(jwt, claims.exp - claims.exp))),
+        match ApiSession::from_claims(claims) {
+            Ok(ass) => Ok(Json(ass)),
             Err(e) => {
                 log::error!(
-                    "Error generating new claims for encode(default, {claims:?}, &KEYS.encoding): {e:?}"
+                    "Error generating new session from_claims for username ({username}): {e:?}"
                 );
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
             }
@@ -131,14 +118,25 @@ impl Session {
         })?
         .hashed_password;
 
-        if !payload.raw_password.password_matches(&db_hashed_password) {
+        if !payload
+            .raw_password
+            .password_matches_raw(&db_hashed_password)
+        {
             log::warn!("Passwords didn't match for payload: {payload:?}");
             return Err(StatusCode::UNAUTHORIZED);
         }
 
+        if PoisonableIdentifier::Username(payload.username.clone().into()).is_poisoned()? {
+            log::error!(
+                "Username should not be in DB when its poisoned, username: {:?}",
+                payload.username
+            );
+            Err(StatusCode::INTERNAL_SERVER_ERROR)?
+        }
+
         let claims = Claims::new(payload.username.into());
 
-        match encode(&Header::default(), &claims, &KEYS.encoding) {
+        match claims.encode_jwt() {
             Ok(jwt) => Ok(Json(ApiSession::new(jwt, claims.exp - claims.iat))),
             Err(e) => {
                 log::error!(
@@ -166,7 +164,7 @@ mod test {
     use chrono::TimeDelta;
 
     use crate::{
-        auth::claims::Claims,
+        auth::claims::{Claims, get_new_id},
         db::{establish_connection, tests::create_test_user},
     };
 
@@ -183,40 +181,13 @@ mod test {
         let half_day = TimeDelta::hours(12);
 
         let claims = Claims {
+            jwt_id: get_new_id(),
             username: user.username,
-            iat: user.updated_auth_at.and_utc().timestamp() as usize - 1, // iat should be bigger
+            iat: user.updated_auth_at.and_utc().timestamp() as usize - 1,
             exp: now.checked_add_signed(half_day).unwrap().timestamp() as usize,
         };
 
-        let conn = DbConnHolder(conn_nref);
-
-        match Session::session_post(conn, claims).await {
-            Ok(_) => {
-                panic!("Should have failed");
-            }
-            Err(_) => (),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_session_post_should_fail() {
-        let mut conn_nref = establish_connection(true).unwrap();
-        let conn = &mut conn_nref;
-
-        let (user, _) = create_test_user(conn);
-
-        let now = chrono::Utc::now();
-        let half_day = TimeDelta::hours(12);
-
-        let claims = Claims {
-            username: user.username,
-            iat: user.updated_auth_at.and_utc().timestamp() as usize, // iat should be bigger
-            exp: now.checked_add_signed(half_day).unwrap().timestamp() as usize,
-        };
-
-        let conn = DbConnHolder(conn_nref);
-
-        let _session = Session::session_post(conn, claims)
+        Session::session_post(claims)
             .await
             .expect("Should not fail");
     }

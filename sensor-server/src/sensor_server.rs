@@ -366,7 +366,7 @@ mod tests {
         server.clear_headers();
         server.add_header(
             "Authorization",
-            "Bearer ".to_string() + resp1.new_jwt.as_str(),
+            "Bearer ".to_string() + resp1.new_session.access_token.as_str(),
         );
         let res = server.post(&path).json(&body).await;
         let resp2: PostSensorDataResponse = res.json();
@@ -441,7 +441,7 @@ mod tests {
         server.clear_headers();
         server.add_header(
             "Authorization",
-            "Bearer ".to_string() + resp2.new_jwt.as_str(),
+            "Bearer ".to_string() + resp2.new_session.access_token.as_str(),
         );
 
         // GET list of places

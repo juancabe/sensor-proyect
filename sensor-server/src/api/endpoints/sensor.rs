@@ -292,7 +292,7 @@ mod tests {
             endpoints::sensor::{DeleteSensor, GetSensor, GetSensorEnum, PostSensor, Sensor},
             types::device_id::DeviceId,
         },
-        auth::claims::Claims,
+        auth::claims::{Claims, get_new_id},
         db::{
             self, DbConnHolder, establish_connection,
             tests::{create_test_user, create_test_user_place, create_test_user_sensor},
@@ -311,6 +311,7 @@ mod tests {
         );
 
         let claims = Claims {
+            jwt_id: get_new_id(),
             username: user.username,
             iat: chrono::Utc::now().timestamp() as usize,
             exp: (chrono::Utc::now()
@@ -346,6 +347,7 @@ mod tests {
         let body = GetSensorEnum::FromPlaceName(user_place.name.clone().into());
 
         let claims = Claims {
+            jwt_id: get_new_id(),
             username: user.username,
             iat: chrono::Utc::now().timestamp() as usize,
             exp: (chrono::Utc::now()
@@ -386,6 +388,7 @@ mod tests {
         };
 
         let claims = Claims {
+            jwt_id: get_new_id(),
             username: user.username,
             iat: chrono::Utc::now().timestamp() as usize,
             exp: (chrono::Utc::now()
@@ -416,6 +419,7 @@ mod tests {
         let payload = DeleteSensor::FromSensorDeviceId(sensor_to_delete_device_id.clone());
 
         let claims = Claims {
+            jwt_id: get_new_id(),
             username: user.username,
             iat: chrono::Utc::now().timestamp() as usize,
             exp: (chrono::Utc::now()
