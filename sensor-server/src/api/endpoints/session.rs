@@ -1,4 +1,4 @@
-use axum::{extract::Query, routing::MethodRouter};
+use axum::routing::MethodRouter;
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use axum_serde_valid::Json;
 use hyper::StatusCode;
@@ -21,7 +21,7 @@ use crate::{
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/session/")]
-pub struct GetSession {
+pub struct PostSession {
     #[validate]
     pub username: ApiUsername,
     #[validate]
@@ -30,7 +30,7 @@ pub struct GetSession {
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/session/")]
-pub struct PostSession {}
+pub struct PutSession {}
 
 #[derive(TS, Debug, Serialize, Deserialize, Clone)]
 #[ts(export, export_to = "./api/endpoints/session/")]
@@ -75,8 +75,8 @@ impl Session {
     pub const API_PATH: &str = "/session";
     pub fn new() -> Session {
         let mr = MethodRouter::new()
-            .get(Self::session_get)
-            .post(Self::session_post);
+            .post(Self::session_post)
+            .put(Self::session_put);
         Self {
             resources: vec![Route::new(
                 RoutePath::from_string(Self::API_PATH.to_string())
@@ -86,7 +86,7 @@ impl Session {
         }
     }
 
-    async fn session_post(
+    async fn session_put(
         jar: CookieJar,
         claims: Claims,
     ) -> Result<(CookieJar, Json<ApiSession>), StatusCode> {
@@ -109,10 +109,10 @@ impl Session {
         }
     }
 
-    pub async fn session_get(
+    pub async fn session_post(
         mut conn: DbConnHolder,
         jar: CookieJar,
-        Query(payload): Query<GetSession>,
+        Json(payload): Json<PostSession>,
     ) -> Result<(CookieJar, Json<ApiSession>), StatusCode> {
         log::trace!("Generating new JWT");
 
@@ -199,7 +199,7 @@ mod test {
             exp: now.checked_add_signed(half_day).unwrap().timestamp() as usize,
         };
 
-        Session::session_post(CookieJar::new(), claims)
+        Session::session_put(CookieJar::new(), claims)
             .await
             .expect("Should not fail");
     }
@@ -210,13 +210,13 @@ mod test {
         let conn = &mut conn_nref;
         let (user, pass) = create_test_user(conn);
 
-        let json = GetSession {
+        let json = PostSession {
             username: user.username.into(),
             raw_password: pass,
         };
 
         let conn = DbConnHolder(conn_nref);
-        let _res = Session::session_get(conn, CookieJar::new(), Query(json))
+        let _res = Session::session_post(conn, CookieJar::new(), Json(json))
             .await
             .expect("Should not fail");
     }

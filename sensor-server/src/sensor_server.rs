@@ -90,7 +90,7 @@ mod tests {
                 sensor_data::{
                     ApiSensorData, GetSensorData, PostSensorData, PostSensorDataResponse,
                 },
-                session::{ApiSession, GetSession},
+                session::{ApiSession, PostSession},
                 user::{ApiUser, GetUser, NotUniqueUser, PostUser},
             },
             types::validate::{
@@ -208,15 +208,12 @@ mod tests {
             endpoints::session::Session::API_PATH
         );
 
-        let query = GetSession {
+        let query = PostSession {
             username: username.clone(),
             raw_password: raw_password.clone(),
         };
 
-        let res = server
-            .get(path.as_str())
-            .add_query_params(json!(query))
-            .await;
+        let res = server.post(path.as_str()).json(&json!(query)).await;
         let session: ApiSession = res.json();
 
         server.clear_query_params();
@@ -408,17 +405,13 @@ mod tests {
             endpoints::session::Session::API_PATH
         );
 
-        let query = GetSession {
+        let query = PostSession {
             username: username.clone(),
             raw_password: ApiRawPassword::random(),
         };
 
         server.clear_headers();
-        let res = server
-            .get(&path)
-            .add_query_params(query)
-            .expect_failure()
-            .await;
+        let res = server.post(&path).json(&query).expect_failure().await;
 
         assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED);
 
@@ -429,17 +422,13 @@ mod tests {
             endpoints::session::Session::API_PATH
         );
 
-        let query = GetSession {
+        let query = PostSession {
             username: ApiUsername::random(),
             raw_password: raw_password.clone(),
         };
 
         server.clear_headers();
-        let res = server
-            .get(&path)
-            .add_query_params(query)
-            .expect_failure()
-            .await;
+        let res = server.post(&path).json(&query).expect_failure().await;
         assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED);
 
         server.clear_headers();
