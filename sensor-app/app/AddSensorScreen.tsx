@@ -5,89 +5,57 @@ import BackgroundView from '@/components/ui-elements/BackgroundView';
 import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
 import useBLE from '@/hooks/useBLE';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Button, StyleSheet } from 'react-native';
 import { Device } from 'react-native-ble-plx';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useRouter } from 'expo-router';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
-import { API_COLORS } from '@/constants/api_colors';
+import { useApiEntityName } from '@/hooks/api/useApiEntityName';
+import { useApiDescription } from '@/hooks/api/useApiDescription';
+import { useApiColor } from '@/hooks/api/useApiColor';
+import useRedirect from '@/hooks/useRedirect';
+import useApi from '@/hooks/useApi';
 
 export default function AddSensorScreen() {
     const ble = useBLE();
     const ctx = useAppContext();
-    const router = useRouter();
+    const redirect = useRedirect();
 
-    const [sensorName, setSensorName] = useState<string | undefined>(undefined);
-    const [sensorDescription, setSensorDescription] = useState<string | null>(null);
-    const [selectedColor, setSelectedColor] = useState<string>(API_COLORS[0]);
+    const sensorName = useApiEntityName();
+    const sensorDescription = useApiDescription();
+    const color = useApiColor();
 
-    const [errorText, setErrorText] = useState<string | null>(null);
+    const allSet = sensorName.isValid && sensorDescription.isValid && color.isValid;
 
-    const redirectToIndex = () => {
-        ctx.reloadSummary();
-        router.replace('/');
-    };
-
-    const allSet = sensorName && selectedColor;
+    const api = useApi('/sensors', {}, undefined); // TODO: Complete
 
     const handleConnect = async (dev: Device) => {
-        if (!ctx.sessionData?.all_set()) {
-            console.error('[handleConnect] sessionData not set');
-            setErrorText(
-                'Your login data is incorrectly set somehow, please log out and try again!',
-            );
-            return;
-        }
-        let user_api_id = ctx.sessionData!.api_id;
+        // TODO: Call api /sensors/post, if OK, configure
+        // try {
+        //     const res = await ble.connectToDeviceAndConfigure(
+        //         dev,
+        //         username!,
+        //         password,
+        //     );
+        //     redirectToIndex();
+        // } catch (e) {
+        //     console.error(
+        //         '[handleConnect] connectToDeviceAndConfigure threw and error: ',
+        //         e,
+        //     );
+        //     setErrorText('Error while connecting to device, try again');
+        // }
 
-        let place_id = ctx.activePlace?.place_id;
-        if (!place_id) {
-            console.error('[handleConnect] No place id found');
-            setErrorText(
-                "I don't know what place does this sensor belong to, please select the place again!",
-            );
-            return;
-        }
-
-        const sensorApiIdFetch = async (device_id: string) => {
-            const response = await newUserSensor(
-                { id: user_api_id! },
-                place_id,
-                { id: device_id },
-                'Scd4x',
-                sensorName!,
-                sensorDescription,
-                selectedColor!,
-            );
-
-            if (response && (response as PostSensorResponseBody).sensor_api_id) {
-                return (response as PostSensorResponseBody).sensor_api_id;
-            } else {
-                throw response;
-            }
-        };
-
-        try {
-            const res = await ble.connectToDeviceAndConfigure(
-                dev,
-                user_api_id!,
-                sensorApiIdFetch,
-            );
-            redirectToIndex();
-        } catch (e) {
-            console.error(
-                '[handleConnect] connectToDeviceAndConfigure threw and error: ',
-                e,
-            );
-            setErrorText('Error while connecting to device, try again');
-        }
+        redirect.redirectToIndex();
     };
 
     useEffect(() => {
         const init_ble = async () => {
             try {
+                if (!ble.stopScanForPeripherals) {
+                    throw 'No ble device';
+                }
                 await ble.stopScanForPeripherals();
             } catch (e) {
                 console.log('Error while trying to stop scan: ', e);
@@ -106,13 +74,13 @@ export default function AddSensorScreen() {
     const formFields: FieldConfig[] = [
         {
             placeholder: 'Name',
-            value: sensorName ? sensorName : '',
-            onChangeText: setSensorName,
+            value: sensorName.name,
+            onChangeText: sensorName.setName,
         },
         {
             placeholder: 'Description (optional)',
-            value: sensorDescription ? sensorDescription : '',
-            onChangeText: setSensorDescription,
+            value: sensorDescription.description ? sensorDescription.description : '',
+            onChangeText: sensorDescription.setDescription,
         },
     ];
 
@@ -125,14 +93,14 @@ export default function AddSensorScreen() {
                     </ThemedText>
                     <ThemedForm fields={formFields}></ThemedForm>
                     <BindedColorPicker
-                        colorValues={API_COLORS}
-                        selectedColor={selectedColor}
-                        onColorChange={(color) => {
-                            console.log('Setting color to: ', color);
-                            setSelectedColor(color);
+                        colorValues={color.API_COLORS}
+                        selectedColor={color.color}
+                        onColorChange={(color_new) => {
+                            console.log('Setting color to: ', color_new);
+                            color.setColor(color_new);
                         }}
                     ></BindedColorPicker>
-                    <ErrorBox error={errorText}></ErrorBox>
+                    <ErrorBox error={api.formattedError}></ErrorBox>
                     {ble.allDevices.map((dev) => {
                         return (
                             <ThemedView style={[styles.deviceContainer]} key={dev.id}>

@@ -1,5 +1,4 @@
 import BindedColorPicker from '@/components/BindedColorPicker';
-import { useAppContext } from '@/components/AppProvider';
 import BackgroundView from '@/components/ui-elements/BackgroundView';
 import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
@@ -8,75 +7,50 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
 
 import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
-import { useRouter } from 'expo-router';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
-import useApi, { errorText } from '@/hooks/useApi';
+import useApi from '@/hooks/useApi';
 import { PostPlace } from '@/bindings/api/endpoints/place/PostPlace';
-import { API_COLORS } from '@/constants/api_colors';
+import useRedirect from '@/hooks/useRedirect';
+import { useApiEntityName } from '@/hooks/api/useApiEntityName';
+import { useApiDescription } from '@/hooks/api/useApiDescription';
+import { useApiColor } from '@/hooks/api/useApiColor';
 
 export default function AddPlaceScreen() {
-    const ctx = useAppContext();
-    const router = useRouter();
+    const { redirectToIndex } = useRedirect();
 
-    const redirectToIndex = () => {
-        ctx.reloadSummary();
-        router.replace('/');
-    };
-
-    // TODO: Think about extracting these
     // -- API RELATED --
-    const [name, setName] = useState<string>('');
-    const [description, setDescription] = useState<string | null>(null);
-    const [color, setColor] = useState<string>(API_COLORS[0]);
+    const name = useApiEntityName();
+    const description = useApiDescription();
+    const color = useApiColor();
+    const isAddable = name.isValid && description.isValid && color;
+
     const body: PostPlace = {
-        name,
-        description,
-        color,
+        name: name.name,
+        description: description.description,
+        color: color.color,
     };
-    const [method, setMethod] = useState<'post' | undefined>(undefined);
+    const [method, setMethod] = useState<'POST' | undefined>(undefined);
     const postPlace = useApi('/place', body, method);
 
     if (postPlace.response) {
         // TODO: Add place to context
         redirectToIndex();
     }
-    const [formErrorText, setFormErrorText] = useState<null | string>(null);
-    const postErrorText = postPlace.error ? errorText(postPlace.error, true) : null;
-    if (postErrorText) {
-        setFormErrorText(postErrorText); // TODO: Different places
-    }
-    // -- API RELATED --
-
-    const isAddable = name && color;
 
     const handleAdd = async () => {
-        if (!name) {
-            setFormErrorText(
-                'You should have set a place name before clicking the add button',
-            );
-            return; // TODO Better error return
-        }
-
-        if (!color) {
-            setFormErrorText(
-                'You should have set a color before clicking the add button',
-            );
-            return; // TODO Better error return
-        }
-
-        setMethod('post');
+        setMethod('POST');
     };
 
     let formFields: FieldConfig[] = [
         {
             placeholder: 'Name',
-            onChangeText: setName,
-            value: name ? name : '',
+            onChangeText: name.setName,
+            value: name.name,
         },
         {
             placeholder: 'Description (optional)',
-            onChangeText: setDescription,
-            value: description ? description : '',
+            onChangeText: description.setDescription,
+            value: description.description ? description.description : '',
         },
     ];
     return (
@@ -85,16 +59,14 @@ export default function AddPlaceScreen() {
                 <ThemedView style={[styles.mainContainer]}>
                     <ThemedText style={TEXT_STYLES.heading1}>Add place</ThemedText>
                     <ThemedForm fields={formFields}></ThemedForm>
-
                     <BindedColorPicker
-                        selectedColor={color}
-                        onColorChange={(color) => {
-                            setColor(color);
+                        selectedColor={color.color}
+                        onColorChange={(new_color) => {
+                            color.setColor(new_color);
                         }}
-                        colorValues={API_COLORS}
+                        colorValues={color.API_COLORS}
                     ></BindedColorPicker>
-                    <ErrorBox error={formErrorText}></ErrorBox>
-
+                    <ErrorBox error={postPlace.formattedError}></ErrorBox>
                     <Button
                         title="Add Place"
                         onPress={handleAdd}

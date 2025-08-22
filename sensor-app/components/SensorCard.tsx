@@ -1,4 +1,3 @@
-import { SensorSummary } from '@/bindings/SensorSummary';
 import React from 'react';
 import { StyleSheet, TouchableOpacity } from 'react-native';
 import { ThemedText } from './ui-elements/ThemedText';
@@ -8,9 +7,10 @@ import { useRouter } from 'expo-router';
 import { timeDisplay } from '@/helpers/timeDisplay';
 import { safeGet } from '@/helpers/objectWork';
 import LabelValue from './ui-elements/LabelValue';
+import { GetSensorResponse } from '@/bindings/api/endpoints/sensor/GetSensorResponse';
 
 export interface SensorCardProps {
-    sensor: SensorSummary;
+    sensor: GetSensorResponse;
 }
 
 export default function SensorCard(props: SensorCardProps) {
@@ -19,8 +19,8 @@ export default function SensorCard(props: SensorCardProps) {
     const router = useRouter();
 
     let lastData: [string, string][] | undefined = undefined;
-    if (sensor.last_serialized_data) {
-        const parsed = JSON.parse(sensor.last_serialized_data[0]);
+    if (sensor.last_data) {
+        const parsed = JSON.parse(sensor.last_data.data);
 
         const numberKeys = Object.entries(parsed)
             .filter(([, v]) => typeof v === 'number')
@@ -35,21 +35,24 @@ export default function SensorCard(props: SensorCardProps) {
     return (
         <TouchableOpacity
             onPress={() => {
-                ctx.setActiveSensor(sensor);
+                ctx.setActiveSensor(sensor.sensor);
                 router.navigate('/SensorDetail');
             }}
         >
             <ThemedView
                 style={[
-                    { backgroundColor: props.sensor.color.replace('HEX_', '#') },
+                    { backgroundColor: props.sensor.sensor.color.replace('HEX_', '#') },
                     styles.mainContainer,
                 ]}
             >
-                <ThemedText style={styles.sensorName}>{sensor.name}</ThemedText>
+                <ThemedText style={styles.sensorName}>{sensor.sensor.name}</ThemedText>
                 <LabelValue label="Last Update">
-                    <ThemedText key={'formattedTime'} style={styles.value}>
-                        {timeDisplay(new Date(sensor.last_update * 1000)) + ' ago'}
-                    </ThemedText>
+                    {sensor.last_data ? (
+                        <ThemedText key={'formattedTime'} style={styles.value}>
+                            {timeDisplay(new Date(sensor.last_data.added_at * 1000)) +
+                                ' ago'}
+                        </ThemedText>
+                    ) : null}
                     {lastData ? (
                         <LabelValue label="Information">
                             {lastData.map(([label, value], index) => (
@@ -61,9 +64,6 @@ export default function SensorCard(props: SensorCardProps) {
                             ))}
                         </LabelValue>
                     ) : null}
-                </LabelValue>
-                <LabelValue label="Sensor Kind">
-                    <ThemedText style={styles.value}>{sensor.kind}</ThemedText>
                 </LabelValue>
             </ThemedView>
         </TouchableOpacity>

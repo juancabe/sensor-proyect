@@ -1,5 +1,3 @@
-import { PlaceSummary } from '@/bindings/PlaceSummary';
-import { SensorSummary } from '@/bindings/SensorSummary';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Button, StyleSheet, View } from 'react-native';
@@ -7,10 +5,12 @@ import { useAppContext } from './AppProvider';
 import { TEXT_STYLES, ThemedText } from './ui-elements/ThemedText';
 import SensorCard from './SensorCard';
 import { ThemedView } from './ui-elements/ThemedView';
+import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
+import { GetSensorResponse } from '@/bindings/api/endpoints/sensor/GetSensorResponse';
 
 export interface PlaceCardProps {
-    place: PlaceSummary;
-    sensors: SensorSummary[];
+    place: ApiUserPlace;
+    sensors: GetSensorResponse[];
 }
 
 export default function PlaceCard({ place, sensors }: PlaceCardProps) {
@@ -18,7 +18,7 @@ export default function PlaceCard({ place, sensors }: PlaceCardProps) {
     const ctx = useAppContext();
 
     const handleAddSensorPress = () => {
-        if (ctx.setActivePlace(place.place_id.id)) {
+        if (ctx.setActivePlace(place.name)) {
             router.navigate('/AddSensorScreen');
         } else {
             // TODO: Display error
@@ -42,7 +42,7 @@ export default function PlaceCard({ place, sensors }: PlaceCardProps) {
                 }}
             >
                 {sensors.map((sensor) => (
-                    <SensorCard key={sensor.api_id.id} sensor={sensor} />
+                    <SensorCard key={sensor.sensor.device_id} sensor={sensor} />
                 ))}
             </View>
         </ThemedView>

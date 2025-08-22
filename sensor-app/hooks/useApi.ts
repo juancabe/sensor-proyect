@@ -1,5 +1,5 @@
 import { ApiSession } from '@/bindings/api/endpoints/session/ApiSession';
-import { GetSession } from '@/bindings/api/endpoints/session/GetSession';
+import { PostSession } from '@/bindings/api/endpoints/session/PostSession';
 import { useAppContext } from '@/components/AppProvider';
 import { SessionData } from '@/persistence/SessionData';
 import { FetchRequestInit } from 'expo/fetch';
@@ -21,7 +21,7 @@ export enum Error {
 
 export type ErrorState<E> = [Error, ReturnedError<E>?];
 
-export function errorText<E>(err: ErrorState<E>, displayBody: boolean): string {
+function errorText<E>(err: ErrorState<E>, displayBody: boolean): string {
     switch (err[0]) {
         case Error.InvalidLocalSession:
             return `Invalid session set on local device, try to login again`;
@@ -88,14 +88,14 @@ async function renewJWT(session: SessionData): Promise<void> {
         throw [Error.JsonError];
     }
 
-    const body: GetSession = {
+    const body: PostSession = {
         username: session.username,
         raw_password: session.hashed_password,
     };
 
     const init: FetchRequestInit = {
         body: JSON.stringify(body),
-        method: 'get',
+        method: 'POST',
     };
 
     let res;
@@ -120,46 +120,63 @@ async function renewJWT(session: SessionData): Promise<void> {
 export default function useApi<B, R, E>(
     endpoint_path: string,
     body: B,
-    method: string | undefined,
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' | undefined,
 ) {
     const ctx = useAppContext();
 
     const [loading, setLoading] = useState<boolean>(false);
-    const [error, setError] = useState<undefined | ErrorState<E>>(undefined);
-    const [response, setResponse] = useState<undefined | R>(undefined);
-    const [worker, setWorker] = useState<Promise<void> | null>(null);
+    const [error, setError] = useState<ErrorState<E> | undefined>(undefined);
+    const [response, setResponse] = useState<R | undefined>(undefined);
+
+    const stableBody = JSON.stringify(body);
 
     useEffect(() => {
         if (!method) {
             return;
         }
 
-        setLoading(true);
-        const init: FetchRequestInit = {
-            body: JSON.stringify(body),
-            method: method,
-        };
+        const controller = new AbortController();
+        const signal = controller.signal;
+
         const fetchApi = async () => {
-            let props: InternalFetchProps = {
+            setLoading(true);
+            setError(undefined);
+            setResponse(undefined);
+
+            const init: FetchRequestInit = {
+                body: stableBody,
+                method: method,
+                signal,
+            };
+
+            const props: InternalFetchProps = {
                 endpoint_path,
                 init,
                 sessionData: ctx.sessionData,
             };
+
             try {
-                let r = await _fetchApi<R>(props);
+                const r = await _fetchApi<R>(props);
                 setResponse(r);
-            } catch (e) {
-                setError(e as ErrorState<E>);
+            } catch (e: any) {
+                if (e.name !== 'AbortError') {
+                    setError(e as ErrorState<E>);
+                }
+            } finally {
+                if (!signal.aborted) {
+                    setLoading(false);
+                }
             }
         };
 
-        let worker = fetchApi().then(() => {
-            setLoading(false);
-            setWorker(null);
-        });
+        fetchApi();
 
-        setWorker(worker);
-    }, [setLoading, endpoint_path, body, method, ctx.sessionData]);
+        return () => {
+            controller.abort();
+        };
+    }, [endpoint_path, method, stableBody, ctx.sessionData]);
 
-    return { response, loading, error, worker };
+    const formattedError = error ? errorText(error, body ? true : false) : null;
+
+    return { response, loading, error, formattedError };
 }

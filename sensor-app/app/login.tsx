@@ -1,80 +1,63 @@
-import { useAppContext } from '@/components/AppProvider';
 import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
-import * as Crypto from 'expo-crypto';
-import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Button, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as auth from '@/helpers/auth';
+// import * as auth from '@/helpers/auth';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
+import useApi from '@/hooks/useApi';
+import useRedirect from '@/hooks/useRedirect';
+import { useApiUsername } from '@/hooks/api/useApiUsername';
+import { useApiRawPassword } from '@/hooks/api/useApiRawPassword';
+import { useApiEmail } from '@/hooks/api/useApiEmail';
+import { PostUser } from '@/bindings/api/endpoints/user/PostUser';
+import { PostSession } from '@/bindings/api/endpoints/session/PostSession';
 
 export default function Login() {
-    const router = useRouter();
-    const context = useAppContext();
+    const redirect = useRedirect();
 
     const [type, setType] = useState<'register' | 'login'>('login');
-    const [username, setUsername] = useState<string>('');
-    const [password, setPassword] = useState<string>('');
-    const [repeatPassword, setRepeatPassword] = useState<string>('');
-    const [email, setEmail] = useState<string>('');
-    const [working, setWorking] = useState<boolean>(false);
-    const [workingError, setWorkingError] = useState<string | null>(null);
 
-    function isSubmissionDisabled(): boolean {
-        if (working) return true;
-        if (type === 'login') {
-            return !username || !password;
-        } else {
-            return (
-                !username ||
-                !email ||
-                !password ||
-                !repeatPassword ||
-                password !== repeatPassword
-            );
-        }
+    const username = useApiUsername();
+    const password = useApiRawPassword();
+    const repeatPassword = useApiRawPassword();
+    const email = useApiEmail();
+
+    const registerBody: PostUser = {
+        username: username.username,
+        raw_password: password.password,
+        email: email.email,
+    };
+
+    const loginBody: PostSession = {
+        username: username.username,
+        raw_password: password.password,
+    };
+
+    const [method, setMethod] = useState<'POST' | undefined>(undefined);
+    const api = useApi(
+        type === 'register' ? '/users' : `/session`,
+        type === 'register' ? registerBody : loginBody,
+        method,
+    );
+
+    if (api.response) {
+        redirect.redirectToIndex();
     }
 
-    const loginFields: FieldConfig[] = [
-        {
-            placeholder: 'Username',
-            value: username,
-            onChangeText: setUsername,
-        },
-        {
-            placeholder: 'Password',
-            value: password,
-            onChangeText: setPassword,
-            secureTextEntry: true,
-        },
-    ];
+    function isSubmissionDisabled(): boolean {
+        if (api.loading) return true;
 
-    const registerFields: FieldConfig[] = [
-        {
-            placeholder: 'Username',
-            value: username,
-            onChangeText: setUsername,
-        },
-        {
-            placeholder: 'Email',
-            value: email,
-            onChangeText: setEmail,
-        },
-        {
-            placeholder: 'Password',
-            value: password,
-            onChangeText: setPassword,
-            secureTextEntry: true,
-        },
-        {
-            placeholder: 'Repeat Password',
-            value: repeatPassword,
-            onChangeText: setRepeatPassword,
-            secureTextEntry: true,
-        },
-    ];
+        const isLoginValid = username.isValid && password.isValid;
+        const isRegisterValid =
+            isLoginValid &&
+            repeatPassword.isValid &&
+            email.isValid &&
+            password.password === repeatPassword.password;
+
+        return type === 'login' ? !isLoginValid : !isRegisterValid;
+    }
 
     const oppositeType = () => {
         if (type === 'login') {
@@ -84,67 +67,39 @@ export default function Login() {
         }
     };
 
-    async function hash_password(password: string): Promise<string> {
-        return await Crypto.digestStringAsync(
-            Crypto.CryptoDigestAlgorithm.SHA256,
-            password,
-        );
-    }
-
-    const redirectToIndex = () => {
-        context.reloadSummary();
-        router.replace('/');
-    };
-
     const handleSubmission = async () => {
-        if (working) return;
-        else setWorking(true);
-
         Keyboard.dismiss();
-
-        const hashed_password = await hash_password(password);
-
-        if (type === 'login') {
-            let res = await auth.login(username, hashed_password);
-            if (res === 'Ok') {
-                redirectToIndex();
-            } else {
-                console.log('login error: ', res);
-                setWorkingError(res);
-            }
-        }
-
-        if (type === 'register') {
-            let res = await auth.register(username, email, hashed_password);
-            if (res === 'Ok') {
-                redirectToIndex();
-            } else if (res === 'Connection Error') {
-                setWorkingError(res);
-            } else {
-                switch (res) {
-                    case 'EmailUsed': {
-                        setWorkingError('The email you tried to use is already in use');
-                        break;
-                    }
-                    case 'UsernameUsed': {
-                        setWorkingError(
-                            'The username you tried to use is already in use',
-                        );
-                        break;
-                    }
-                    case 'HashInvalid': {
-                        setWorkingError('Unexpected Error happened');
-                        console.error('UNEXPECTED HASH INVALID');
-                        break;
-                    }
-                    default:
-                        throw Error('UNEXPECTED CASE'); // TODO: Get rid of this assertion
-                }
-            }
-        }
-
-        setWorking(false);
+        setMethod('POST');
     };
+
+    const loginFields: FieldConfig[] = [
+        {
+            placeholder: 'Username',
+            value: username.username,
+            onChangeText: username.setUsername,
+        },
+        {
+            placeholder: 'Password',
+            value: password.password,
+            onChangeText: password.setPassword,
+            secureTextEntry: true,
+        },
+    ];
+
+    const registerFields: FieldConfig[] = [
+        {
+            placeholder: 'Email',
+            value: email.email,
+            onChangeText: email.setEmail,
+        },
+        ...loginFields,
+        {
+            placeholder: 'Repeat Password',
+            value: repeatPassword.password,
+            onChangeText: repeatPassword.setPassword,
+            secureTextEntry: true,
+        },
+    ];
 
     return (
         <SafeAreaView>
@@ -170,7 +125,7 @@ export default function Login() {
                         onPress={handleSubmission}
                     />
                 </ThemedView>
-                <ErrorBox error={workingError}></ErrorBox>
+                <ErrorBox error={api.formattedError}></ErrorBox>
                 <Button title={oppositeType()} onPress={() => setType(oppositeType())} />
             </ThemedView>
         </SafeAreaView>

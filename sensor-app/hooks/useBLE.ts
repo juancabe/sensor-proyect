@@ -80,13 +80,8 @@ function useBLE() {
 
     const connectToDeviceAndConfigure = async (
         device: Device,
-        accountIdHEX: string,
-        sensorApiIdFetch: (
-            user_api_id: string,
-            user_place_id: number,
-            device_id: string,
-            sensor_kind: string,
-        ) => Promise<string>,
+        username: string,
+        password: string,
     ): Promise<string | void> => {
         if (!bleManager) {
             return;
@@ -106,24 +101,9 @@ function useBLE() {
                 console.debug('device_uuid: ', device_uuid);
             }
 
-            let sensorApiIdHEX;
+            throw 'Unimplemented';
 
-            try {
-                sensorApiIdHEX = await sensorApiIdFetch(
-                    accountIdHEX,
-                    1,
-                    device_uuid!,
-                    'Scd4x',
-                );
-            } catch (e) {
-                console.error(
-                    '[connectToDeviceAndConfigure] an error occurred on sensorApiIdFetch: ',
-                    e,
-                );
-                return 'Error requesting the server to add our new sensor to the account';
-            }
-
-            await configureSensor(deviceConnection, sensorApiIdHEX, accountIdHEX);
+            // await configureSensor(deviceConnection, username, password);
         } catch (e) {
             console.log('FAILED TO CONNECT:', e);
             return 'Unexpected error';
@@ -236,37 +216,37 @@ function useBLE() {
     };
 
     // Void means no error
-    const configureSensor = async (
-        device: Device,
-        sensorApiIdHEX: string,
-        accountIdHEX: string,
-    ): Promise<string | void> => {
-        if (!device) {
-            console.error('No device connected');
-            return 'Device disconnected while configuring...';
-        }
-        const sensorApiId = encodeHexId20(sensorApiIdHEX);
-        const accountId = encodeHexId20(accountIdHEX);
-
-        // Set the sensor data using the provided API ID and account ID
-        try {
-            await device.writeCharacteristicWithResponseForService(
-                CFG_SERVICE_UUID,
-                SENSOR_API_ID_CHAR_UUID,
-                sensorApiId,
-            );
-            await device.writeCharacteristicWithResponseForService(
-                CFG_SERVICE_UUID,
-                API_ACCOUNT_ID_CHAR_UUID,
-                accountId,
-            );
-            console.log('Sensor data set successfully');
-            return;
-        } catch (error) {
-            console.error('Failed to set sensor data', error);
-            return 'Failed to set sensor data through BLE';
-        }
-    };
+    // const configureSensor = async (
+    //     device: Device,
+    //     username: string,
+    //     password: string,
+    // ): Promise<string | void> => {
+    //     if (!device) {
+    //         console.error('No device connected');
+    //         return 'Device disconnected while configuring...';
+    //     }
+    //     const sensorApiId = encodeHexId20(sensorApiIdHEX);
+    //     const accountId = encodeHexId20(accountIdHEX);
+    //
+    //     // Set the sensor data using the provided API ID and account ID
+    //     try {
+    //         await device.writeCharacteristicWithResponseForService(
+    //             CFG_SERVICE_UUID,
+    //             SENSOR_API_ID_CHAR_UUID,
+    //             sensorApiId,
+    //         );
+    //         await device.writeCharacteristicWithResponseForService(
+    //             CFG_SERVICE_UUID,
+    //             API_ACCOUNT_ID_CHAR_UUID,
+    //             accountId,
+    //         );
+    //         console.log('Sensor data set successfully');
+    //         return;
+    //     } catch (error) {
+    //         console.error('Failed to set sensor data', error);
+    //         return 'Failed to set sensor data through BLE';
+    //     }
+    // };
 
     return {
         connectToDeviceAndConfigure,
@@ -275,7 +255,7 @@ function useBLE() {
         requestPermissions,
         scanForPeripherals,
         stopScanForPeripherals,
-        configureSensor,
+        // configureSensor,
     };
 }
 

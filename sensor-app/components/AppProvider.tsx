@@ -1,6 +1,3 @@
-import { fetchUserSummary } from '@/api/user_summary';
-import type { PlaceSummary } from '@/bindings/PlaceSummary';
-import type { SensorSummary } from '@/bindings/SensorSummary';
 import {
     createContext,
     ReactNode,
@@ -10,26 +7,30 @@ import {
     useState,
 } from 'react';
 import { SessionData } from '@/persistence/SessionData';
+import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
+import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
 
-export type SummaryMap = Map<string, [PlaceSummary, SensorSummary[]]>;
+export type PlaceName = string;
+
+export type SummaryMap = Map<PlaceName, [ApiUserPlace, ApiUserSensor[]]>;
 type SummaryState = SummaryMap | 'Unauthorized' | 'Connection Error' | undefined;
 
-interface AppContextType {
+export interface AppContextType {
     summary: SummaryState;
     reloadSummary: () => Promise<void>;
     sessionData: SessionData | undefined;
-    activePlace: PlaceSummary | undefined;
-    activeSensor: SensorSummary | undefined;
-    setActivePlace: (place_id: string) => boolean | undefined;
-    setActiveSensor: (sensor: SensorSummary | undefined) => void;
+    activePlace: ApiUserPlace | undefined;
+    activeSensor: ApiUserSensor | undefined;
+    setActivePlace: (place_id: PlaceName) => boolean | undefined;
+    setActiveSensor: (sensor: ApiUserSensor | undefined) => void;
     logOut: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
     const [summary, setSummary] = useState<SummaryState>(undefined);
-    const [activePlace, setActivePlace] = useState<PlaceSummary | undefined>(undefined);
-    const [activeSensor, setActiveSensor] = useState<SensorSummary | undefined>(
+    const [activePlace, setActivePlace] = useState<ApiUserPlace | undefined>(undefined);
+    const [activeSensor, setActiveSensor] = useState<ApiUserSensor | undefined>(
         undefined,
     );
     const [sessionData, setSessionData] = useState<SessionData | undefined>(undefined);
@@ -56,48 +57,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const username = sessionData.username!;
         const api_id = sessionData.api_id!;
-
-        let res;
-
-        try {
-            res = await fetchUserSummary(username, { id: api_id });
-        } catch (e) {
-            console.error(`Unexpected error thrown on [reloadSummary]: ${e}`);
-            return;
-        }
-
-        if (!res) {
-            console.error(`[reloadSummary] res was nullish: (${res})`);
-            setSummary('Connection Error');
-            return;
-        }
-
-        console.log('Res: ', res);
-        if (typeof res === 'object' && 'summary' in res) {
-            let result = res.summary;
-            let places = result.places;
-            let sensors = result.sensors;
-            let map = new Map<string, [PlaceSummary, SensorSummary[]]>();
-
-            places.forEach((place) => {
-                map.set(place.place_id.id, [place, []]);
-            });
-            sensors.forEach((sensor) => {
-                let opt = map.get(sensor.place_id.id);
-                if (!opt) {
-                    console.warn('Sensor without corresponding place');
-                    console.warn('sensor: ', sensor);
-                    return;
-                }
-                let [, sens_arr] = opt;
-                sens_arr.push(sensor);
-            });
-
-            setSummary(map);
-        } else {
-            console.error(`[reloadSummary] Unexpected situation, res: (${res})`);
-            setSummary('Unauthorized');
-        }
+        //
+        // let res;
+        //
+        // try {
+        //     // res = await fetchUserSummary(username, { id: api_id });
+        // } catch (e) {
+        //     console.error(`Unexpected error thrown on [reloadSummary]: ${e}`);
+        //     return;
+        // }
+        //
+        // if (!res) {
+        //     console.error(`[reloadSummary] res was nullish: (${res})`);
+        //     setSummary('Connection Error');
+        //     return;
+        // }
+        //
+        // console.log('Res: ', res);
+        // if (typeof res === 'object' && 'summary' in res) {
+        //     let result = res.summary;
+        //     let places = result.places;
+        //     let sensors = result.sensors;
+        //     let map = new Map<string, [ApiUserPlace, ApiUserSensor[]]>();
+        //
+        //     places.forEach((place) => {
+        //         map.set(place.place_id.id, [place, []]);
+        //     });
+        //     sensors.forEach((sensor) => {
+        //         let opt = map.get(sensor.place_id.id);
+        //         if (!opt) {
+        //             console.warn('Sensor without corresponding place');
+        //             console.warn('sensor: ', sensor);
+        //             return;
+        //         }
+        //         let [, sens_arr] = opt;
+        //         sens_arr.push(sensor);
+        //     });
+        //
+        //     setSummary(map);
+        // } else {
+        //     console.error(`[reloadSummary] Unexpected situation, res: (${res})`);
+        //     setSummary('Unauthorized');
+        // }
     }, [sessionData]);
 
     const RELOAD_TIMEOUT = 1_000; // ms
@@ -142,7 +143,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await reloadSummary();
     };
 
-    function publicSetActiveSensor(sensor: SensorSummary | undefined) {
+    function publicSetActiveSensor(sensor: ApiUserSensor | undefined) {
         setActiveSensor(sensor);
     }
 
