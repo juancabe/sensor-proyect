@@ -14,7 +14,7 @@ async fn main() {
 
     let sensor_server = SensorServer::new();
 
-    let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, PORT))
+    let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, PORT))
         .await
         .unwrap();
 

@@ -3,7 +3,7 @@ use diesel::prelude::*;
 use crate::{
     api::{endpoints::sensor::SensorChange, types::validate::device_id::DeviceId},
     db::{DbConn, Error, colors, user_places, users},
-    model::{self, NewUserSensor, UserPlace, UserSensor},
+    model::{self, NewUserSensor, SensorData, UserPlace, UserSensor},
 };
 
 #[derive(Debug, Clone)]
@@ -73,11 +73,11 @@ pub enum Identifier<'a> {
     SensorDeviceId(AuthorizedSensor),
 }
 
-pub fn get_user_sensor_and_place(
+pub fn get_user_sensor_and_place_and_last_data(
     conn: &mut DbConn,
     identifier: Identifier,
-) -> Result<Vec<(UserPlace, UserSensor)>, Error> {
-    match identifier {
+) -> Result<Vec<(UserPlace, UserSensor, Option<SensorData>)>, Error> {
+    let res = match identifier {
         Identifier::SensorDeviceId(auth_sensor) => {
             use crate::schema::user_places::dsl::user_places as user_places_table;
             use crate::schema::{
@@ -87,7 +87,7 @@ pub fn get_user_sensor_and_place(
 
             let sensor = auth_sensor.get();
 
-            let res = user_sensors_table
+            let res: Vec<(UserPlace, UserSensor)> = user_sensors_table
                 .filter(user_sensor::device_id.eq(sensor.device_id))
                 .inner_join(user_places_table)
                 .select((
@@ -96,7 +96,7 @@ pub fn get_user_sensor_and_place(
                 ))
                 .load(conn)?;
 
-            Ok(res)
+            res
         }
         Identifier::PlaceNameAndUserId(name, user_id) => {
             use crate::schema::user_sensors::dsl::user_sensors as user_sensors_table;
@@ -114,9 +114,27 @@ pub fn get_user_sensor_and_place(
                 ))
                 .load(conn)?;
 
-            Ok(res)
+            res
         }
+    };
+
+    use crate::schema::{
+        sensor_data::dsl as sensor_datum, sensor_data::dsl::sensor_data as sensor_data_table,
+    };
+
+    let mut resp = vec![];
+    for (place, sensor) in res {
+        let data = sensor_data_table
+            .filter(sensor_datum::sensor_id.eq(sensor.id))
+            .order(sensor_datum::added_at.desc())
+            .limit(1)
+            .load::<SensorData>(conn)?
+            .into_iter()
+            .next();
+
+        resp.push((place, sensor, data));
     }
+    Ok(resp)
 }
 
 pub type Update = SensorChange;
@@ -272,7 +290,7 @@ mod tests {
         let (user, _) = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
 
-        let _p1 = get_user_sensor_and_place(
+        let _p1 = get_user_sensor_and_place_and_last_data(
             &mut conn,
             Identifier::PlaceNameAndUserId(&place.name, user.id),
         )

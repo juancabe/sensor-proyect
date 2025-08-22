@@ -9,6 +9,7 @@ use crate::{
     RoutePath,
     api::{
         Endpoint,
+        endpoints::sensor_data::ApiSensorData,
         route::Route,
         types::{
             ApiTimestamp,
@@ -23,6 +24,7 @@ use crate::{
     auth::claims::Claims,
     db::{
         self, DbConnHolder, Error,
+        user_places::get_user_place,
         user_sensors::{AuthorizedSensor, Identifier, Update, update_user_sensor},
         users,
     },
@@ -41,12 +43,14 @@ pub struct ApiUserSensor {
     pub color: ApiColor,
     pub created_at: ApiTimestamp,
     pub updated_at: ApiTimestamp,
+    pub place_name: ApiEntityName,
 }
 
 impl ApiUserSensor {
     pub fn from_sensor_place_color(
         sensor: UserSensor,
         color: String,
+        place_name: String,
     ) -> Result<Self, device_id::Error> {
         Ok(Self {
             device_id: DeviceId::from_string(&sensor.device_id)?,
@@ -55,6 +59,7 @@ impl ApiUserSensor {
             color: ApiColor::from(color),
             created_at: sensor.created_at.and_utc().timestamp() as ApiTimestamp,
             updated_at: sensor.updated_at.and_utc().timestamp() as ApiTimestamp,
+            place_name: place_name.into(),
         })
     }
 }
@@ -141,12 +146,29 @@ impl Sensor {
 
         let auth_sensor = AuthorizedSensor::new(conn, &device_id, &claims.username)?;
         let user_id = users::get_user(conn, users::Identifier::Username(&claims.username))?.id;
-        let sensor = update_user_sensor(conn, auth_sensor, change as Update, user_id)?;
+        let sensor = update_user_sensor(conn, auth_sensor, change.clone() as Update, user_id)?;
+
+        let place_name = if let SensorChange::PlaceName(name) = change {
+            name
+        } else {
+            get_user_place(conn, db::user_places::Identifier::UserId(user_id))?
+                .into_iter()
+                .filter(|place| place.id == sensor.id)
+                .next()
+                .ok_or_else(|| {
+                    log::error!("The place wasn't found after updating a sensor");
+                    Error::NotFound("Place not found".into())
+                })?
+                .name
+                .into()
+        };
+
         let color_id = sensor.color_id;
         Ok(Json(
             ApiUserSensor::from_sensor_place_color(
                 sensor,
                 db::colors::get_color_by_id(conn, color_id)?,
+                place_name.into(),
             )
             .map_err(|e| {
                 let err = Error::InternalError(
@@ -162,7 +184,7 @@ impl Sensor {
         claims: Claims,
         mut conn: DbConnHolder,
         Query(payload): Query<GetSensor>,
-    ) -> Result<Json<Vec<ApiUserSensor>>, StatusCode> {
+    ) -> Result<Json<Vec<(ApiUserSensor, Option<ApiSensorData>)>>, StatusCode> {
         let user_id = db::users::get_user(
             &mut conn.0,
             db::users::Identifier::Username(&claims.username),
@@ -180,11 +202,11 @@ impl Sensor {
             }
         };
 
-        let vec = match db::user_sensors::get_user_sensor_and_place(&mut conn.0, id) {
+        let vec = match db::user_sensors::get_user_sensor_and_place_and_last_data(&mut conn.0, id) {
             Ok(vec) => {
-                let vec: Result<Vec<ApiUserSensor>, db::Error> = vec
+                let vec: Result<Vec<(ApiUserSensor, Option<ApiSensorData>)>, db::Error> = vec
                     .into_iter()
-                    .map(|(place, sensor)| {
+                    .map(|(place, sensor, data)| {
                         let color = db::colors::get_color_by_id(&mut conn.0, place.color_id)
                             .map_err(|e| {
                                 log::error!("Could not get color from id: {e:?}");
@@ -198,8 +220,15 @@ impl Sensor {
                             color: color.into(),
                             device_id: DeviceId::from_string(&sensor.device_id)
                                 .expect("Should be valid"),
+                            place_name: place.name.into(),
                         };
-                        Ok(aus)
+
+                        let data = data.map(|d| ApiSensorData {
+                            data: d.data.to_string(),
+                            added_at: d.added_at.and_utc().timestamp() as ApiTimestamp,
+                        });
+
+                        Ok((aus, data))
                     })
                     .collect();
                 vec
@@ -268,6 +297,7 @@ impl Sensor {
                 log::error!("Error converting ApiId: {e:?}");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?,
+            place_name: payload.place_name,
         };
 
         log::trace!("Sensor created correctly: {res:?}");
@@ -309,13 +339,14 @@ impl Sensor {
                                 db::Error::InternalError("Could not get color from id".into())
                             })?;
                         let aup = ApiUserSensor {
-                            name: up.name.into(),
-                            description: up.description.map(|d| d.into()),
-                            created_at: up.created_at.and_utc().timestamp() as usize,
-                            updated_at: up.updated_at.and_utc().timestamp() as usize,
+                            name: us.name.into(),
+                            description: us.description.map(|d| d.into()),
+                            created_at: us.created_at.and_utc().timestamp() as usize,
+                            updated_at: us.updated_at.and_utc().timestamp() as usize,
                             color: color.into(),
                             device_id: DeviceId::from_string(&us.device_id)
                                 .expect("Should be valid ApiId"),
+                            place_name: up.name.into(),
                         };
                         Ok(aup)
                     })
@@ -349,7 +380,6 @@ mod tests {
 
     use axum::extract::Query;
     use axum_serde_valid::Json;
-    use serde_valid::json::ToJsonString;
 
     use crate::{
         api::{
@@ -389,14 +419,9 @@ mod tests {
                 .await
                 .expect("Should not fail");
 
-        assert!(
-            res_body.len() == 1,
-            "res_body.len(): {}\nres_body: {:?}",
-            res_body.len(),
-            res_body.to_json_string()
-        );
+        assert!(res_body.len() == 1, "res_body.len(): {}", res_body.len(),);
         assert_eq!(
-            res_body.first().unwrap().device_id,
+            res_body.first().unwrap().0.device_id,
             DeviceId::from_string(&user_sensor.device_id).expect("ApiId valid")
         );
     }
@@ -425,14 +450,9 @@ mod tests {
                 .await
                 .expect("Should not fail");
 
-        assert!(
-            res_body.len() == 1,
-            "res_body.len(): {}\nres_body: {:?}",
-            res_body.len(),
-            res_body.to_json_string()
-        );
+        assert!(res_body.len() == 1, "res_body.len(): {}\n", res_body.len(),);
         assert_eq!(
-            res_body.first().unwrap().device_id,
+            res_body.first().unwrap().0.device_id,
             DeviceId::from_string(&user_sensor.device_id).expect("ApiId valid")
         );
     }
