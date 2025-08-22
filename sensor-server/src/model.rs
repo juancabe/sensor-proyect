@@ -63,6 +63,8 @@ pub struct UserSensor {
     pub id: i32,
     pub place_id: i32,     // Foreign key to UserPlace
     pub device_id: String, // 20 bytes HEX String -> Generated at the sensor runtime
+    pub access_id: String, // 20 bytes HEX String -> Generated at the sensor runtime and securely
+    // sent to pairing device with PUB KEY SCHEME
     pub name: String,
     pub description: Option<String>,
     pub color_id: i32,
@@ -75,6 +77,7 @@ pub struct UserSensor {
 pub struct NewUserSensor {
     pub place_id: i32, // Foreign key to UserPlace
     pub device_id: String,
+    pub access_id: String,
     pub name: String,
     pub description: Option<String>,
     pub color_id: i32,

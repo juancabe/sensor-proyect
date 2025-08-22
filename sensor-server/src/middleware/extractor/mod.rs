@@ -8,7 +8,7 @@ use hyper::StatusCode;
 use jsonwebtoken::{Validation, decode};
 
 use crate::{
-    auth::{claims::Claims, keys::KEYS},
+    auth::{claims::Claims, keys::KEYS, sensor_claims::SensorClaims},
     db::{DbConnHolder, establish_connection},
     state,
 };
@@ -72,11 +72,64 @@ fn verify(jwt: &str) -> Result<Claims, StatusCode> {
         })?;
 
     // Check state poisoned status
-    if state::PoisonableIdentifier::JWTId(token_data.claims.jwt_id_hex()).is_poisoned()? {
+    if state::PoisonableIdentifier::UserJWTId(token_data.claims.jwt_id_hex()).is_poisoned()? {
         log::warn!("Tried to access with poisoned JWT: {jwt}, token_data: {token_data:?}");
         return Err(StatusCode::UNAUTHORIZED);
     }
     if state::PoisonableIdentifier::Username(token_data.claims.username.clone()).is_poisoned()? {
+        log::warn!(
+            "Tried to access with poisoned username, JWT: {jwt}, token_data: {token_data:?}"
+        );
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    Ok(token_data.claims)
+}
+
+impl<S> FromRequestParts<S> for SensorClaims
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        if let Ok(TypedHeader(Authorization(bearer))) =
+            TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state).await
+        {
+            log::trace!("JWT found in headers: {bearer:?}");
+            return verify_sensor(bearer.token());
+        }
+
+        let Ok(jar) = CookieJar::from_request_parts(parts, state).await;
+        if let Some(cookie) = jar.get("access_token") {
+            log::trace!("JWT found in cookie: {cookie:?}");
+            return verify_sensor(cookie.value());
+        }
+
+        log::warn!("No Header nor cookie found with available JWT, UNAUTHORIZED");
+        Err(StatusCode::UNAUTHORIZED)
+    }
+}
+
+/// common logic to decode + poison-check
+fn verify_sensor(jwt: &str) -> Result<SensorClaims, StatusCode> {
+    let token_data =
+        decode::<SensorClaims>(jwt, &KEYS.decoding, &Validation::default()).map_err(|e| {
+            log::warn!("Unable to decode JWT: {e:?}");
+            StatusCode::UNAUTHORIZED
+        })?;
+
+    // Check state poisoned status
+    if state::PoisonableIdentifier::SensorJWTId(token_data.claims.jwt_id_hex()).is_poisoned()? {
+        log::warn!("Tried to access with poisoned JWT: {jwt}, token_data: {token_data:?}");
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    if state::PoisonableIdentifier::DeviceID(token_data.claims.device_id.to_string())
+        .is_poisoned()?
+    {
         log::warn!(
             "Tried to access with poisoned username, JWT: {jwt}, token_data: {token_data:?}"
         );

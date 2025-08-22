@@ -2,6 +2,7 @@ use diesel::prelude::*;
 
 use crate::{
     api::{endpoints::sensor::SensorChange, types::validate::device_id::DeviceId},
+    auth::sensor_claims::SensorClaims,
     db::{DbConn, Error, colors, user_places, users},
     model::{self, NewUserSensor, SensorData, UserPlace, UserSensor},
 };
@@ -10,7 +11,11 @@ use crate::{
 pub struct AuthorizedSensor(UserSensor);
 
 impl AuthorizedSensor {
-    pub fn new(conn: &mut DbConn, device_id: &DeviceId, username: &str) -> Result<Self, Error> {
+    pub fn from_username(
+        conn: &mut DbConn,
+        device_id: &DeviceId,
+        username: &str,
+    ) -> Result<Self, Error> {
         let (place, sensor) = _get_user_sensor_and_place_unauthorized(conn, device_id.as_str())?;
 
         let user_id = users::get_user(conn, users::Identifier::Username(username))?.id;
@@ -25,6 +30,29 @@ impl AuthorizedSensor {
         } else {
             Ok(Self(sensor))
         }
+    }
+
+    pub fn from_access_id(
+        conn: &mut DbConn,
+        device_id: &DeviceId,
+        access_id: &DeviceId,
+    ) -> Result<Self, Error> {
+        let (_, sensor) = _get_user_sensor_and_place_unauthorized(conn, device_id.as_str())?;
+        if sensor.access_id.as_str() != access_id.as_str() {
+            log::warn!(
+                "Access Id ({}) tried to operate with sensor ({}) that didn't match",
+                access_id.as_str(),
+                device_id.as_str()
+            );
+            Err(Error::NotFound("Sensor not found".into()))
+        } else {
+            Ok(Self(sensor))
+        }
+    }
+
+    pub fn from_sensor_claims(conn: &mut DbConn, claims: &SensorClaims) -> Result<Self, Error> {
+        let (_, sensor) = _get_user_sensor_and_place_unauthorized(conn, claims.device_id.as_str())?;
+        Ok(Self(sensor))
     }
 
     pub fn get(self) -> UserSensor {
@@ -273,6 +301,7 @@ mod tests {
             color_id: 1,
             place_id: place.id,
             device_id: DeviceId::random().to_string(),
+            access_id: DeviceId::random().to_string(),
         };
 
         let i_up = insert_user_sensor(&mut conn, new_up.clone()).expect("No errors expected");

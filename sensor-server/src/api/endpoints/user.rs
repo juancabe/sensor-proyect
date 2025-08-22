@@ -220,7 +220,7 @@ impl User {
         }
 
         // Poison used JWT Id
-        let id = PoisonableIdentifier::JWTId(claims.jwt_id_hex());
+        let id = PoisonableIdentifier::UserJWTId(claims.jwt_id_hex());
         id.poison()?;
         log::trace!("Identifier: {id:?} poisoned");
 

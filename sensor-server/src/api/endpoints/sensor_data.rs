@@ -15,7 +15,7 @@ use crate::{
         route::Route,
         types::{ApiTimestamp, validate::device_id::DeviceId},
     },
-    auth::claims::Claims,
+    auth::{claims::Claims, sensor_claims::SensorClaims},
     db::{
         DbConnHolder,
         sensor_data::{Identifier, get_sensor_data, insert_sensor_data},
@@ -53,7 +53,6 @@ pub struct GetSensorData {
 #[derive(TS, Clone, Debug, serde::Serialize, serde::Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor_data/")]
 pub struct PostSensorData {
-    pub device_id: DeviceId,
     #[validate(max_length = 500)]
     pub serialized_data: String,
     pub created_at: Option<ApiTimestamp>,
@@ -138,7 +137,7 @@ impl SensorData {
         Query(payload): Query<GetSensorData>,
     ) -> Result<Json<Vec<ApiSensorData>>, StatusCode> {
         let conn = &mut conn.0;
-        let sensor = AuthorizedSensor::new(conn, &payload.device_id, &claims.username)?;
+        let sensor = AuthorizedSensor::from_username(conn, &payload.device_id, &claims.username)?;
 
         log::trace!("Getting data for sensor: {sensor:?}");
 
@@ -171,13 +170,13 @@ impl SensorData {
 
     pub async fn sensor_data_post(
         jar: CookieJar,
-        claims: Claims,
+        claims: SensorClaims,
         mut conn: DbConnHolder,
         Json(payload): Json<PostSensorData>,
     ) -> Result<(CookieJar, Json<PostSensorDataResponse>), StatusCode> {
         let conn = &mut conn.0;
 
-        let sensor = AuthorizedSensor::new(conn, &payload.device_id, &claims.username)?;
+        let sensor = AuthorizedSensor::from_sensor_claims(conn, &claims)?;
 
         log::trace!(
             "Adding data to sensor {sensor:?}, data: {:?}",
@@ -205,15 +204,20 @@ impl SensorData {
         };
 
         let jwt_id_hex = claims.jwt_id_hex(); // ID to Poison
-        let claims = Claims::new(claims.username);
+        let device_id = DeviceId::from_string(&claims.device_id).map_err(|e| {
+            log::error!("Could not construct DeviceID from claims.device_id: {e:?}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
-        let new_session = ApiSession::from_claims(claims).map_err(|e| {
+        let claims = SensorClaims::new(device_id);
+
+        let new_session = ApiSession::from_sensor_claims(claims).map_err(|e| {
             log::error!("Error generating new session from_claims: {e:?}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
         // Poison used JWT
-        PoisonableIdentifier::JWTId(jwt_id_hex).poison()?;
+        PoisonableIdentifier::SensorJWTId(jwt_id_hex).poison()?;
 
         Ok((
             jar.add(new_session.build_cookie()),
@@ -245,7 +249,7 @@ mod test {
             endpoints::sensor_data::{GetSensorData, PostSensorData, SensorData},
             types::validate::device_id::DeviceId,
         },
-        auth::claims::Claims,
+        auth::{claims::Claims, sensor_claims::SensorClaims},
         db::{
             DbConnHolder, establish_connection,
             tests::{create_test_user, create_test_user_place, create_test_user_sensor},
@@ -289,12 +293,9 @@ mod test {
         let user_place = create_test_user_place(conn, &user);
         let sensor = create_test_user_sensor(conn, &user_place);
 
-        let claims = Claims::new(user.username);
-
-        let device_id = DeviceId::from_string(&sensor.device_id).unwrap();
+        let claims = SensorClaims::new(DeviceId::from_string(&sensor.device_id).unwrap());
 
         let json = PostSensorData {
-            device_id,
             serialized_data: String::default(),
             created_at: None,
         };

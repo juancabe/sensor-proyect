@@ -34,6 +34,7 @@ diesel::table! {
         id -> Int4,
         place_id -> Int4,
         device_id -> Text,
+        access_id -> Text,
         name -> Text,
         description -> Nullable<Text>,
         color_id -> Int4,

@@ -10,9 +10,11 @@ use crate::api::types::ApiTimestamp;
 
 type PoisoningMap = LazyLock<Mutex<HashMap<String, ApiTimestamp>>>;
 
-static POISONED_JWTS: PoisoningMap = LazyLock::new(|| Mutex::new(HashMap::new()));
+static POISONED_USER_JWTS: PoisoningMap = LazyLock::new(|| Mutex::new(HashMap::new()));
+static POISONED_SENSOR_JWTS: PoisoningMap = LazyLock::new(|| Mutex::new(HashMap::new()));
 static POISONED_USERNAMES: PoisoningMap = LazyLock::new(|| Mutex::new(HashMap::new()));
 static POISONED_EMAILS: PoisoningMap = LazyLock::new(|| Mutex::new(HashMap::new()));
+static POISONED_DEVICES: PoisoningMap = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 type ExternalError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -47,9 +49,11 @@ impl From<Error> for StatusCode {
 #[derive(Debug, Clone)]
 pub enum PoisonableIdentifier {
     // Hex that identifies a JWT
-    JWTId(String),
+    UserJWTId(String),
+    SensorJWTId(String),
     Username(String),
     Email(String),
+    DeviceID(String),
 }
 
 impl PoisonableIdentifier {
@@ -78,25 +82,31 @@ impl PoisonableIdentifier {
 
     fn as_key(&self) -> &String {
         match self {
-            PoisonableIdentifier::JWTId(k) => k,
+            PoisonableIdentifier::UserJWTId(k) => k,
             PoisonableIdentifier::Username(k) => k,
             PoisonableIdentifier::Email(k) => k,
+            PoisonableIdentifier::DeviceID(k) => k,
+            PoisonableIdentifier::SensorJWTId(k) => k,
         }
     }
 
     fn into_key(&self) -> String {
         match self {
-            PoisonableIdentifier::JWTId(k) => k.clone(),
+            PoisonableIdentifier::UserJWTId(k) => k.clone(),
             PoisonableIdentifier::Username(k) => k.clone(),
             PoisonableIdentifier::Email(k) => k.clone(),
+            PoisonableIdentifier::DeviceID(k) => k.clone(),
+            PoisonableIdentifier::SensorJWTId(k) => k.clone(),
         }
     }
 
     fn associated_map(&self) -> &PoisoningMap {
         match self {
-            PoisonableIdentifier::JWTId(_) => &POISONED_JWTS,
+            PoisonableIdentifier::UserJWTId(_) => &POISONED_USER_JWTS,
             PoisonableIdentifier::Username(_) => &POISONED_USERNAMES,
             PoisonableIdentifier::Email(_) => &POISONED_EMAILS,
+            PoisonableIdentifier::DeviceID(_) => &POISONED_DEVICES,
+            PoisonableIdentifier::SensorJWTId(_) => &POISONED_SENSOR_JWTS,
         }
     }
 

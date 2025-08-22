@@ -106,7 +106,10 @@ pub struct PutSensor {
 pub struct PostSensor {
     #[validate]
     pub place_name: ApiEntityName,
+    #[validate]
     pub device_id: DeviceId,
+    #[validate]
+    pub access_id: DeviceId,
     #[validate]
     pub name: ApiEntityName,
     #[validate]
@@ -151,7 +154,7 @@ impl Sensor {
     ) -> Result<Json<ApiUserSensor>, StatusCode> {
         let conn = &mut conn.0;
 
-        let auth_sensor = AuthorizedSensor::new(conn, &device_id, &claims.username)?;
+        let auth_sensor = AuthorizedSensor::from_username(conn, &device_id, &claims.username)?;
         let user_id = users::get_user(conn, users::Identifier::Username(&claims.username))?.id;
         let sensor = update_user_sensor(conn, auth_sensor, change.clone() as Update, user_id)?;
 
@@ -202,7 +205,7 @@ impl Sensor {
 
         let id = match &payload {
             GetSensorEnum::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(
-                AuthorizedSensor::new(&mut conn.0, device_id, &claims.username)?,
+                AuthorizedSensor::from_username(&mut conn.0, device_id, &claims.username)?,
             ),
             GetSensorEnum::FromPlaceName(name) => {
                 Identifier::PlaceNameAndUserId(name.as_str(), user_id)
@@ -291,6 +294,7 @@ impl Sensor {
             color_id,
             place_id,
             device_id: payload.device_id.to_string(),
+            access_id: payload.access_id.to_string(),
         };
 
         log::trace!("NewUserSensor: {sensor:?}");
@@ -330,7 +334,7 @@ impl Sensor {
 
         let id = match &payload {
             DeleteSensor::FromSensorDeviceId(device_id) => Identifier::SensorDeviceId(
-                AuthorizedSensor::new(&mut conn.0, device_id, &claims.username)?,
+                AuthorizedSensor::from_username(&mut conn.0, device_id, &claims.username)?,
             ),
             DeleteSensor::FromPlaceName(name) => {
                 log::trace!("Deleting all sensors from place {name:?}");
@@ -479,6 +483,7 @@ mod tests {
             description: Some("A description for the new sensor.".to_string().into()),
             color: "#FF0000".to_string().into(),
             device_id: DeviceId::random(),
+            access_id: DeviceId::random(),
         };
 
         let claims = Claims {

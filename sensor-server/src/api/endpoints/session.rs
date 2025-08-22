@@ -12,20 +12,38 @@ use crate::{
     api::{
         Endpoint,
         route::Route,
-        types::validate::{api_raw_password::ApiRawPassword, api_username::ApiUsername},
+        types::validate::{
+            api_raw_password::ApiRawPassword, api_username::ApiUsername, device_id::DeviceId,
+        },
     },
-    auth::claims::Claims,
-    db::{self, DbConnHolder, users},
+    auth::{claims::Claims, sensor_claims::SensorClaims},
+    db::{self, DbConnHolder, user_sensors::AuthorizedSensor, users},
     state::PoisonableIdentifier,
 };
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/session/")]
-pub struct PostSession {
+pub struct UserLogin {
     #[validate]
     pub username: ApiUsername,
     #[validate]
     pub raw_password: ApiRawPassword,
+}
+
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
+#[ts(export, export_to = "./api/endpoints/session/")]
+pub struct SensorLogin {
+    #[validate]
+    pub device_id: DeviceId,
+    #[validate]
+    pub access_id: DeviceId,
+}
+
+#[derive(TS, Debug, Serialize, Deserialize, Validate)]
+#[ts(export, export_to = "./api/endpoints/session/")]
+pub enum PostSession {
+    User(#[validate] UserLogin),
+    Sensor(#[validate] SensorLogin),
 }
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
@@ -52,6 +70,11 @@ impl ApiSession {
     }
 
     pub fn from_claims(claims: Claims) -> Result<Self, jsonwebtoken::errors::Error> {
+        let jwt = claims.encode_jwt()?;
+        Ok(Self::new(jwt, claims.exp - claims.iat))
+    }
+
+    pub fn from_sensor_claims(claims: SensorClaims) -> Result<Self, jsonwebtoken::errors::Error> {
         let jwt = claims.encode_jwt()?;
         Ok(Self::new(jwt, claims.exp - claims.iat))
     }
@@ -92,7 +115,7 @@ impl Session {
     ) -> Result<(CookieJar, Json<ApiSession>), StatusCode> {
         log::trace!("Renewing JWT for user: {}", claims.username);
         // Poison outdated JWT
-        PoisonableIdentifier::JWTId(claims.jwt_id_hex()).poison()?;
+        PoisonableIdentifier::UserJWTId(claims.jwt_id_hex()).poison()?;
 
         let username = claims.username.clone();
 
@@ -116,42 +139,61 @@ impl Session {
     ) -> Result<(CookieJar, Json<ApiSession>), StatusCode> {
         log::trace!("Generating new JWT");
 
-        let db_hashed_password = users::get_user(
-            &mut conn.0,
-            users::Identifier::Username(payload.username.as_str()),
-        )
-        .map_err(|e| match e {
-            db::Error::NotFound(error) => {
-                log::warn!(
-                    "Tried to login to user: {username:?} but it doesn't exist: {error:?}",
-                    username = &payload.username
-                );
-                StatusCode::UNAUTHORIZED
+        let session = match payload {
+            PostSession::User(user) => {
+                let db_hashed_password = users::get_user(
+                    &mut conn.0,
+                    users::Identifier::Username(user.username.as_str()),
+                )
+                .map_err(|e| match e {
+                    db::Error::NotFound(error) => {
+                        log::warn!(
+                            "Tried to login to user: {username:?} but it doesn't exist: {error:?}",
+                            username = &user.username
+                        );
+                        StatusCode::UNAUTHORIZED
+                    }
+                    _ => StatusCode::INTERNAL_SERVER_ERROR,
+                })?
+                .hashed_password;
+
+                if !user.raw_password.password_matches_raw(&db_hashed_password) {
+                    log::warn!("Passwords didn't match for payload: {user:?}");
+                    return Err(StatusCode::UNAUTHORIZED);
+                }
+
+                if PoisonableIdentifier::Username(user.username.clone().into()).is_poisoned()? {
+                    log::error!(
+                        "Username should not be in DB when its poisoned, username: {:?}",
+                        user.username
+                    );
+                    Err(StatusCode::INTERNAL_SERVER_ERROR)?
+                }
+
+                let claims = Claims::new(user.username.into());
+
+                ApiSession::from_claims(claims)
             }
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        })?
-        .hashed_password;
+            PostSession::Sensor(sensor) => {
+                log::info!("Generating sensor session for sensor: {sensor:?}");
 
-        if !payload
-            .raw_password
-            .password_matches_raw(&db_hashed_password)
-        {
-            log::warn!("Passwords didn't match for payload: {payload:?}");
-            return Err(StatusCode::UNAUTHORIZED);
-        }
+                AuthorizedSensor::from_access_id(
+                    &mut conn.0,
+                    &sensor.device_id,
+                    &sensor.access_id,
+                )?;
 
-        if PoisonableIdentifier::Username(payload.username.clone().into()).is_poisoned()? {
-            log::error!(
-                "Username should not be in DB when its poisoned, username: {:?}",
-                payload.username
-            );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)?
-        }
+                let claims = SensorClaims::new(sensor.device_id);
+                log::warn!("SensorClaims: {claims:?}");
+                ApiSession::from_sensor_claims(claims)
+            }
+        };
 
-        let claims = Claims::new(payload.username.into());
-
-        match ApiSession::from_claims(claims) {
-            Ok(ass) => Ok((jar.add(ass.build_cookie()), Json(ass))),
+        match session {
+            Ok(ass) => {
+                log::info!("Session generated: {ass:?}");
+                Ok((jar.add(ass.build_cookie()), Json(ass)))
+            }
             Err(e) => {
                 log::error!("Error generating new claims: {e:?}");
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -210,10 +252,12 @@ mod test {
         let conn = &mut conn_nref;
         let (user, pass) = create_test_user(conn);
 
-        let json = PostSession {
+        let json = UserLogin {
             username: user.username.into(),
             raw_password: pass,
         };
+
+        let json = PostSession::User(json);
 
         let conn = DbConnHolder(conn_nref);
         let _res = Session::session_post(conn, CookieJar::new(), Json(json))

@@ -205,6 +205,7 @@ pub mod tests {
             color_id: 1,
             place_id: user_place.id,
             device_id: DeviceId::random().to_string(),
+            access_id: DeviceId::random().to_string(),
         };
 
         let res: Vec<UserSensor> = test_user_sensor

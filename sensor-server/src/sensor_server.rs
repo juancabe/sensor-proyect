@@ -90,7 +90,7 @@ mod tests {
                 sensor_data::{
                     ApiSensorData, GetSensorData, PostSensorData, PostSensorDataResponse,
                 },
-                session::{ApiSession, PostSession},
+                session::{ApiSession, PostSession, SensorLogin, UserLogin},
                 user::{ApiUser, GetUser, NotUniqueUser, PostUser},
             },
             types::validate::{
@@ -208,18 +208,20 @@ mod tests {
             endpoints::session::Session::API_PATH
         );
 
-        let query = PostSession {
+        let query = UserLogin {
             username: username.clone(),
             raw_password: raw_password.clone(),
         };
 
-        let res = server.post(path.as_str()).json(&json!(query)).await;
-        let session: ApiSession = res.json();
+        let query = PostSession::User(query);
 
-        server.clear_query_params();
+        let res = server.post(path.as_str()).json(&json!(query)).await;
+        let user_session: ApiSession = res.json();
+
+        server.clear_headers();
         server.add_header(
             "Authorization",
-            (String::from("Bearer ") + session.access_token.as_str()).as_str(),
+            (String::from("Bearer ") + user_session.access_token.as_str()).as_str(),
         );
 
         // Get User Back
@@ -292,6 +294,7 @@ mod tests {
         let sensor_name = ApiEntityName::random();
         let sensor_description = ApiDescription::random();
         let sensor_device_id = DeviceId::random();
+        let sensor_access_id = DeviceId::random();
 
         let body = PostSensor {
             name: sensor_name.clone().into(),
@@ -299,6 +302,7 @@ mod tests {
             color: COLOR_HEX_STRS[0].to_string().into(),
             place_name: name.clone().into(),
             device_id: sensor_device_id.clone(),
+            access_id: sensor_access_id.clone(),
         };
 
         let res = server.post(path.as_str()).json(&body).await;
@@ -325,6 +329,7 @@ mod tests {
             color: color.clone(),
             place_name: name.clone(),
             device_id: sensor_device_id.clone(),
+            access_id: DeviceId::random(),
         };
 
         let res = server
@@ -333,6 +338,30 @@ mod tests {
             .expect_failure()
             .await;
         assert_eq!(StatusCode::CONFLICT, res.status_code());
+
+        // Get sensor session
+        let path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::session::Session::API_PATH
+        );
+
+        let query = SensorLogin {
+            device_id: sensor_device_id.clone(),
+            access_id: sensor_access_id.clone(),
+        };
+
+        let query = PostSession::Sensor(query);
+
+        let res = server.post(path.as_str()).json(&json!(query)).await;
+        let session: ApiSession = res.json();
+        log::trace!("Received session: {session:?}");
+
+        server.clear_headers();
+        server.add_header(
+            "Authorization",
+            (String::from("Bearer ") + session.access_token.as_str()).as_str(),
+        );
 
         // Send sensor data
         let path = format!(
@@ -350,7 +379,6 @@ mod tests {
         ";
 
         let body = PostSensorData {
-            device_id: sensor_device_id.clone(),
             serialized_data: serialized_data.to_string(),
             created_at: None,
         };
@@ -375,9 +403,10 @@ mod tests {
         };
 
         server.clear_headers();
+        server.clear_query_params();
         server.add_header(
             "Authorization",
-            "Bearer ".to_string() + resp2.new_session.access_token.as_str(),
+            (String::from("Bearer ") + user_session.access_token.as_str()).as_str(),
         );
         let res = server.get(&path).add_query_params(query).await;
         server.clear_query_params();
@@ -392,6 +421,7 @@ mod tests {
             upper_added_at: None,
         };
 
+        server.clear_query_params();
         let res = server.get(&path).add_query_params(query).await;
         server.clear_query_params();
 
@@ -405,10 +435,12 @@ mod tests {
             endpoints::session::Session::API_PATH
         );
 
-        let query = PostSession {
+        let query = UserLogin {
             username: username.clone(),
             raw_password: ApiRawPassword::random(),
         };
+
+        let query = PostSession::User(query);
 
         server.clear_headers();
         let res = server.post(&path).json(&query).expect_failure().await;
@@ -422,10 +454,12 @@ mod tests {
             endpoints::session::Session::API_PATH
         );
 
-        let query = PostSession {
+        let query = UserLogin {
             username: ApiUsername::random(),
             raw_password: raw_password.clone(),
         };
+
+        let query = PostSession::User(query);
 
         server.clear_headers();
         let res = server.post(&path).json(&query).expect_failure().await;
@@ -434,7 +468,7 @@ mod tests {
         server.clear_headers();
         server.add_header(
             "Authorization",
-            "Bearer ".to_string() + resp2.new_session.access_token.as_str(),
+            "Bearer ".to_string() + user_session.access_token.as_str(),
         );
 
         // GET list of places
@@ -504,6 +538,7 @@ mod tests {
             color: color.clone(),
             place_name: name.clone(),
             device_id: DeviceId::random(),
+            access_id: DeviceId::random(),
         };
         let res = server
             .post(&sensor_list_path)

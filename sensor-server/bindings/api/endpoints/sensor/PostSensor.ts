@@ -4,4 +4,4 @@ import type { ApiDescription } from "../../types/ApiDescription";
 import type { ApiEntityName } from "../../types/ApiEntityName";
 import type { DeviceId } from "../../types/DeviceId";
 
-export type PostSensor = { place_name: ApiEntityName, device_id: DeviceId, name: ApiEntityName, description: ApiDescription | null, color: ApiColor, };
+export type PostSensor = { place_name: ApiEntityName, device_id: DeviceId, access_id: DeviceId, name: ApiEntityName, description: ApiDescription | null, color: ApiColor, };
