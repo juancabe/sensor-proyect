@@ -78,6 +78,13 @@ pub struct GetSensor {
     pub param: GetSensorEnum,
 }
 
+#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
+#[ts(export, export_to = "./api/endpoints/sensor/")]
+pub struct GetSensorResponse {
+    pub sensor: ApiUserSensor,
+    pub last_data: Option<ApiSensorData>,
+}
+
 #[derive(TS, Debug, serde::Serialize, serde::Deserialize, Clone, Validate)]
 pub enum SensorChange {
     PlaceName(#[validate] ApiEntityName),
@@ -184,7 +191,7 @@ impl Sensor {
         claims: Claims,
         mut conn: DbConnHolder,
         Query(payload): Query<GetSensor>,
-    ) -> Result<Json<Vec<(ApiUserSensor, Option<ApiSensorData>)>>, StatusCode> {
+    ) -> Result<Json<Vec<GetSensorResponse>>, StatusCode> {
         let user_id = db::users::get_user(
             &mut conn.0,
             db::users::Identifier::Username(&claims.username),
@@ -204,7 +211,7 @@ impl Sensor {
 
         let vec = match db::user_sensors::get_user_sensor_and_place_and_last_data(&mut conn.0, id) {
             Ok(vec) => {
-                let vec: Result<Vec<(ApiUserSensor, Option<ApiSensorData>)>, db::Error> = vec
+                let vec: Result<Vec<GetSensorResponse>, db::Error> = vec
                     .into_iter()
                     .map(|(place, sensor, data)| {
                         let color = db::colors::get_color_by_id(&mut conn.0, place.color_id)
@@ -228,7 +235,10 @@ impl Sensor {
                             added_at: d.added_at.and_utc().timestamp() as ApiTimestamp,
                         });
 
-                        Ok((aus, data))
+                        Ok(GetSensorResponse {
+                            sensor: aus,
+                            last_data: data,
+                        })
                     })
                     .collect();
                 vec
@@ -421,7 +431,7 @@ mod tests {
 
         assert!(res_body.len() == 1, "res_body.len(): {}", res_body.len(),);
         assert_eq!(
-            res_body.first().unwrap().0.device_id,
+            res_body.first().unwrap().sensor.device_id,
             DeviceId::from_string(&user_sensor.device_id).expect("ApiId valid")
         );
     }
@@ -452,7 +462,7 @@ mod tests {
 
         assert!(res_body.len() == 1, "res_body.len(): {}\n", res_body.len(),);
         assert_eq!(
-            res_body.first().unwrap().0.device_id,
+            res_body.first().unwrap().sensor.device_id,
             DeviceId::from_string(&user_sensor.device_id).expect("ApiId valid")
         );
     }

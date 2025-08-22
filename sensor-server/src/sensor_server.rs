@@ -86,7 +86,7 @@ mod tests {
             endpoints::{
                 self,
                 place::{ApiUserPlace, GetPlace, GetPlaceEnum, PostPlace},
-                sensor::{ApiUserSensor, GetSensor, GetSensorEnum, PostSensor},
+                sensor::{ApiUserSensor, GetSensor, GetSensorEnum, GetSensorResponse, PostSensor},
                 sensor_data::{
                     ApiSensorData, GetSensorData, PostSensorData, PostSensorDataResponse,
                 },
@@ -468,14 +468,14 @@ mod tests {
 
         let res = server.get(&sensor_list_path).add_query_params(query).await;
         server.clear_query_params();
-        let sensor_list: Vec<(ApiUserSensor, Option<ApiSensorData>)> = res.json();
+        let sensor_list: Vec<GetSensorResponse> = res.json();
         assert_eq!(sensor_list.len(), 1);
-        let (fetched_sensor, _) = &sensor_list[0];
+        let fetched_sensor = &sensor_list[0];
         assert_eq!(
-            &fetched_sensor.description.as_ref().unwrap().as_str(),
+            &fetched_sensor.sensor.description.as_ref().unwrap().as_str(),
             &sensor_description.as_str()
         );
-        assert_eq!(fetched_sensor.device_id, sensor_device_id);
+        assert_eq!(fetched_sensor.sensor.device_id, sensor_device_id);
 
         // Unauthorized access to protected endpoints
         server.clear_headers();
