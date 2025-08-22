@@ -1,6 +1,5 @@
 import BindedColorPicker from '@/components/BindedColorPicker';
 import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
-import { newUserSensor } from '@/api/sensor_crud';
 import { useAppContext } from '@/components/AppProvider';
 import BackgroundView from '@/components/ui-elements/BackgroundView';
 import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
@@ -11,20 +10,9 @@ import { Button, StyleSheet } from 'react-native';
 import { Device } from 'react-native-ble-plx';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { PostSensorResponseBody } from '@/bindings/endpoints/PostSensor';
-import { SensorColor } from '@/bindings/SensorColor';
 import { useRouter } from 'expo-router';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
-
-const sensorColorValues: Record<SensorColor, string> = {
-    HEX_DB2122: '#DB2122',
-    HEX_F0D16F: '#F0D16F',
-    HEX_21DB55: '#21DB55',
-    HEX_2132DB: '#2132DB',
-    HEX_6FF0D1: '#6FF0D1',
-    HEX_DB21A0: '#DB21A0',
-    HEX_DB8F21: '#DB8F21',
-};
+import { API_COLORS } from '@/constants/api_colors';
 
 export default function AddSensorScreen() {
     const ble = useBLE();
@@ -33,9 +21,7 @@ export default function AddSensorScreen() {
 
     const [sensorName, setSensorName] = useState<string | undefined>(undefined);
     const [sensorDescription, setSensorDescription] = useState<string | null>(null);
-    const [selectedColor, setSelectedColor] = useState<SensorColor | undefined>(
-        undefined,
-    );
+    const [selectedColor, setSelectedColor] = useState<string>(API_COLORS[0]);
 
     const [errorText, setErrorText] = useState<string | null>(null);
 
@@ -139,11 +125,11 @@ export default function AddSensorScreen() {
                     </ThemedText>
                     <ThemedForm fields={formFields}></ThemedForm>
                     <BindedColorPicker
-                        colorValues={sensorColorValues}
+                        colorValues={API_COLORS}
                         selectedColor={selectedColor}
                         onColorChange={(color) => {
                             console.log('Setting color to: ', color);
-                            setSelectedColor(color as SensorColor);
+                            setSelectedColor(color);
                         }}
                     ></BindedColorPicker>
                     <ErrorBox error={errorText}></ErrorBox>

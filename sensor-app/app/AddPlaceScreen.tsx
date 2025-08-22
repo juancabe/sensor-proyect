@@ -7,100 +7,76 @@ import { Button, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
 
-import { newUserPlace } from '@/api/place_crud';
-import { PlaceColor } from '@/bindings/PlaceColor';
 import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import { useRouter } from 'expo-router';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
-
-const placeColorValues: Record<PlaceColor, string> = {
-    HEX_403E2A: '#403E2A',
-    HEX_807895: '#807895',
-    HEX_2A4039: '#2A4039',
-    HEX_402E2A: '#402E2A',
-    HEX_957E78: '#957E78',
-    HEX_302A40: '#302A40',
-    HEX_807E71: '#807E71',
-    HEX_78958B: '#78958B',
-    HEX_BFBA7A: '#BFBA7A',
-    HEX_EA937D: '#EA937D',
-
-    // HEX_DB2122: '#DB2122',
-    // HEX_F0D16F: '#F0D16F',
-    // HEX_21DB55: '#21DB55',
-    // HEX_2132DB: '#2132DB',
-    // HEX_6FF0D1: '#6FF0D1',
-    // HEX_DB21A0: '#DB21A0',
-    // HEX_DB8F21: '#DB8F21',
-};
+import useApi, { errorText } from '@/hooks/useApi';
+import { PostPlace } from '@/bindings/api/endpoints/place/PostPlace';
+import { API_COLORS } from '@/constants/api_colors';
 
 export default function AddPlaceScreen() {
     const ctx = useAppContext();
     const router = useRouter();
-
-    const [placeName, setPlaceName] = useState<string | undefined>(undefined);
-    const [placeDescription, setPlaceDescription] = useState<string | null>(null);
-    const [placeColor, setPlaceColor] = useState<PlaceColor | undefined>(undefined);
-
-    const [errorText, setErrorText] = useState<null | string>(null);
-
-    const isAddable = placeName && placeColor;
 
     const redirectToIndex = () => {
         ctx.reloadSummary();
         router.replace('/');
     };
 
-    const handleAdd = async () => {
-        if (!ctx.sessionData?.all_set()) {
-            console.warn('[AddPlaceScreen] sessionData was not set');
-            setErrorText(
-                'Your login data is incorrectly set somehow, please log out and try again!',
-            );
-            return;
-        }
+    // TODO: Think about extracting these
+    // -- API RELATED --
+    const [name, setName] = useState<string>('');
+    const [description, setDescription] = useState<string | null>(null);
+    const [color, setColor] = useState<string>(API_COLORS[0]);
+    const body: PostPlace = {
+        name,
+        description,
+        color,
+    };
+    const [method, setMethod] = useState<'post' | undefined>(undefined);
+    const postPlace = useApi('/place', body, method);
 
-        if (!placeName) {
-            setErrorText(
+    if (postPlace.response) {
+        // TODO: Add place to context
+        redirectToIndex();
+    }
+    const [formErrorText, setFormErrorText] = useState<null | string>(null);
+    const postErrorText = postPlace.error ? errorText(postPlace.error, true) : null;
+    if (postErrorText) {
+        setFormErrorText(postErrorText); // TODO: Different places
+    }
+    // -- API RELATED --
+
+    const isAddable = name && color;
+
+    const handleAdd = async () => {
+        if (!name) {
+            setFormErrorText(
                 'You should have set a place name before clicking the add button',
             );
             return; // TODO Better error return
         }
 
-        if (!placeColor) {
-            setErrorText('You should have set a color before clicking the add button');
+        if (!color) {
+            setFormErrorText(
+                'You should have set a color before clicking the add button',
+            );
             return; // TODO Better error return
         }
 
-        const response = await newUserPlace(
-            ctx.sessionData.username!,
-            {
-                id: ctx.sessionData.api_id!,
-            },
-            placeName,
-            placeDescription,
-            placeColor,
-        );
-
-        if (response && !(typeof response === 'number')) {
-            redirectToIndex();
-        } else {
-            setErrorText(
-                'There was an error when sending the place to the server, please log out and try again',
-            );
-        }
+        setMethod('post');
     };
 
     let formFields: FieldConfig[] = [
         {
             placeholder: 'Name',
-            onChangeText: setPlaceName,
-            value: placeName ? placeName : '',
+            onChangeText: setName,
+            value: name ? name : '',
         },
         {
             placeholder: 'Description (optional)',
-            onChangeText: setPlaceDescription,
-            value: placeDescription ? placeDescription : '',
+            onChangeText: setDescription,
+            value: description ? description : '',
         },
     ];
     return (
@@ -111,13 +87,13 @@ export default function AddPlaceScreen() {
                     <ThemedForm fields={formFields}></ThemedForm>
 
                     <BindedColorPicker
-                        selectedColor={placeColor}
+                        selectedColor={color}
                         onColorChange={(color) => {
-                            setPlaceColor(color as PlaceColor);
+                            setColor(color);
                         }}
-                        colorValues={placeColorValues}
+                        colorValues={API_COLORS}
                     ></BindedColorPicker>
-                    <ErrorBox error={errorText}></ErrorBox>
+                    <ErrorBox error={formErrorText}></ErrorBox>
 
                     <Button
                         title="Add Place"

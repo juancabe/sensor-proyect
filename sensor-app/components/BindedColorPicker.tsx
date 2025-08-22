@@ -4,7 +4,7 @@ import { ThemedView } from './ui-elements/ThemedView';
 interface BindedColorPickerProps {
     selectedColor: string | undefined;
     onColorChange: (color: string) => void;
-    colorValues: Record<string, string>;
+    colorValues: string[];
 }
 
 export default function BindedColorPicker({
@@ -14,19 +14,19 @@ export default function BindedColorPicker({
 }: BindedColorPickerProps) {
     return (
         <ThemedView style={styles.container}>
-            {Object.entries(colorValues).map(([colorKey, hexValue]) => {
-                const isSelected = selectedColor === colorKey;
+            {colorValues.map((color) => {
+                const isSelected = selectedColor === color;
                 const isSelectedBorder = isSelected ? styles.selectedBorder : undefined;
 
                 return (
                     <TouchableOpacity
-                        key={colorKey}
+                        key={color}
                         style={[
-                            { backgroundColor: hexValue },
+                            { backgroundColor: color },
                             styles.colorCircle,
                             isSelectedBorder,
                         ]}
-                        onPress={() => onColorChange(colorKey)}
+                        onPress={() => onColorChange(color)}
                     />
                 );
             })}
