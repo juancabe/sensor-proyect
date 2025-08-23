@@ -15,6 +15,7 @@ impl ApiEntityName {
         if val.len() > Self::MAX_LEN
             || val.len() < Self::MIN_LEN
             || val.chars().any(|c| !(c.is_alphanumeric() || c == ' '))
+            || val.trim() != val
         {
             Err(Error::Custom("Invalid username".into()))
         } else {
@@ -46,5 +47,50 @@ impl From<String> for ApiEntityName {
 impl From<ApiEntityName> for String {
     fn from(value: ApiEntityName) -> Self {
         value.0
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use serde_valid::Validate;
+
+    use crate::api::types::validate::api_entity_name::ApiEntityName;
+
+    #[test]
+    fn test_api_description_success() {
+        ApiEntityName::from("ValidName".to_string())
+            .validate()
+            .expect("Should be fine");
+        ApiEntityName::from("Valid Name Too".to_string())
+            .validate()
+            .expect("Should be fine");
+        ApiEntityName::from("Valid 123 TOO".to_string())
+            .validate()
+            .expect("Should be fine");
+        ApiEntityName::from("a".repeat(ApiEntityName::MIN_LEN).to_string())
+            .validate()
+            .expect("Should be fine");
+        ApiEntityName::from("a".repeat(ApiEntityName::MAX_LEN).to_string())
+            .validate()
+            .expect("Should be fine");
+    }
+
+    #[test]
+    fn test_api_description_fail() {
+        ApiEntityName::from("inva[lid name".to_string())
+            .validate()
+            .expect_err("Should error");
+        ApiEntityName::from(" is a invalid".to_string())
+            .validate()
+            .expect_err("Should error");
+        ApiEntityName::from("123 is a \n".to_string())
+            .validate()
+            .expect_err("Should error");
+        ApiEntityName::from("a".repeat(ApiEntityName::MIN_LEN - 1).to_string())
+            .validate()
+            .expect_err("Should error");
+        ApiEntityName::from("a".repeat(ApiEntityName::MAX_LEN + 1).to_string())
+            .validate()
+            .expect_err("Should error");
     }
 }

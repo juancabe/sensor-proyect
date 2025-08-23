@@ -25,7 +25,7 @@ use crate::{
         DbConn, DbConnHolder,
         users::{Identifier, Update, get_user, insert_user, update_user},
     },
-    state::PoisonableIdentifier,
+    state::poisonable_identifier::PoisonableIdentifier,
 };
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate, Clone)]

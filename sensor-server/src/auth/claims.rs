@@ -1,11 +1,13 @@
 use std::sync::{LazyLock, Mutex};
 
 use chrono::TimeDelta;
-use jsonwebtoken::{Header, encode};
+use hyper::StatusCode;
+use jsonwebtoken::{Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
-use crate::auth::keys::KEYS;
+use crate::{auth::keys::PROCESS_KEYS, state};
 
+// Will be unique because JWT lifetime is tied to server process lifetime
 static ID_COUNTER: LazyLock<Mutex<u128>> = LazyLock::new(|| Mutex::new(u128::default()));
 pub fn get_new_id() -> u128 {
     let mut lock = ID_COUNTER.lock().expect("Mutex should unlock");
@@ -13,7 +15,7 @@ pub fn get_new_id() -> u128 {
     *lock
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Claims {
     pub jwt_id: u128,
     pub username: String,
@@ -42,6 +44,55 @@ impl Claims {
     }
 
     pub fn encode_jwt(&self) -> Result<String, jsonwebtoken::errors::Error> {
-        encode(&Header::default(), &self, &KEYS.encoding)
+        encode(&Header::default(), &self, &PROCESS_KEYS.encoding)
+    }
+
+    pub fn from_jwt(jwt: &str) -> Result<Self, StatusCode> {
+        let token_data = decode::<Claims>(jwt, &PROCESS_KEYS.decoding, &Validation::default())
+            .map_err(|e| {
+                log::warn!("Unable to decode JWT: {e:?}");
+                StatusCode::UNAUTHORIZED
+            })?;
+
+        // Check state poisoned status
+        if state::poisonable_identifier::PoisonableIdentifier::UserJWTId(token_data.claims.jwt_id_hex()).is_poisoned()? {
+            log::warn!("Tried to access with poisoned JWT: {jwt}, token_data: {token_data:?}");
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+        if state::poisonable_identifier::PoisonableIdentifier::Username(token_data.claims.username.clone())
+            .is_poisoned()?
+        {
+            log::warn!(
+                "Tried to access with poisoned username, JWT: {jwt}, token_data: {token_data:?}"
+            );
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+
+        Ok(token_data.claims)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{auth::claims::Claims, state::poisonable_identifier::PoisonableIdentifier};
+
+    #[test]
+    fn test_claims() {
+        let claims = Claims::new("paquito".to_string());
+        let jwt = claims.encode_jwt().unwrap();
+        let new_claims = Claims::from_jwt(jwt.as_str()).expect("Should not be poisoned");
+        assert_eq!(claims, new_claims);
+    }
+
+    #[test]
+    fn test_claims_fail() {
+        let claims = Claims::new("paquito".to_string());
+
+        PoisonableIdentifier::UserJWTId(claims.jwt_id_hex())
+            .poison()
+            .expect("Should not fail on poisoning");
+
+        let jwt = claims.encode_jwt().unwrap();
+        Claims::from_jwt(jwt.as_str()).expect_err("Should be poisoned");
     }
 }

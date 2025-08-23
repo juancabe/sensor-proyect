@@ -18,7 +18,7 @@ use crate::{
     },
     auth::{claims::Claims, sensor_claims::SensorClaims},
     db::{self, DbConnHolder, user_sensors::AuthorizedSensor, users},
-    state::PoisonableIdentifier,
+    state::poisonable_identifier::PoisonableIdentifier,
 };
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]

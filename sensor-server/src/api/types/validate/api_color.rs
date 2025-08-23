@@ -41,3 +41,41 @@ impl From<ApiColor> for String {
         value.0
     }
 }
+
+#[cfg(test)]
+mod test {
+    use serde_valid::Validate;
+
+    use crate::{api::types::validate::api_color::ApiColor, db::model::COLOR_HEX_STRS};
+
+    #[test]
+    fn test_api_color_success() {
+        for color in COLOR_HEX_STRS {
+            ApiColor::from(color.to_string())
+                .validate()
+                .expect("Should be constructed correctly")
+        }
+
+        for _ in 0..100 {
+            ApiColor::random()
+                .validate()
+                .expect("Random color should be valid")
+        }
+    }
+
+    #[test]
+    fn test_api_color_fail() {
+        assert!(ApiColor::from("apicolor".to_string()).validate().is_err());
+        assert!(ApiColor::from("#123456".to_string()).validate().is_err());
+        assert!(
+            ApiColor::from(COLOR_HEX_STRS[0].to_string() + "1")
+                .validate()
+                .is_err()
+        );
+        assert!(
+            ApiColor::from("#".to_string() + COLOR_HEX_STRS[0])
+                .validate()
+                .is_err()
+        );
+    }
+}

@@ -15,6 +15,7 @@ impl ApiDescription {
         if val.len() < Self::MIN_LEN
             || val.len() > Self::MAX_LEN
             || val.chars().any(|c| !(c.is_alphanumeric() || c == ' '))
+            || val.trim() != val
         {
             Err(Error::Custom("Invalid description".into()))
         } else {
@@ -46,5 +47,50 @@ impl From<String> for ApiDescription {
 impl From<ApiDescription> for String {
     fn from(value: ApiDescription) -> Self {
         value.0
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use serde_valid::Validate;
+
+    use crate::api::types::validate::api_description::ApiDescription;
+
+    #[test]
+    fn test_api_description_success() {
+        ApiDescription::from("This is a valid description".to_string())
+            .validate()
+            .expect("Should be fine");
+        ApiDescription::from("This is a valid description 1231231 too".to_string())
+            .validate()
+            .expect("Should be fine");
+        ApiDescription::from("123This is a valid description".to_string())
+            .validate()
+            .expect("Should be fine");
+        ApiDescription::from("a".repeat(ApiDescription::MIN_LEN).to_string())
+            .validate()
+            .expect("Should be fine");
+        ApiDescription::from("a".repeat(ApiDescription::MAX_LEN).to_string())
+            .validate()
+            .expect("Should be fine");
+    }
+
+    #[test]
+    fn test_api_description_fail() {
+        ApiDescription::from("This is a inva[lid description".to_string())
+            .validate()
+            .expect_err("Should error");
+        ApiDescription::from("This is a valid? description 1231231 too".to_string())
+            .validate()
+            .expect_err("Should error");
+        ApiDescription::from("123This is a \n not valid description".to_string())
+            .validate()
+            .expect_err("Should error");
+        ApiDescription::from("a".repeat(ApiDescription::MIN_LEN - 1).to_string())
+            .validate()
+            .expect_err("Should error");
+        ApiDescription::from("a".repeat(ApiDescription::MAX_LEN + 1).to_string())
+            .validate()
+            .expect_err("Should error");
     }
 }

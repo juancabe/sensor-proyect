@@ -3,7 +3,7 @@ use dotenv::dotenv;
 
 use crate::{
     api::{Endpoint, endpoints::generate_endpoints},
-    auth::keys::KEYS,
+    auth::keys::PROCESS_KEYS,
     db::establish_connection,
 };
 
@@ -17,7 +17,7 @@ impl SensorServer {
     pub const API_BASE: &str = "/api/v0";
     pub fn new() -> Self {
         // Load LazyStatics
-        let _ = *KEYS;
+        let _ = *PROCESS_KEYS;
         log::info!("Loaded keys for JWT");
 
         dotenv().expect(".env should be available and readable");
@@ -36,7 +36,7 @@ impl SensorServer {
 
     pub fn for_test() -> Self {
         // Load LazyStatics
-        let _ = *KEYS;
+        let _ = *PROCESS_KEYS;
         log::info!("Loaded keys for JWT");
 
         dotenv().expect(".env should be available and readable");
@@ -99,8 +99,8 @@ mod tests {
                 api_username::ApiUsername, device_id::DeviceId,
             },
         },
-        db::tests::random_string,
         db::model::COLOR_HEX_STRS,
+        db::tests::random_string,
         sensor_server::SensorServer,
     };
 

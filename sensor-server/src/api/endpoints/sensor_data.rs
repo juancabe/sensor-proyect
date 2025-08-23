@@ -22,7 +22,7 @@ use crate::{
         user_sensors::AuthorizedSensor,
     },
     db::model::NewSensorData,
-    state::PoisonableIdentifier,
+    state::poisonable_identifier::PoisonableIdentifier,
 };
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
