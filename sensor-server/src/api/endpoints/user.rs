@@ -20,11 +20,11 @@ use crate::{
         },
     },
     auth::claims::Claims,
+    db::model::NewUser,
     db::{
         DbConn, DbConnHolder,
         users::{Identifier, Update, get_user, insert_user, update_user},
     },
-    model::NewUser,
     state::PoisonableIdentifier,
 };
 
@@ -225,7 +225,7 @@ impl User {
         log::trace!("Identifier: {id:?} poisoned");
 
         // Return updated
-        let crate::model::User {
+        let crate::db::model::User {
             id: _,
             username,
             hashed_password: _,
@@ -384,8 +384,7 @@ mod test {
             },
         },
         auth::claims::Claims,
-        db::{DbConnHolder, establish_connection, tests::create_test_user},
-        model,
+        db::{self, DbConnHolder, establish_connection, tests::create_test_user},
     };
 
     #[tokio::test]
@@ -435,7 +434,7 @@ mod test {
         let mut conn = establish_connection(true).unwrap();
 
         let (
-            model::User {
+            db::model::User {
                 id: _,
                 username,
                 hashed_password: _,
@@ -464,7 +463,7 @@ mod test {
     async fn test_user_put() {
         let mut conn = establish_connection(true).unwrap();
         let (
-            model::User {
+            db::model::User {
                 id: _,
                 username,
                 hashed_password: _,

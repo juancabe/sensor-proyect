@@ -4,7 +4,7 @@ use diesel::prelude::*;
 pub type HexValue = String;
 
 #[derive(Queryable, Selectable, Clone)]
-#[diesel(table_name = crate::schema::colors)]
+#[diesel(table_name = crate::db::schema::colors)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Color {
     pub id: i32,
@@ -17,7 +17,7 @@ pub const COLOR_HEX_STRS: [&'static str; 9] = [
 ];
 
 #[derive(Queryable, Selectable, Clone, Debug)]
-#[diesel(table_name = crate::schema::sensor_data)]
+#[diesel(table_name = crate::db::schema::sensor_data)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct SensorData {
     pub id: i64,
@@ -27,7 +27,7 @@ pub struct SensorData {
 }
 
 #[derive(Insertable, Clone, Debug)]
-#[diesel(table_name = crate::schema::sensor_data)]
+#[diesel(table_name = crate::db::schema::sensor_data)]
 pub struct NewSensorData {
     pub sensor_id: i32,
     pub data: serde_valid::json::Value,
@@ -35,7 +35,7 @@ pub struct NewSensorData {
 }
 
 #[derive(Queryable, Selectable, Debug, Clone, AsChangeset)]
-#[diesel(table_name = crate::schema::user_places)]
+#[diesel(table_name = crate::db::schema::user_places)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserPlace {
     pub id: i32,
@@ -48,7 +48,7 @@ pub struct UserPlace {
 }
 
 #[derive(Insertable, Clone)]
-#[diesel(table_name = crate::schema::user_places)]
+#[diesel(table_name = crate::db::schema::user_places)]
 pub struct NewUserPlace {
     pub user_id: i32,
     pub name: String,
@@ -57,7 +57,7 @@ pub struct NewUserPlace {
 }
 
 #[derive(Queryable, Selectable, Debug, Clone, AsChangeset)]
-#[diesel(table_name = crate::schema::user_sensors)]
+#[diesel(table_name = crate::db::schema::user_sensors)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserSensor {
     pub id: i32,
@@ -73,7 +73,7 @@ pub struct UserSensor {
 }
 
 #[derive(Insertable, Clone, Debug)]
-#[diesel(table_name = crate::schema::user_sensors)]
+#[diesel(table_name = crate::db::schema::user_sensors)]
 pub struct NewUserSensor {
     pub place_id: i32, // Foreign key to UserPlace
     pub device_id: String,
@@ -84,7 +84,7 @@ pub struct NewUserSensor {
 }
 
 #[derive(Queryable, Selectable, AsChangeset, Clone, Debug)]
-#[diesel(table_name = crate::schema::users)]
+#[diesel(table_name = crate::db::schema::users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
     pub id: i32,
@@ -97,7 +97,7 @@ pub struct User {
 }
 
 #[derive(Insertable, Clone, Debug)]
-#[diesel(table_name = crate::schema::users)]
+#[diesel(table_name = crate::db::schema::users)]
 pub struct NewUser {
     pub username: String,
     pub hashed_password: String,

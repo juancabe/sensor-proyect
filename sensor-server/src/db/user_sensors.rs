@@ -3,8 +3,11 @@ use diesel::prelude::*;
 use crate::{
     api::{endpoints::sensor::SensorChange, types::validate::device_id::DeviceId},
     auth::sensor_claims::SensorClaims,
-    db::{DbConn, Error, colors, user_places, users},
-    model::{self, NewUserSensor, SensorData, UserPlace, UserSensor},
+    db::{
+        self, DbConn, Error, colors,
+        model::{NewUserSensor, SensorData, UserPlace, UserSensor},
+        user_places, users,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -61,7 +64,7 @@ impl AuthorizedSensor {
 }
 
 pub fn insert_user_sensor(conn: &mut DbConn, sensor: NewUserSensor) -> Result<UserSensor, Error> {
-    use crate::schema::user_sensors::dsl::user_sensors as user_sensors_table;
+    use crate::db::schema::user_sensors::dsl::user_sensors as user_sensors_table;
 
     let sensor: Vec<UserSensor> = sensor.insert_into(user_sensors_table).load(conn)?;
 
@@ -75,18 +78,18 @@ fn _get_user_sensor_and_place_unauthorized(
     conn: &mut DbConn,
     device_id: &str,
 ) -> Result<(UserPlace, UserSensor), Error> {
-    use crate::schema::{
+    use crate::db::schema::{
         user_sensors::dsl as user_sensor, user_sensors::dsl::user_sensors as user_sensors_table,
     };
 
-    use crate::schema::user_places::dsl::user_places as user_places_table;
+    use crate::db::schema::user_places::dsl::user_places as user_places_table;
 
     let res = user_sensors_table
         .filter(user_sensor::device_id.eq(device_id))
         .inner_join(user_places_table)
         .select((
-            model::UserPlace::as_select(),
-            model::UserSensor::as_select(),
+            db::model::UserPlace::as_select(),
+            db::model::UserSensor::as_select(),
         ))
         .load(conn)?
         .into_iter()
@@ -107,8 +110,8 @@ pub fn get_user_sensor_and_place_and_last_data(
 ) -> Result<Vec<(UserPlace, UserSensor, Option<SensorData>)>, Error> {
     let res = match identifier {
         Identifier::SensorDeviceId(auth_sensor) => {
-            use crate::schema::user_places::dsl::user_places as user_places_table;
-            use crate::schema::{
+            use crate::db::schema::user_places::dsl::user_places as user_places_table;
+            use crate::db::schema::{
                 user_sensors::dsl as user_sensor,
                 user_sensors::dsl::user_sensors as user_sensors_table,
             };
@@ -119,16 +122,16 @@ pub fn get_user_sensor_and_place_and_last_data(
                 .filter(user_sensor::device_id.eq(sensor.device_id))
                 .inner_join(user_places_table)
                 .select((
-                    model::UserPlace::as_select(),
-                    model::UserSensor::as_select(),
+                    db::model::UserPlace::as_select(),
+                    db::model::UserSensor::as_select(),
                 ))
                 .load(conn)?;
 
             res
         }
         Identifier::PlaceNameAndUserId(name, user_id) => {
-            use crate::schema::user_sensors::dsl::user_sensors as user_sensors_table;
-            use crate::schema::{
+            use crate::db::schema::user_sensors::dsl::user_sensors as user_sensors_table;
+            use crate::db::schema::{
                 user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
             };
 
@@ -137,8 +140,8 @@ pub fn get_user_sensor_and_place_and_last_data(
                 .filter(user_place::user_id.eq(user_id))
                 .inner_join(user_sensors_table)
                 .select((
-                    model::UserPlace::as_select(),
-                    model::UserSensor::as_select(),
+                    db::model::UserPlace::as_select(),
+                    db::model::UserSensor::as_select(),
                 ))
                 .load(conn)?;
 
@@ -146,7 +149,7 @@ pub fn get_user_sensor_and_place_and_last_data(
         }
     };
 
-    use crate::schema::{
+    use crate::db::schema::{
         sensor_data::dsl as sensor_datum, sensor_data::dsl::sensor_data as sensor_data_table,
     };
 
@@ -173,7 +176,7 @@ pub fn update_user_sensor(
     update: Update,
     user_id: i32,
 ) -> Result<UserSensor, Error> {
-    use crate::schema::{
+    use crate::db::schema::{
         user_sensors::dsl as user_sensor, user_sensors::dsl::user_sensors as user_sensors_table,
     };
 
@@ -219,10 +222,10 @@ pub fn delete_user_sensor(
 ) -> Result<Vec<(UserPlace, UserSensor)>, Error> {
     match identifier {
         Identifier::SensorDeviceId(auth_sensor) => {
-            use crate::schema::{
+            use crate::db::schema::{
                 user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
             };
-            use crate::schema::{
+            use crate::db::schema::{
                 user_sensors::dsl as user_sensor,
                 user_sensors::dsl::user_sensors as user_sensors_table,
             };
@@ -246,12 +249,12 @@ pub fn delete_user_sensor(
             Ok(deleted_sensors.collect())
         }
         Identifier::PlaceNameAndUserId(name, user_id) => {
-            use crate::schema::{
+            use crate::db::schema::{
                 user_sensors::dsl as user_sensor,
                 user_sensors::dsl::user_sensors as user_sensors_table,
             };
 
-            use crate::schema::{
+            use crate::db::schema::{
                 user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
             };
 
@@ -280,11 +283,11 @@ pub fn delete_user_sensor(
 mod tests {
 
     use crate::{
+        db::model::NewUserSensor,
         db::{
             establish_connection,
             tests::{create_test_user, create_test_user_place, create_test_user_sensor},
         },
-        model::NewUserSensor,
     };
 
     use super::*;
@@ -349,7 +352,7 @@ mod tests {
         assert_eq!(deleted_sensors[0].1.id, user_sensor.id);
         // assert_eq!(deleted_sensors[0].name, place.name);
 
-        use crate::schema::{
+        use crate::db::schema::{
             user_sensors::dsl as user_sensor, user_sensors::dsl::user_sensors as user_sensors_table,
         };
 

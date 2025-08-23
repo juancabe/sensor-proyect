@@ -28,7 +28,7 @@ use crate::{
         user_sensors::{AuthorizedSensor, Identifier, Update, update_user_sensor},
         users,
     },
-    model::{NewUserSensor, UserSensor},
+    db::model::{NewUserSensor, UserSensor},
 };
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]

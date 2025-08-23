@@ -2,8 +2,10 @@ use diesel::prelude::*;
 
 use crate::{
     api::endpoints::place::PlaceChange,
-    db::{DbConn, Error, colors},
-    model::{self, NewUserPlace, UserPlace},
+    db::{
+        self, DbConn, Error, colors,
+        model::{NewUserPlace, UserPlace},
+    },
 };
 #[derive(Debug)]
 pub enum Identifier<'a> {
@@ -12,7 +14,7 @@ pub enum Identifier<'a> {
 }
 
 pub fn get_user_place_id(conn: &mut DbConn, identifier: Identifier) -> Result<Vec<i32>, Error> {
-    use crate::schema::{
+    use crate::db::schema::{
         user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
     };
 
@@ -39,7 +41,7 @@ pub fn update_user_place(
     place_name: &str,
     user_id: i32,
 ) -> Result<UserPlace, Error> {
-    use crate::schema::{
+    use crate::db::schema::{
         user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
     };
 
@@ -73,7 +75,7 @@ pub fn update_user_place(
 }
 
 pub fn insert_user_place(conn: &mut DbConn, place: NewUserPlace) -> Result<UserPlace, Error> {
-    use crate::schema::user_places::dsl::user_places as user_places_table;
+    use crate::db::schema::user_places::dsl::user_places as user_places_table;
 
     let place: Vec<UserPlace> = place.insert_into(user_places_table).load(conn)?;
 
@@ -86,26 +88,26 @@ pub fn insert_user_place(conn: &mut DbConn, place: NewUserPlace) -> Result<UserP
 pub fn get_user_place(conn: &mut DbConn, identifier: Identifier) -> Result<Vec<UserPlace>, Error> {
     match identifier {
         Identifier::UserId(id) => {
-            use crate::schema::{
+            use crate::db::schema::{
                 user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
             };
 
             let res = user_places_table
                 .filter(user_place::user_id.eq(id))
-                .select(model::UserPlace::as_select())
+                .select(db::model::UserPlace::as_select())
                 .load(conn)?;
 
             Ok(res)
         }
         Identifier::PlaceNameAndUserId(name, user_id) => {
-            use crate::schema::{
+            use crate::db::schema::{
                 user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
             };
 
             let res = user_places_table
                 .filter(user_place::name.eq(name))
                 .filter(user_place::user_id.eq(user_id))
-                .select(model::UserPlace::as_select())
+                .select(db::model::UserPlace::as_select())
                 .load(conn)?;
 
             Ok(res)
@@ -117,7 +119,7 @@ pub fn delete_user_place(
     conn: &mut DbConn,
     identifier: Identifier,
 ) -> Result<Vec<UserPlace>, Error> {
-    use crate::schema::{
+    use crate::db::schema::{
         user_places::dsl as user_place, user_places::dsl::user_places as user_places_table,
     };
 
@@ -150,12 +152,12 @@ pub fn delete_user_place(
 mod tests {
 
     use crate::{
+        db::model::NewUserPlace,
         db::{
             establish_connection,
             tests::{create_test_user, create_test_user_place},
             user_places::{get_user_place, insert_user_place},
         },
-        model::NewUserPlace,
     };
 
     use super::*;
@@ -212,7 +214,7 @@ mod tests {
         assert_eq!(deleted_places[0].id, place.id);
         assert_eq!(deleted_places[0].name, place.name);
 
-        use crate::schema::user_places::dsl::{id, user_places};
+        use crate::db::schema::user_places::dsl::{id, user_places};
 
         let find_result = user_places
             .filter(id.eq(place.id))

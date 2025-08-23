@@ -1,7 +1,4 @@
-use crate::{
-    db::{DbConn, Error},
-    model::{self, HexValue},
-};
+use crate::db::{DbConn, Error, model, model::HexValue};
 use diesel::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -11,7 +8,7 @@ pub enum Identifier {
 }
 
 pub fn get_color_id(conn: &mut DbConn, identifier: Identifier) -> Result<i32, Error> {
-    use crate::schema::{colors::dsl as color, colors::dsl::colors as colors_table};
+    use crate::db::schema::{colors::dsl as color, colors::dsl::colors as colors_table};
 
     let r = match identifier {
         Identifier::Id(id) => colors_table
@@ -28,7 +25,7 @@ pub fn get_color_id(conn: &mut DbConn, identifier: Identifier) -> Result<i32, Er
 }
 
 pub fn get_color_by_id(conn: &mut DbConn, id: i32) -> Result<String, Error> {
-    use crate::schema::{colors::dsl as color, colors::dsl::colors as colors_table};
+    use crate::db::schema::{colors::dsl as color, colors::dsl::colors as colors_table};
 
     let r = colors_table
         .filter(color::id.eq(id))
@@ -40,7 +37,7 @@ pub fn get_color_by_id(conn: &mut DbConn, id: i32) -> Result<String, Error> {
 #[cfg(test)]
 mod test {
 
-    use crate::{db::establish_connection, model::COLOR_HEX_STRS};
+    use crate::db::{establish_connection, model::COLOR_HEX_STRS};
 
     use super::*;
 

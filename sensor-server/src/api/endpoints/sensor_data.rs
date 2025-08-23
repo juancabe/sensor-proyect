@@ -21,7 +21,7 @@ use crate::{
         sensor_data::{Identifier, get_sensor_data, insert_sensor_data},
         user_sensors::AuthorizedSensor,
     },
-    model::NewSensorData,
+    db::model::NewSensorData,
     state::PoisonableIdentifier,
 };
 

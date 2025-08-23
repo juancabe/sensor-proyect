@@ -1,4 +1,6 @@
 pub mod colors;
+pub mod model;
+pub mod schema;
 pub mod sensor_data;
 pub mod user_places;
 pub mod user_sensors;
@@ -132,7 +134,7 @@ pub mod tests {
             api_raw_password::ApiRawPassword, api_username::ApiUsername, device_id::DeviceId,
         },
         db::DbConn,
-        model::{NewUser, NewUserPlace, NewUserSensor, User, UserPlace, UserSensor},
+        db::model::{NewUser, NewUserPlace, NewUserSensor, User, UserPlace, UserSensor},
     };
 
     pub fn random_string(range: Range<usize>) -> String {
@@ -144,7 +146,7 @@ pub mod tests {
     }
 
     pub fn create_test_user(conn: &mut DbConn) -> (User, ApiRawPassword) {
-        use crate::schema::users::dsl::users as users_table;
+        use crate::db::schema::users::dsl::users as users_table;
 
         let username = ApiUsername::random();
         let username_string: String = username.clone().into();
@@ -170,7 +172,7 @@ pub mod tests {
     }
 
     pub fn create_test_user_place(conn: &mut DbConn, user: &User) -> UserPlace {
-        use crate::schema::user_places::dsl::user_places as user_places_table;
+        use crate::db::schema::user_places::dsl::user_places as user_places_table;
 
         let name = random_string(5..16);
         let description = random_string(5..16);
@@ -194,7 +196,7 @@ pub mod tests {
     }
 
     pub fn create_test_user_sensor(conn: &mut DbConn, user_place: &UserPlace) -> UserSensor {
-        use crate::schema::user_sensors::dsl::user_sensors as user_sensors_table;
+        use crate::db::schema::user_sensors::dsl::user_sensors as user_sensors_table;
 
         let name = random_string(5..16);
         let description = random_string(5..16);

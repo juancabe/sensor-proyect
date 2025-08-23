@@ -23,7 +23,7 @@ use crate::{
         self, DbConnHolder,
         user_places::{Identifier, Update, update_user_place},
     },
-    model::{NewUserPlace, UserPlace},
+    db::model::{NewUserPlace, UserPlace},
 };
 
 #[derive(Debug, Serialize, Deserialize, TS, Validate)]

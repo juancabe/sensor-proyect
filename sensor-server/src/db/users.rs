@@ -1,7 +1,7 @@
 use crate::{
     api::endpoints::user::PutUser,
     db::{DbConn, Error},
-    model::{NewUser, User},
+    db::model::{NewUser, User},
 };
 use diesel::prelude::*;
 
@@ -13,7 +13,7 @@ pub enum Identifier<'a> {
 }
 
 pub fn insert_user(conn: &mut DbConn, new_user: NewUser) -> Result<User, Error> {
-    use crate::schema::users::dsl::users as users_table;
+    use crate::db::schema::users::dsl::users as users_table;
     let vec = new_user.insert_into(users_table).load(conn)?;
     let user: User = vec
         .into_iter()
@@ -24,7 +24,7 @@ pub fn insert_user(conn: &mut DbConn, new_user: NewUser) -> Result<User, Error> 
 }
 
 pub fn get_user(conn: &mut DbConn, identifier: Identifier) -> Result<User, Error> {
-    use crate::schema::{users::dsl as user, users::dsl::users as users_table};
+    use crate::db::schema::{users::dsl as user, users::dsl::users as users_table};
 
     let r = match identifier {
         Identifier::Id(id) => users_table
@@ -50,7 +50,7 @@ pub fn update_user(
     identifier: Identifier,
     update: Update,
 ) -> Result<User, Error> {
-    use crate::schema::{users::dsl as user, users::dsl::users as users_table};
+    use crate::db::schema::{users::dsl as user, users::dsl::users as users_table};
 
     let mut db_user = get_user(conn, identifier)?;
 

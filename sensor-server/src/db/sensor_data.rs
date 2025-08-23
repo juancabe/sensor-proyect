@@ -5,11 +5,11 @@ use diesel::prelude::*;
 
 use crate::{
     db::{DbConn, Error},
-    model::{NewSensorData, SensorData},
+    db::model::{NewSensorData, SensorData},
 };
 
 pub fn insert_sensor_data(conn: &mut DbConn, new_data: NewSensorData) -> Result<SensorData, Error> {
-    use crate::schema::sensor_data::dsl::sensor_data as sensor_data_table;
+    use crate::db::schema::sensor_data::dsl::sensor_data as sensor_data_table;
 
     let data: Vec<SensorData> = new_data.insert_into(sensor_data_table).load(conn)?;
 
@@ -34,7 +34,7 @@ pub fn get_sensor_data(
 ) -> Result<Vec<SensorData>, Error> {
     match identifier {
         Identifier::SensorId(device_id) => {
-            use crate::schema::{
+            use crate::db::schema::{
                 sensor_data::dsl as sensor_data, sensor_data::dsl::sensor_data as sensor_data_table,
             };
 

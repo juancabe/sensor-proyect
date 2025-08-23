@@ -100,7 +100,7 @@ mod tests {
             },
         },
         db::tests::random_string,
-        model::COLOR_HEX_STRS,
+        db::model::COLOR_HEX_STRS,
         sensor_server::SensorServer,
     };
 

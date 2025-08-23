@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_valid::{Validate, validation::Error};
 use ts_rs::TS;
 
-use crate::model::COLOR_HEX_STRS;
+use crate::db::model::COLOR_HEX_STRS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, TS, PartialEq)]
 #[ts(export, export_to = "./api/types/")]
