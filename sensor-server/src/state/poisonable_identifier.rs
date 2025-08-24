@@ -4,9 +4,8 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
+use common::types::ApiTimestamp;
 use hyper::StatusCode;
-
-use crate::api::types::ApiTimestamp;
 
 type PoisoningMap = LazyLock<Mutex<HashMap<String, ApiTimestamp>>>;
 

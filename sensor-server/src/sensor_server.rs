@@ -78,31 +78,28 @@ impl SensorServer {
 #[cfg(test)]
 mod tests {
     use axum_test::TestServer;
+    use common::{
+        endpoints_io::{
+            place::{ApiUserPlace, GetPlace, GetPlaceEnum, PostPlace},
+            sensor::{ApiUserSensor, GetSensor, GetSensorEnum, GetSensorResponse, PostSensor},
+            sensor_data::{ApiSensorData, GetSensorData, PostSensorData, PostSensorDataResponse},
+            session::{ApiSession, PostSession, SensorLogin, UserLogin},
+            user::{ApiUser, GetUser, NotUniqueUser, PostUser},
+        },
+        types::validate::{
+            api_color::{ApiColor, COLOR_HEX_STRS},
+            api_description::ApiDescription,
+            api_email::ApiEmail,
+            api_entity_name::ApiEntityName,
+            api_raw_password::ApiRawPassword,
+            api_username::ApiUsername,
+            device_id::DeviceId,
+        },
+    };
     use hyper::StatusCode;
     use serde_valid::json::json;
 
-    use crate::{
-        api::{
-            endpoints::{
-                self,
-                place::{ApiUserPlace, GetPlace, GetPlaceEnum, PostPlace},
-                sensor::{ApiUserSensor, GetSensor, GetSensorEnum, GetSensorResponse, PostSensor},
-                sensor_data::{
-                    ApiSensorData, GetSensorData, PostSensorData, PostSensorDataResponse,
-                },
-                session::{ApiSession, PostSession, SensorLogin, UserLogin},
-                user::{ApiUser, GetUser, NotUniqueUser, PostUser},
-            },
-            types::validate::{
-                api_color::ApiColor, api_description::ApiDescription, api_email::ApiEmail,
-                api_entity_name::ApiEntityName, api_raw_password::ApiRawPassword,
-                api_username::ApiUsername, device_id::DeviceId,
-            },
-        },
-        db::model::COLOR_HEX_STRS,
-        db::tests::random_string,
-        sensor_server::SensorServer,
-    };
+    use crate::{api::endpoints, db::tests::random_string, sensor_server::SensorServer};
 
     // #[test]
     // #[ignore = "DB should not include test in name, must commit changes and then be reverted"]

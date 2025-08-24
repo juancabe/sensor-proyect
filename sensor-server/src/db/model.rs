@@ -11,10 +11,6 @@ pub struct Color {
     pub hex_value: HexValue,
     pub name: String,
 }
-pub const COLOR_HEX_STRS: [&'static str; 9] = [
-    "#FF0000", "#0000FF", "#FFFF00", "#008000", "#FFA500", "#800080", "#FFFFFF", "#000000",
-    "#808080",
-];
 
 #[derive(Queryable, Selectable, Clone, Debug)]
 #[diesel(table_name = crate::db::schema::sensor_data)]

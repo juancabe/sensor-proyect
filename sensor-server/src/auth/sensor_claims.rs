@@ -1,11 +1,12 @@
 use std::sync::{LazyLock, Mutex};
 
 use chrono::TimeDelta;
+use common::types::validate::device_id::DeviceId;
 use hyper::StatusCode;
 use jsonwebtoken::{Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
-use crate::{api::types::validate::device_id::DeviceId, auth::keys::PROCESS_KEYS, state};
+use crate::{auth::keys::PROCESS_KEYS, state};
 
 static ID_COUNTER: LazyLock<Mutex<u128>> = LazyLock::new(|| Mutex::new(u128::default()));
 pub fn get_new_id() -> u128 {
@@ -61,12 +62,18 @@ impl SensorClaims {
             )?;
 
         // Check state poisoned status
-        if state::poisonable_identifier::PoisonableIdentifier::SensorJWTId(token_data.claims.jwt_id_hex()).is_poisoned()? {
+        if state::poisonable_identifier::PoisonableIdentifier::SensorJWTId(
+            token_data.claims.jwt_id_hex(),
+        )
+        .is_poisoned()?
+        {
             log::warn!("Tried to access with poisoned JWT: {jwt}, token_data: {token_data:?}");
             return Err(StatusCode::UNAUTHORIZED);
         }
-        if state::poisonable_identifier::PoisonableIdentifier::DeviceID(token_data.claims.device_id.to_string())
-            .is_poisoned()?
+        if state::poisonable_identifier::PoisonableIdentifier::DeviceID(
+            token_data.claims.device_id.to_string(),
+        )
+        .is_poisoned()?
         {
             log::warn!(
                 "Tried to access with poisoned username, JWT: {jwt}, token_data: {token_data:?}"
@@ -80,9 +87,10 @@ impl SensorClaims {
 
 #[cfg(test)]
 mod test {
+    use common::types::validate::device_id::DeviceId;
+
     use crate::{
-        api::types::validate::device_id::DeviceId, auth::sensor_claims::SensorClaims,
-        state::poisonable_identifier::PoisonableIdentifier,
+        auth::sensor_claims::SensorClaims, state::poisonable_identifier::PoisonableIdentifier,
     };
 
     #[test]

@@ -1,6 +1,12 @@
 use axum::routing::MethodRouter;
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use axum_serde_valid::Json;
+use common::{
+    endpoints_io::session::ApiSession,
+    types::validate::{
+        api_raw_password::ApiRawPassword, api_username::ApiUsername, device_id::DeviceId,
+    },
+};
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
@@ -9,13 +15,7 @@ use ts_rs::TS;
 
 use crate::{
     RoutePath,
-    api::{
-        Endpoint,
-        route::Route,
-        types::validate::{
-            api_raw_password::ApiRawPassword, api_username::ApiUsername, device_id::DeviceId,
-        },
-    },
+    api::{Endpoint, route::Route},
     auth::{claims::Claims, sensor_claims::SensorClaims},
     db::{self, DbConnHolder, user_sensors::AuthorizedSensor, users},
     state::poisonable_identifier::PoisonableIdentifier,
@@ -50,23 +50,11 @@ pub enum PostSession {
 #[ts(export, export_to = "./api/endpoints/session/")]
 pub struct PutSession {}
 
-#[derive(TS, Debug, Serialize, Deserialize, Clone)]
-#[ts(export, export_to = "./api/endpoints/session/")]
-// WARN: Dont accept this in any endpoint
-// WARN Every time this struct is returned, the response MUST return a Set-Cookie with the JWT
-pub struct ApiSession {
-    pub access_token: String,
-    pub expires_in: usize,
-    token_type: String,
-}
-
-impl ApiSession {
+#[derive(Debug)]
+pub struct ServerApiSession(ApiSession);
+impl ServerApiSession {
     fn new(access_token: String, expires_in: usize) -> Self {
-        Self {
-            access_token,
-            expires_in,
-            token_type: "Bearer".to_string(),
-        }
+        Self(ApiSession::new(access_token, expires_in))
     }
 
     pub fn from_claims(claims: Claims) -> Result<Self, jsonwebtoken::errors::Error> {
@@ -80,13 +68,25 @@ impl ApiSession {
     }
 
     pub fn build_cookie<'a, 'b>(&'a self) -> Cookie<'b> {
-        Cookie::build(("access_token", self.access_token.clone()))
+        Cookie::build(("access_token", self.0.access_token.clone()))
             .path("/")
             .http_only(true)
             .secure(true)
             .same_site(axum_extra::extract::cookie::SameSite::Lax)
-            .max_age(Duration::seconds(self.expires_in as i64))
+            .max_age(Duration::seconds(self.0.expires_in as i64))
             .into()
+    }
+}
+
+impl From<ApiSession> for ServerApiSession {
+    fn from(value: ApiSession) -> Self {
+        Self(value)
+    }
+}
+
+impl Into<ApiSession> for ServerApiSession {
+    fn into(self) -> ApiSession {
+        self.0
     }
 }
 
@@ -121,8 +121,8 @@ impl Session {
 
         let claims = Claims::new(claims.username);
 
-        match ApiSession::from_claims(claims) {
-            Ok(ass) => Ok((jar.add(ass.build_cookie()), Json(ass))),
+        match ServerApiSession::from_claims(claims) {
+            Ok(ass) => Ok((jar.add(ass.build_cookie()), Json(ass.into()))),
             Err(e) => {
                 log::error!(
                     "Error generating new session from_claims for username ({username}): {e:?}"
@@ -172,7 +172,7 @@ impl Session {
 
                 let claims = Claims::new(user.username.into());
 
-                ApiSession::from_claims(claims)
+                ServerApiSession::from_claims(claims)
             }
             PostSession::Sensor(sensor) => {
                 log::info!("Generating sensor session for sensor: {sensor:?}");
@@ -185,14 +185,14 @@ impl Session {
 
                 let claims = SensorClaims::new(sensor.device_id);
                 log::warn!("SensorClaims: {claims:?}");
-                ApiSession::from_sensor_claims(claims)
+                ServerApiSession::from_sensor_claims(claims)
             }
         };
 
         match session {
             Ok(ass) => {
                 log::info!("Session generated: {ass:?}");
-                Ok((jar.add(ass.build_cookie()), Json(ass)))
+                Ok((jar.add(ass.build_cookie()), Json(ass.into())))
             }
             Err(e) => {
                 log::error!("Error generating new claims: {e:?}");

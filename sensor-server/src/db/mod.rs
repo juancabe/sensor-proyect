@@ -126,13 +126,13 @@ pub mod tests {
 
     use std::ops::Range;
 
+    use common::types::validate::{
+        api_raw_password::ApiRawPassword, api_username::ApiUsername, device_id::DeviceId,
+    };
     use diesel::{Insertable, RunQueryDsl};
     use rand::{Rng, distr::Alphabetic};
 
     use crate::{
-        api::types::validate::{
-            api_raw_password::ApiRawPassword, api_username::ApiUsername, device_id::DeviceId,
-        },
         db::DbConn,
         db::model::{NewUser, NewUserPlace, NewUserSensor, User, UserPlace, UserSensor},
     };

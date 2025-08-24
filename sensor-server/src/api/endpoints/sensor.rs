@@ -1,129 +1,50 @@
 use axum::{extract::Query, routing::MethodRouter};
 use axum_serde_valid::Json;
+use common::{
+    endpoints_io::{
+        sensor::{
+            ApiUserSensor, DeleteSensor, GetSensor, GetSensorEnum, GetSensorResponse, PostSensor,
+            PutSensor, SensorChange,
+        },
+        sensor_data::ApiSensorData,
+    },
+    types::{
+        ApiTimestamp,
+        validate::{api_color::ApiColor, device_id::DeviceId},
+    },
+};
 use hyper::StatusCode;
-use serde::{Deserialize, Serialize};
-use serde_valid::Validate;
-use ts_rs::TS;
 
 use crate::{
     RoutePath,
-    api::{
-        Endpoint,
-        endpoints::sensor_data::ApiSensorData,
-        route::Route,
-        types::{
-            ApiTimestamp,
-            validate::{
-                api_color::ApiColor,
-                api_description::ApiDescription,
-                api_entity_name::ApiEntityName,
-                device_id::{self, DeviceId},
-            },
-        },
-    },
+    api::{Endpoint, route::Route},
     auth::claims::Claims,
+    db::model::NewUserSensor,
     db::{
         self, DbConnHolder, Error,
         user_places::get_user_place,
         user_sensors::{AuthorizedSensor, Identifier, Update, update_user_sensor},
         users,
     },
-    db::model::{NewUserSensor, UserSensor},
 };
 
-#[derive(TS, Debug, Serialize, Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/sensor/")]
-pub struct ApiUserSensor {
-    pub device_id: DeviceId,
-    #[validate]
-    pub name: ApiEntityName,
-    #[validate]
-    pub description: Option<ApiDescription>,
-    #[validate]
-    pub color: ApiColor,
-    pub created_at: ApiTimestamp,
-    pub updated_at: ApiTimestamp,
-    pub place_name: ApiEntityName,
-}
-
-impl ApiUserSensor {
-    pub fn from_sensor_place_color(
-        sensor: UserSensor,
-        color: String,
-        place_name: String,
-    ) -> Result<Self, device_id::Error> {
-        Ok(Self {
-            device_id: DeviceId::from_string(&sensor.device_id)?,
-            name: sensor.name.into(),
-            description: sensor.description.map(|d| d.into()),
-            color: ApiColor::from(color),
-            created_at: sensor.created_at.and_utc().timestamp() as ApiTimestamp,
-            updated_at: sensor.updated_at.and_utc().timestamp() as ApiTimestamp,
-            place_name: place_name.into(),
-        })
-    }
-}
-
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
-pub enum GetSensorEnum {
-    FromSensorDeviceId(DeviceId),
-    FromPlaceName(#[validate] ApiEntityName),
-}
-
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/sensor/")]
-pub struct GetSensor {
-    #[serde(flatten)]
-    #[validate]
-    pub param: GetSensorEnum,
-}
-
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/sensor/")]
-pub struct GetSensorResponse {
-    pub sensor: ApiUserSensor,
-    pub last_data: Option<ApiSensorData>,
-}
-
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Clone, Validate)]
-pub enum SensorChange {
-    PlaceName(#[validate] ApiEntityName),
-    Name(#[validate] ApiEntityName),
-    Description(#[validate] Option<ApiDescription>),
-    Color(#[validate] ApiColor),
-}
-
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/sensor/")]
-pub struct PutSensor {
-    pub device_id: DeviceId,
-    #[validate]
-    pub change: SensorChange,
-}
-
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Clone, Validate)]
-#[ts(export, export_to = "./api/endpoints/sensor/")]
-pub struct PostSensor {
-    #[validate]
-    pub place_name: ApiEntityName,
-    #[validate]
-    pub device_id: DeviceId,
-    #[validate]
-    pub access_id: DeviceId,
-    #[validate]
-    pub name: ApiEntityName,
-    #[validate]
-    pub description: Option<ApiDescription>,
-    #[validate]
-    pub color: ApiColor,
-}
-
-#[derive(TS, Debug, serde::Serialize, serde::Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/sensor/")]
-pub enum DeleteSensor {
-    FromSensorDeviceId(DeviceId),
-    FromPlaceName(#[validate] ApiEntityName),
-}
+// impl ApiUserSensor {
+//     pub fn from_sensor_place_color(
+//         sensor: UserSensor,
+//         color: String,
+//         place_name: String,
+//     ) -> Result<Self, device_id::Error> {
+//         Ok(Self {
+//             device_id: DeviceId::from_string(&sensor.device_id)?,
+//             name: sensor.name.into(),
+//             description: sensor.description.map(|d| d.into()),
+//             color: ApiColor::from(color),
+//             created_at: sensor.created_at.and_utc().timestamp() as ApiTimestamp,
+//             updated_at: sensor.updated_at.and_utc().timestamp() as ApiTimestamp,
+//             place_name: place_name.into(),
+//         })
+//     }
+// }
 
 pub struct Sensor {
     resources: Vec<Route>,
@@ -174,20 +95,21 @@ impl Sensor {
         };
 
         let color_id = sensor.color_id;
-        Ok(Json(
-            ApiUserSensor::from_sensor_place_color(
-                sensor,
-                db::colors::get_color_by_id(conn, color_id)?,
-                place_name.into(),
-            )
-            .map_err(|e| {
-                let err = Error::InternalError(
-                    format!("Couldn't convert internal DeviceId: {e:?}").into(),
-                );
-                log::error!("Error: {err:?}");
-                err
+        Ok(Json(ApiUserSensor {
+            device_id: DeviceId::from_string(&sensor.device_id).map_err(|e| {
+                log::error!("Could not construct DeviceId: {e:?}");
+                StatusCode::INTERNAL_SERVER_ERROR
             })?,
-        ))
+            name: sensor.name.into(),
+            description: sensor.description.map(|d| d.into()),
+            color: ApiColor::from(db::colors::get_color_by_id(conn, color_id).map_err(|e| {
+                log::error!("Could not get color!: {e:?}");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?),
+            created_at: sensor.created_at.and_utc().timestamp() as ApiTimestamp,
+            updated_at: sensor.updated_at.and_utc().timestamp() as ApiTimestamp,
+            place_name: place_name.into(),
+        }))
     }
 
     async fn sensor_get(
@@ -394,12 +316,10 @@ mod tests {
 
     use axum::extract::Query;
     use axum_serde_valid::Json;
+    use common::types::validate::device_id::DeviceId;
 
     use crate::{
-        api::{
-            endpoints::sensor::{DeleteSensor, GetSensor, GetSensorEnum, PostSensor, Sensor},
-            types::validate::device_id::DeviceId,
-        },
+        api::endpoints::sensor::{DeleteSensor, GetSensor, GetSensorEnum, PostSensor, Sensor},
         auth::claims::{Claims, get_new_id},
         db::{
             DbConnHolder, establish_connection,

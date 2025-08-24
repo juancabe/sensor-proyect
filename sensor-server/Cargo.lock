@@ -368,6 +368,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "log",
+ "password-hash",
+ "rand",
+ "serde",
+ "serde_valid",
+ "ts-rs",
+]
+
+[[package]]
 name = "cookie"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1517,6 +1530,7 @@ dependencies = [
  "axum-test",
  "axum_serde_valid",
  "chrono",
+ "common",
  "diesel",
  "diesel_migrations",
  "dotenv",

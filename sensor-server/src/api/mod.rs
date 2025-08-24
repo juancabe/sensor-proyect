@@ -1,6 +1,5 @@
 pub mod endpoints;
 pub mod route;
-pub mod types;
 
 use crate::api::route::Route;
 

@@ -25,6 +25,7 @@ password-hash = { version = "0.5.0", features = ["getrandom"] }
 lazy_static = "1.5.0"
 axum_serde_valid = "1.1.0"
 time = "0.3.41"
+common = { path="../common/"}
 
 [dev-dependencies]
 axum-test = "17.3.0"

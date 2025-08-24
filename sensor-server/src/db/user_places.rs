@@ -1,11 +1,9 @@
+use common::endpoints_io::place::PlaceChange;
 use diesel::prelude::*;
 
-use crate::{
-    api::endpoints::place::PlaceChange,
-    db::{
-        self, DbConn, Error, colors,
-        model::{NewUserPlace, UserPlace},
-    },
+use crate::db::{
+    self, DbConn, Error, colors,
+    model::{NewUserPlace, UserPlace},
 };
 #[derive(Debug)]
 pub enum Identifier<'a> {

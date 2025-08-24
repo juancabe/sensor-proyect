@@ -1,7 +1,7 @@
+use common::{endpoints_io::sensor::SensorChange, types::validate::device_id::DeviceId};
 use diesel::prelude::*;
 
 use crate::{
-    api::{endpoints::sensor::SensorChange, types::validate::device_id::DeviceId},
     auth::sensor_claims::SensorClaims,
     db::{
         self, DbConn, Error, colors,

@@ -1,16 +1,11 @@
 use axum::{extract::Query, routing::MethodRouter};
+use common::endpoints_io::health::GetHealth;
 use hyper::StatusCode;
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 use crate::{
     RoutePath,
     api::{Endpoint, route::Route},
 };
-
-#[derive(Serialize, Deserialize, TS)]
-#[ts(export, export_to = "./api/endpoints/health/")]
-pub struct GetHealth {}
 
 pub struct Health {
     resources: Vec<Route>,

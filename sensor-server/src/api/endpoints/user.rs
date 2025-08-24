@@ -1,6 +1,15 @@
 use axum::routing::MethodRouter;
 use axum_extra::extract::CookieJar;
 use axum_serde_valid::Json;
+use common::{
+    endpoints_io::session::ApiSession,
+    types::{
+        ApiTimestamp,
+        validate::{
+            api_email::ApiEmail, api_raw_password::ApiRawPassword, api_username::ApiUsername,
+        },
+    },
+};
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
@@ -8,21 +17,11 @@ use ts_rs::TS;
 
 use crate::{
     RoutePath,
-    api::{
-        Endpoint,
-        endpoints::session::ApiSession,
-        route::Route,
-        types::{
-            ApiTimestamp,
-            validate::{
-                api_email::ApiEmail, api_raw_password::ApiRawPassword, api_username::ApiUsername,
-            },
-        },
-    },
+    api::{Endpoint, endpoints::session::ServerApiSession, route::Route},
     auth::claims::Claims,
-    db::model::NewUser,
     db::{
         DbConn, DbConnHolder,
+        model::NewUser,
         users::{Identifier, Update, get_user, insert_user, update_user},
     },
     state::poisonable_identifier::PoisonableIdentifier,
@@ -241,8 +240,8 @@ impl User {
         let username: ApiUsername = username.into();
         let email = email.into();
 
-        let new_session =
-            ApiSession::from_claims(Claims::new(username.clone().into())).map_err(|e| {
+        let new_session = ServerApiSession::from_claims(Claims::new(username.clone().into()))
+            .map_err(|e| {
                 log::error!("Could not construct new_session from claims: {e:?}");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
@@ -258,7 +257,7 @@ impl User {
             jar.add(new_session.build_cookie()),
             Json(PutUserResponse {
                 updated,
-                new_session,
+                new_session: new_session.into(),
             }),
         ))
     }
@@ -374,15 +373,13 @@ impl Endpoint for User {
 mod test {
     use axum_extra::extract::CookieJar;
     use axum_serde_valid::Json;
+    use common::types::validate::{
+        api_email::ApiEmail, api_raw_password::ApiRawPassword, api_username::ApiUsername,
+    };
     use hyper::StatusCode;
 
     use crate::{
-        api::{
-            endpoints::user::{PostUser, PutUser, User},
-            types::validate::{
-                api_email::ApiEmail, api_raw_password::ApiRawPassword, api_username::ApiUsername,
-            },
-        },
+        api::endpoints::user::{PostUser, PutUser, User},
         auth::claims::Claims,
         db::{self, DbConnHolder, establish_connection, tests::create_test_user},
     };

@@ -37,7 +37,9 @@ pub fn get_color_by_id(conn: &mut DbConn, id: i32) -> Result<String, Error> {
 #[cfg(test)]
 mod test {
 
-    use crate::db::{establish_connection, model::COLOR_HEX_STRS};
+    use common::types::validate::api_color::COLOR_HEX_STRS;
+
+    use crate::db::establish_connection;
 
     use super::*;
 

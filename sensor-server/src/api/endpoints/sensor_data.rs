@@ -2,61 +2,27 @@ use axum::{extract::Query, routing::MethodRouter};
 use axum_extra::extract::CookieJar;
 use axum_serde_valid::Json;
 use chrono::{NaiveDateTime, TimeDelta, Utc};
+use common::{
+    endpoints_io::sensor_data::{
+        ApiSensorData, GetSensorData, PostSensorData, PostSensorDataResponse,
+    },
+    types::{ApiTimestamp, validate::device_id::DeviceId},
+};
 use hyper::StatusCode;
-use serde::{Deserialize, Serialize};
-use serde_valid::{Validate, json::json};
-use ts_rs::TS;
+use serde_valid::json::json;
 
 use crate::{
     RoutePath,
-    api::{
-        Endpoint,
-        endpoints::session::ApiSession,
-        route::Route,
-        types::{ApiTimestamp, validate::device_id::DeviceId},
-    },
+    api::{Endpoint, endpoints::session::ServerApiSession, route::Route},
     auth::{claims::Claims, sensor_claims::SensorClaims},
     db::{
         DbConnHolder,
+        model::NewSensorData,
         sensor_data::{Identifier, get_sensor_data, insert_sensor_data},
         user_sensors::AuthorizedSensor,
     },
-    db::model::NewSensorData,
     state::poisonable_identifier::PoisonableIdentifier,
 };
-
-#[derive(TS, Debug, Serialize, Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/sensor_data/")]
-pub struct ApiSensorData {
-    #[validate(max_length = 500)]
-    pub data: String,
-    pub added_at: ApiTimestamp,
-}
-
-#[derive(TS, Debug, Serialize, Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/sensor_data/")]
-// WARN: Dont accept this in any endpoint
-pub struct PostSensorDataResponse {
-    pub api_data: ApiSensorData,
-    pub new_session: ApiSession,
-}
-
-#[derive(TS, Debug, Serialize, Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/sensor_data/")]
-pub struct GetSensorData {
-    pub device_id: DeviceId,
-    // Not included if added_at == [upper | lowest]_added_at
-    pub lowest_added_at: Option<ApiTimestamp>,
-    pub upper_added_at: Option<ApiTimestamp>,
-}
-
-#[derive(TS, Clone, Debug, serde::Serialize, serde::Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/sensor_data/")]
-pub struct PostSensorData {
-    #[validate(max_length = 500)]
-    pub serialized_data: String,
-    pub created_at: Option<ApiTimestamp>,
-}
 
 pub struct SensorData {
     resources: Vec<Route>,
@@ -211,7 +177,7 @@ impl SensorData {
 
         let claims = SensorClaims::new(device_id);
 
-        let new_session = ApiSession::from_sensor_claims(claims).map_err(|e| {
+        let new_session = ServerApiSession::from_sensor_claims(claims).map_err(|e| {
             log::error!("Error generating new session from_claims: {e:?}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
@@ -223,7 +189,7 @@ impl SensorData {
             jar.add(new_session.build_cookie()),
             Json(PostSensorDataResponse {
                 api_data,
-                new_session,
+                new_session: new_session.into(),
             }),
         ))
     }
@@ -243,12 +209,10 @@ mod test {
     use axum::extract::Query;
     use axum_extra::extract::CookieJar;
     use axum_serde_valid::Json;
+    use common::types::validate::device_id::DeviceId;
 
     use crate::{
-        api::{
-            endpoints::sensor_data::{GetSensorData, PostSensorData, SensorData},
-            types::validate::device_id::DeviceId,
-        },
+        api::endpoints::sensor_data::{GetSensorData, PostSensorData, SensorData},
         auth::{claims::Claims, sensor_claims::SensorClaims},
         db::{
             DbConnHolder, establish_connection,
