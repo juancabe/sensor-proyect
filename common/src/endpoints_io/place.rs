@@ -49,18 +49,23 @@ pub struct PutPlace {
     pub change: PlaceChange,
 }
 
-#[derive(TS, Debug, Serialize, Deserialize, Validate)]
-pub enum GetPlaceEnum {
-    FromPlaceName(#[validate] ApiEntityName),
-    UserPlaces,
-}
+// #[derive(TS, Debug, Serialize, Deserialize, Validate)]
+// #[serde(tag = "kind")]
+// pub enum GetPlaceEnum {
+//     FromPlaceName(#[validate] ApiEntityName),
+//     UserPlaces,
+// }
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/place/")]
-pub struct GetPlace {
-    #[serde(flatten)]
+#[serde(tag = "kind")]
+pub enum GetPlace {
+    FromPlaceName {
+        #[validate]
+        name: ApiEntityName,
+    },
     #[validate]
-    pub param: GetPlaceEnum,
+    UserPlaces,
 }
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]

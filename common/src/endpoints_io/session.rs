@@ -22,11 +22,12 @@ pub struct SensorLogin {
     pub device_id: DeviceId,
     #[validate(max_length = 128)]
     #[validate(min_length = 128)]
-    pub random_message: String,
+    #[validate(pattern = "^[0-9A-Fa-f]+$")] // Just HEX characters
+    pub random_message_encoded: String,
     #[validate(max_length = 128)]
     #[validate(min_length = 128)]
     #[validate(pattern = "^[0-9A-Fa-f]+$")] // Just HEX characters
-    pub signature_of_message: String,
+    pub signature_of_message: String, // Signature of the message before encoding
 }
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
