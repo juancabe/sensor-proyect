@@ -155,11 +155,16 @@ impl Session {
                         StatusCode::BAD_REQUEST
                     })?;
 
+                let signed_message = hex::decode(sensor.random_message_encoded).map_err(|e| {
+                    log::warn!("User tried to get sensor session with invalid random_message_encoded: {e:?}");
+                    StatusCode::BAD_REQUEST
+                })?;
+
                 AuthorizedSensor::from_signature_and_message(
                     &mut conn.0,
                     &sensor.device_id,
                     signature_bytes,
-                    sensor.random_message.as_bytes(),
+                    signed_message.as_slice(),
                 )?;
 
                 let claims = SensorClaims::new(sensor.device_id);

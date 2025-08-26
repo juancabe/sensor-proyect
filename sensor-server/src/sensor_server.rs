@@ -81,7 +81,7 @@ mod tests {
     use common::{
         auth::keys::Keys,
         endpoints_io::{
-            place::{ApiUserPlace, GetPlace, GetPlaceEnum, PostPlace},
+            place::{ApiUserPlace, GetPlace, PostPlace},
             sensor::{ApiUserSensor, GetSensor, GetSensorEnum, GetSensorResponse, PostSensor},
             sensor_data::{ApiSensorData, GetSensorData, PostSensorData, PostSensorDataResponse},
             session::{ApiSession, PostSession, SensorLogin, UserLogin},
@@ -348,16 +348,17 @@ mod tests {
             endpoints::session::Session::API_PATH
         );
 
-        let random_message: String = random_string(128..129);
-        let signature = keys.sign(random_message.as_bytes());
+        let random_message: [u8; 64] = random();
+        let signature = keys.sign(&random_message);
+        let random_message: String = hex::encode(random_message);
         let signature_of_message = signature.to_bytes();
         let signature_of_message = hex::encode(signature_of_message);
         log::debug!("signature_of_message.len(): {}", signature_of_message.len());
 
         let body = SensorLogin {
             device_id: sensor_device_id.clone(),
-            random_message,
             signature_of_message,
+            random_message_encoded: random_message,
         };
 
         log::debug!("body: {body:?}");
@@ -482,16 +483,37 @@ mod tests {
             "Bearer ".to_string() + user_session.access_token.as_str(),
         );
 
-        // GET list of places
+        // GET list of places for User
         let place_list_path = format!(
             "{}{}",
             SensorServer::API_BASE,
             endpoints::place::Place::API_PATH
         );
 
-        let query: GetPlace = GetPlace {
-            param: GetPlaceEnum::FromPlaceName(name.clone()),
-        };
+        let query = GetPlace::UserPlaces;
+
+        log::debug!("query: {query:?}");
+
+        let res = server
+            .get(&place_list_path)
+            .add_query_params(json!(query))
+            .await;
+        server.clear_query_params();
+        let place_list: Vec<ApiUserPlace> = res.json();
+        assert_eq!(place_list.len(), 1);
+        let fetched_place = &place_list[0];
+        assert_eq!(fetched_place.name, name);
+        assert_eq!(fetched_place.description.as_ref().unwrap(), &description);
+        assert_eq!(fetched_place.color, color.clone());
+
+        // GET list of places from place name
+        let place_list_path = format!(
+            "{}{}",
+            SensorServer::API_BASE,
+            endpoints::place::Place::API_PATH
+        );
+
+        let query = GetPlace::FromPlaceName { name: name.clone() };
 
         let res = server.get(&place_list_path).add_query_params(query).await;
         server.clear_query_params();

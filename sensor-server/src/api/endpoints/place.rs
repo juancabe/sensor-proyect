@@ -1,7 +1,7 @@
 use axum::{extract::Query, routing::MethodRouter};
 use axum_serde_valid::Json;
 use common::{
-    endpoints_io::place::{ApiUserPlace, DeletePlace, GetPlace, GetPlaceEnum, PostPlace, PutPlace},
+    endpoints_io::place::{ApiUserPlace, DeletePlace, GetPlace, PostPlace, PutPlace},
     types::ApiTimestamp,
 };
 use hyper::StatusCode;
@@ -90,13 +90,11 @@ impl Place {
         )?
         .id;
 
-        let payload = payload.param;
-
         let id = match &payload {
-            GetPlaceEnum::FromPlaceName(name) => {
+            GetPlace::FromPlaceName { name } => {
                 Identifier::PlaceNameAndUserId(name.as_str(), user_id)
             }
-            GetPlaceEnum::UserPlaces => Identifier::UserId(user_id),
+            GetPlace::UserPlaces => Identifier::UserId(user_id),
         };
 
         let vec = match db::user_places::get_user_place(&mut conn.0, id) {
@@ -240,7 +238,7 @@ mod tests {
     use serde_valid::json::ToJsonString;
 
     use crate::{
-        api::endpoints::place::{DeletePlace, GetPlace, GetPlaceEnum, Place, PostPlace},
+        api::endpoints::place::{DeletePlace, GetPlace, Place, PostPlace},
         auth::claims::{Claims, get_new_id},
         db::{
             DbConnHolder, establish_connection,
@@ -250,7 +248,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_place_get_user_places() {
-        let body = GetPlaceEnum::UserPlaces;
+        let body = GetPlace::UserPlaces;
 
         let mut conn = establish_connection(true).unwrap();
         let (user, _) = create_test_user(&mut conn);
@@ -266,10 +264,9 @@ mod tests {
             .timestamp() as usize,
         };
 
-        let res_body =
-            Place::place_get(claims, DbConnHolder(conn), Query(GetPlace { param: body }))
-                .await
-                .expect("Should not fail");
+        let res_body = Place::place_get(claims, DbConnHolder(conn), Query(body))
+            .await
+            .expect("Should not fail");
 
         assert!(
             res_body.len() == 1,
@@ -286,7 +283,9 @@ mod tests {
         let (user, _) = create_test_user(&mut conn);
         let user_place = create_test_user_place(&mut conn, &user);
 
-        let body = GetPlaceEnum::FromPlaceName(user_place.name.clone().into());
+        let body = GetPlace::FromPlaceName {
+            name: user_place.name.clone().into(),
+        };
 
         let claims = Claims {
             jwt_id: get_new_id(),
@@ -298,10 +297,9 @@ mod tests {
             .timestamp() as usize,
         };
 
-        let res_body =
-            Place::place_get(claims, DbConnHolder(conn), Query(GetPlace { param: body }))
-                .await
-                .expect("Should not fail");
+        let res_body = Place::place_get(claims, DbConnHolder(conn), Query(body))
+            .await
+            .expect("Should not fail");
 
         assert!(
             res_body.len() == 1,
