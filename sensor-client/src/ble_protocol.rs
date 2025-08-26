@@ -1,142 +1,280 @@
-use esp32_nimble::{utilities::BleUuid, uuid128, NimbleProperties};
+use std::sync::{Arc, Mutex};
 
-const CFG_SERVICE_UUID: &str = "4b80ba9d-64fd-4ffa-86fb-544e73d26ed1";
-const SENSOR_API_ID_CHAR_UUID: &str = "8c680060-22b7-45b8-b325-f7b1b102d80f";
-const API_ACCOUNT_ID_CHAR_UUID: &str = "e11ca181-20c9-4675-b6f3-3f9fb91d1dc1";
-const SENSOR_UUID_CHAR_UUID: &str = "333cad84-ceb5-4e18-bfcf-6147987c6733";
-const WIFI_SSID_CHAR_UUID: &str = "66766233-ca34-4b23-866a-122faf0d42b4";
-const WIFI_PASS_CHAR_UUID: &str = "388e5402-5eb9-4788-8df1-386463417a23";
+use common::{auth::keys::Keys, types::validate::device_id::DeviceId};
+use esp32_nimble::{
+    utilities::BleUuid, uuid128, BLEAdvertisementData, BLEDevice, BLEError, NimbleProperties,
+};
+use esp_idf_svc::hal::delay::FreeRtos;
 
-#[derive(Debug, Clone, Copy)]
-pub struct BleCharacteristic<'a, R, W, N> {
-    pub uuid: &'a BleUuid,
-    pub read: Option<fn(R) -> [u8; 20]>,
-    pub write: Option<fn(&[u8]) -> Option<W>>,
-    pub notify: Option<fn(N) -> [u8; 20]>,
+use crate::helpers::zstr20::{ZStr20, ZStr20Error};
+
+const SENSOR_CONFIG_SERVICE_UUID: BleUuid = uuid128!("4b80ba9d-64fd-4ffa-86fb-544e73d26ed1");
+const WRITE_WIFI_SSID_0: BleUuid = uuid128!("141ae9a4-f662-425f-b1b5-5bb35a9e043f");
+const WRITE_WIFI_SSID_1: BleUuid = uuid128!("4b928144-f17a-478f-ab0e-c2c1b5ffad7a");
+const WRITE_WIFI_PASS_0: BleUuid = uuid128!("7ccf2c21-1708-4189-b4c1-c09b3bf45f9d");
+const WRITE_WIFI_PASS_1: BleUuid = uuid128!("52765c89-cfc0-45b6-89da-10d4d6eeb8ec");
+const WRITE_WIFI_PASS_2: BleUuid = uuid128!("77b2f6d8-3ebc-46a6-85b3-0c01251d2430");
+const WRITE_WIFI_PASS_3: BleUuid = uuid128!("32581ebc-3766-431d-bd2f-390ce6bee0c9");
+const READ_SENSOR_DEVICE_ID: BleUuid = uuid128!("7af24399-6c3f-4bc3-b576-7a4f8fb59d41");
+const READ_PUB_KEY_0: BleUuid = uuid128!("f4f1c584-e3c0-4723-9e46-1f72b015aa88");
+const READ_PUB_KEY_1: BleUuid = uuid128!("7d725923-ca33-41c6-9a15-821be70eac7d");
+
+#[derive(Default, Clone, Copy, Debug)]
+pub struct BleInitalConfig {
+    device_id_read: bool,
+    pub_key_1_read: bool,
+    pub_key_2_read: bool,
+    wifi_ssid: Option<ZStr20>,
+    wifi_pass_0: Option<ZStr20>,
+    wifi_pass_1: Option<ZStr20>,
+    wifi_pass_2: Option<ZStr20>,
+    wifi_pass_3: Option<ZStr20>,
 }
 
-impl<'a, R, W, N> BleCharacteristic<'a, R, W, N> {
-    pub fn get_nimble_properties(&self) -> NimbleProperties {
-        let mut properties = NimbleProperties::empty();
-        if self.read.is_some() {
-            properties.insert(NimbleProperties::READ);
-        }
-        if self.write.is_some() {
-            properties.insert(NimbleProperties::WRITE);
-        }
-        if self.notify.is_some() {
-            properties.insert(NimbleProperties::NOTIFY);
-        }
-        properties
+impl BleInitalConfig {
+    pub fn get_wifi_ssid(&self) -> Result<String, ()> {
+        todo!()
     }
-}
 
-pub struct BleProtocol<'a> {
-    pub service_uuid: &'a BleUuid,
-    pub characteristics: (
-        BleCharacteristic<'a, (), ZStr20, ()>,
-        BleCharacteristic<'a, (), ZStr20, ()>,
-        BleCharacteristic<'a, (), (), &'a [u8; 20]>,
-        BleCharacteristic<'a, (), ZStr20, ()>,
-        BleCharacteristic<'a, (), ZStr20, ()>,
-    ),
-}
-
-const SENSOR_CONFIG_SERVICE_UUID: BleUuid = uuid128!(CFG_SERVICE_UUID);
-const SENSOR_CONFIG_SENSOR_API_ID_CHAR_UUID: BleUuid = uuid128!(SENSOR_API_ID_CHAR_UUID);
-const SENSOR_CONFIG_API_ACCOUNT_ID_CHAR_UUID: BleUuid = uuid128!(API_ACCOUNT_ID_CHAR_UUID);
-const SENSOR_CONFIG_SENSOR_DEV_ID_CHAR_UUID: BleUuid = uuid128!(SENSOR_UUID_CHAR_UUID);
-const SENSOR_CONFIG_WIFI_SSID_CHAR_UUID: BleUuid = uuid128!(WIFI_SSID_CHAR_UUID);
-const SENSOR_CONFIG_PASS_CHAR_UUID: BleUuid = uuid128!(WIFI_PASS_CHAR_UUID);
-
-impl<'a> BleProtocol<'a> {
-    pub fn new(sensor_id: fn(()) -> [u8; 20]) -> Self {
-        BleProtocol {
-            service_uuid: &SENSOR_CONFIG_SERVICE_UUID,
-            characteristics: (
-                BleCharacteristic {
-                    uuid: &SENSOR_CONFIG_SENSOR_API_ID_CHAR_UUID,
-                    read: None,
-                    write: Some(ZStr20::from_unsized_slice),
-                    notify: None,
-                },
-                BleCharacteristic {
-                    uuid: &SENSOR_CONFIG_API_ACCOUNT_ID_CHAR_UUID,
-                    read: None,
-                    write: Some(ZStr20::from_unsized_slice),
-                    notify: None,
-                },
-                BleCharacteristic {
-                    uuid: &SENSOR_CONFIG_SENSOR_DEV_ID_CHAR_UUID,
-                    read: Some(sensor_id),
-                    write: None,
-                    notify: None,
-                },
-                BleCharacteristic {
-                    uuid: &SENSOR_CONFIG_WIFI_SSID_CHAR_UUID,
-                    read: None,
-                    write: Some(ZStr20::from_unsized_slice),
-                    notify: None,
-                },
-                BleCharacteristic {
-                    uuid: &SENSOR_CONFIG_PASS_CHAR_UUID,
-                    read: None,
-                    write: Some(ZStr20::from_unsized_slice),
-                    notify: None,
-                },
-            ),
-        }
+    pub fn is_written(&self) -> bool {
+        self.device_id_read
+            && self.pub_key_1_read
+            && self.pub_key_2_read
+            && self.wifi_ssid.is_some()
+            && self.wifi_pass_0.is_some()
+            && self.wifi_pass_1.is_some()
+            && self.wifi_pass_2.is_some()
+            && self.wifi_pass_3.is_some()
     }
 }
 
 #[derive(Debug)]
-pub enum ZStr20Error {
-    SizeNotMatch,
-    FromHexError(hex::FromHexError),
+#[allow(dead_code)]
+pub enum BleInitialConfigError {
+    BleAdvertiserSetData(BLEError),
+    BleAdvertiserStart(BLEError),
+    IncorrectZStr20(ZStr20Error),
+    MutexLock(String),
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ZStr20 {
-    pub bytes: [u8; 21],
-}
+impl BleInitalConfig {
+    pub fn run(device_id: DeviceId, keys: &Keys) -> Result<BleInitalConfig, BleInitialConfigError> {
+        let ble_device = BLEDevice::take();
+        let result_mutex = Arc::new(Mutex::new(BleInitalConfig::default()));
 
-impl ZStr20 {
-    const SIZE: usize = 20;
-
-    pub fn new(bytes: &[u8; Self::SIZE]) -> Self {
-        let mut zstr = ZStr20 { bytes: [0; 21] };
-        zstr.bytes[..Self::SIZE].copy_from_slice(bytes);
-        zstr.bytes[Self::SIZE] = 0; // Null-terminate
-        zstr
-    }
-
-    pub fn from_unsized_slice(slice: &[u8]) -> Option<Self> {
-        // if slice.len() == Self::SIZE {
-        //     let arr: [u8; Self::SIZE] = slice
-        //         .try_into()
-        //         .expect("Slice length was not what was expected");
-        //     Some(ZStr20::new(&arr))
-        // } else {
-        //     None
-        // }
-
-        Some(ZStr20::new(slice.try_into().ok()?))
-    }
-
-    pub fn as_hex_string(&self) -> String {
-        hex::encode(&self.bytes[..Self::SIZE])
-    }
-
-    pub fn from_hex_string(hex: &str) -> Result<Self, ZStr20Error> {
-        if hex.len() != Self::SIZE {
-            Err(ZStr20Error::SizeNotMatch)?
-        }
-
-        let bytes = hex::decode(hex).map_err(|e| ZStr20Error::FromHexError(e))?;
-        let val = match ZStr20::from_unsized_slice(bytes.as_slice()) {
-            Some(val) => val,
-            None => Err(ZStr20Error::SizeNotMatch)?,
+        let device_id = ZStr20::from_hex_string(device_id.as_str())
+            .map_err(|e| BleInitialConfigError::IncorrectZStr20(e))?;
+        let (pk0, pk1) = {
+            let pk = keys.get_vk();
+            let zstrs = ZStr20::arbitrary_bytes_to_multiple(&pk);
+            assert!(zstrs.len() == 2);
+            let pk0 = zstrs[0];
+            let pk1 = zstrs[1];
+            (pk0, pk1)
         };
-        Ok(val)
+
+        Self::configure_server(&result_mutex, &ble_device, device_id, pk0, pk1)?;
+
+        let advertiser = ble_device.get_advertising();
+        advertiser
+            .lock()
+            .set_data(
+                BLEAdvertisementData::new()
+                    .name(&device_id.as_hex_string())
+                    .add_service_uuid(SENSOR_CONFIG_SERVICE_UUID),
+            )
+            .map_err(|e| BleInitialConfigError::BleAdvertiserSetData(e))?;
+
+        advertiser
+            .lock()
+            .start()
+            .map_err(|e| BleInitialConfigError::BleAdvertiserStart(e))?;
+
+        log::info!("[run] BLE Advertiser started");
+
+        loop {
+            FreeRtos::delay_ms(200);
+            let result = result_mutex
+                .lock()
+                .map_err(|e| BleInitialConfigError::MutexLock(e.to_string()))?;
+            if result.is_written() {
+                log::info!("[run] Results written successfully: {:?}", result);
+                return Ok(result.clone());
+            }
+        }
+    }
+
+    fn configure_server(
+        result_mutex: &Arc<Mutex<BleInitalConfig>>,
+        ble_device: &BLEDevice,
+        device_id: ZStr20,
+        pub_key_0: ZStr20,
+        pub_key_1: ZStr20,
+    ) -> Result<(), BleInitialConfigError> {
+        let server = ble_device.get_server();
+        let svc = server.create_service(SENSOR_CONFIG_SERVICE_UUID);
+
+        // READ_SENSOR_DEVICE_ID
+        svc.lock()
+            .create_characteristic(READ_SENSOR_DEVICE_ID, NimbleProperties::READ)
+            .lock()
+            .on_read(|_, _| {
+                log::info!("[READ_SENSOR_DEVICE_ID] called");
+            })
+            .set_value(device_id.inner_info_slice());
+
+        // READ_PUB_KEY_0
+        svc.lock()
+            .create_characteristic(READ_PUB_KEY_0, NimbleProperties::READ)
+            .lock()
+            .on_read(|_, _| {
+                log::info!("[READ_PUB_KEY_0] called");
+            })
+            .set_value(pub_key_0.inner_info_slice());
+
+        // READ_PUB_KEY_1
+        svc.lock()
+            .create_characteristic(READ_PUB_KEY_1, NimbleProperties::READ)
+            .lock()
+            .on_read(|_, _| {
+                log::info!("[READ_PUB_KEY_1] called");
+            })
+            .set_value(pub_key_1.inner_info_slice());
+
+        // WRITE_WIFI_SSID_0
+        let result_clone = result_mutex.clone();
+        svc.lock()
+            .create_characteristic(WRITE_WIFI_SSID_0, NimbleProperties::WRITE)
+            .lock()
+            .on_write(move |args| {
+                log::info!("[WRITE_WIFI_SSID_0] called");
+                match ZStr20::from_unsized_slice(args.recv_data()) {
+                    Ok(ssid) => {
+                        result_clone
+                            .lock()
+                            .expect("[WRITE_WIFI_SSID_0] Error unlocking result on characteristic ")
+                            .wifi_ssid = Some(ssid)
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[WRITE_WIFI_SSID_0] Couldn't form ZStr20 from received data: {e:?}"
+                        )
+                    }
+                }
+            });
+
+        // WRITE_WIFI_SSID_1
+        let result_clone = result_mutex.clone();
+        svc.lock()
+            .create_characteristic(WRITE_WIFI_SSID_1, NimbleProperties::WRITE)
+            .lock()
+            .on_write(move |args| {
+                log::info!("[WRITE_WIFI_SSID_1] called");
+                match ZStr20::from_unsized_slice(args.recv_data()) {
+                    Ok(ssid) => {
+                        result_clone
+                            .lock()
+                            .expect("[WRITE_WIFI_SSID_1] Error unlocking result on characteristic ")
+                            .wifi_ssid = Some(ssid)
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[WRITE_WIFI_SSID_1] Couldn't form ZStr20 from received data: {e:?}"
+                        )
+                    }
+                }
+            });
+
+        //WRITE_WIFI_PASS_0
+        let result_clone = result_mutex.clone();
+        svc.lock()
+            .create_characteristic(WRITE_WIFI_PASS_0, NimbleProperties::WRITE)
+            .lock()
+            .on_write(move |args| {
+                log::info!("[WRITE_WIFI_PASS_0] called");
+                match ZStr20::from_unsized_slice(args.recv_data()) {
+                    Ok(zstr) => {
+                        result_clone
+                            .lock()
+                            .expect("[WRITE_WIFI_PASS_0] Error unlocking result on characteristic ")
+                            .wifi_pass_0 = Some(zstr)
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[WRITE_WIFI_PASS_0] Couldn't form ZStr20 from received data: {e:?}"
+                        )
+                    }
+                }
+            });
+
+        //WRITE_WIFI_PASS_1
+        let result_clone = result_mutex.clone();
+
+        svc.lock()
+            .create_characteristic(WRITE_WIFI_PASS_1, NimbleProperties::WRITE)
+            .lock()
+            .on_write(move |args| {
+                log::info!("[WRITE_WIFI_PASS_1] called");
+                match ZStr20::from_unsized_slice(args.recv_data()) {
+                    Ok(zstr) => {
+                        result_clone
+                            .lock()
+                            .expect("[WRITE_WIFI_PASS_1] Error unlocking result on characteristic ")
+                            .wifi_pass_1 = Some(zstr)
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[WRITE_WIFI_PASS_1] Couldn't form ZStr20 from received data: {e:?}"
+                        )
+                    }
+                }
+            });
+
+        //WRITE_WIFI_PASS_2
+        let result_clone = result_mutex.clone();
+
+        svc.lock()
+            .create_characteristic(WRITE_WIFI_PASS_2, NimbleProperties::WRITE)
+            .lock()
+            .on_write(move |args| {
+                log::info!("[WRITE_WIFI_PASS_2] called");
+                match ZStr20::from_unsized_slice(args.recv_data()) {
+                    Ok(zstr) => {
+                        result_clone
+                            .lock()
+                            .expect("[WRITE_WIFI_PASS_2] Error unlocking result on characteristic")
+                            .wifi_pass_2 = Some(zstr)
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[WRITE_WIFI_PASS_2] Couldn't form ZStr20 from received data: {e:?}"
+                        )
+                    }
+                }
+            });
+
+        //WRITE_WIFI_PASS_3
+        let result_clone = result_mutex.clone();
+        svc.lock()
+            .create_characteristic(WRITE_WIFI_PASS_3, NimbleProperties::WRITE)
+            .lock()
+            .on_write(move |args| {
+                log::info!("[WRITE_WIFI_PASS_3] called");
+                match ZStr20::from_unsized_slice(args.recv_data()) {
+                    Ok(zstr) => {
+                        result_clone
+                            .lock()
+                            .expect("[WRITE_WIFI_PASS_3] Error unlocking result on characteristic")
+                            .wifi_pass_3 = Some(zstr)
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[WRITE_WIFI_PASS_3] Couldn't form ZStr20 from received data: {e:?}"
+                        )
+                    }
+                }
+            });
+
+        Ok(())
     }
 }
