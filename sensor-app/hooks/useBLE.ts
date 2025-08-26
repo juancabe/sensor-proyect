@@ -7,10 +7,10 @@ import * as ExpoDevice from 'expo-device';
 import base64 from 'react-native-base64';
 import { BleManager, Device } from 'react-native-ble-plx';
 
-const CFG_SERVICE_UUID = '4b80ba9d-64fd-4ffa-86fb-544e73d26ed1';
-const SENSOR_API_ID_CHAR_UUID = '8c680060-22b7-45b8-b325-f7b1b102d80f';
-const API_ACCOUNT_ID_CHAR_UUID = 'e11ca181-20c9-4675-b6f3-3f9fb91d1dc1';
-const SENSOR_UUID_CHAR_UUID = '333cad84-ceb5-4e18-bfcf-6147987c6733';
+const CFG_SERVICE = '4b80ba9d-64fd-4ffa-86fb-544e73d26ed1';
+const READ_SENSOR_DEVICE_ID = '7af24399-6c3f-4bc3-b576-7a4f8fb59d41';
+const READ_PUB_KEY_0 = 'f4f1c584-e3c0-4723-9e46-1f72b015aa88';
+const READ_PUB_KEY_1 = '7d725923-ca33-41c6-9a15-821be70eac7d';
 
 let bleManager: BleManager | null;
 if (Platform.OS !== 'web') {
@@ -21,7 +21,6 @@ if (Platform.OS !== 'web') {
 
 function useBLE() {
     const [allDevices, setAllDevices] = useState<Device[]>([]);
-    const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
 
     const requestAndroid31Permissions = async () => {
         const bluetoothScanPermission = await PermissionsAndroid.request(
@@ -80,8 +79,6 @@ function useBLE() {
 
     const connectToDeviceAndConfigure = async (
         device: Device,
-        username: string,
-        password: string,
     ): Promise<string | void> => {
         if (!bleManager) {
             return;
@@ -89,11 +86,10 @@ function useBLE() {
 
         try {
             const deviceConnection = await bleManager.connectToDevice(device.id);
-            setConnectedDevice(deviceConnection);
             await deviceConnection.discoverAllServicesAndCharacteristics();
             bleManager.stopDeviceScan();
 
-            const device_uuid = await getDeviceUUIDHex(device);
+            const device_uuid = await getDeviceRegisterInfo(device);
             if (!device_uuid) {
                 console.log('No device_uuid read from characteristic');
                 return 'No device_uuid read from characteristic';
@@ -112,8 +108,12 @@ function useBLE() {
         return;
     };
 
-    const isDuplicteDevice = (devices: Device[], nextDevice: Device) =>
+    const isDuplicatedDevice = (devices: Device[], nextDevice: Device) =>
         devices.findIndex((device) => nextDevice.id === device.id) > -1;
+
+    const isHexString = (hex: string): boolean => {
+        return /^[0-9a-fA-F]+$/.test(hex) && hex.length % 2 === 0;
+    };
 
     const scanForPeripherals = () =>
         bleManager?.startDeviceScan(null, null, (error, device) => {
@@ -122,12 +122,9 @@ function useBLE() {
                 return;
             }
 
-            if (
-                device &&
-                (device.localName === 'esp32-sensor' || device.name === 'esp32-sensor')
-            ) {
+            if (device && device.localName && isHexString(device.localName)) {
                 setAllDevices((prevState: Device[]) => {
-                    if (!isDuplicteDevice(prevState, device)) {
+                    if (!isDuplicatedDevice(prevState, device)) {
                         return [...prevState, device];
                     }
                     return prevState;
@@ -186,21 +183,30 @@ function useBLE() {
     //   }
     // };
 
-    const getDeviceUUIDHex = async (device: Device): Promise<string | null> => {
+    interface DeviceRegisterInfo {
+        sensorDeviceId: string;
+        sensorPubKey: string;
+    }
+
+    const getDeviceRegisterInfo = async (
+        device: Device,
+    ): Promise<DeviceRegisterInfo | null> => {
+        let device_id;
+
         try {
-            const uuid = (
+            device_id = (
                 await device.readCharacteristicForService(
-                    CFG_SERVICE_UUID,
-                    SENSOR_UUID_CHAR_UUID,
+                    CFG_SERVICE,
+                    READ_SENSOR_DEVICE_ID,
                 )
             ).value;
 
-            if (!uuid) {
+            if (!device_id) {
                 throw Error('device.value was null');
             }
 
             const arr = base64
-                .decode(uuid)
+                .decode(device_id)
                 .split('')
                 .map((char) => char.charCodeAt(0));
 
@@ -208,11 +214,67 @@ function useBLE() {
                 .map((byte) => byte.toString(16).padStart(2, '0'))
                 .join('');
 
-            return hexString;
+            device_id = hexString;
         } catch (e) {
             console.log('Exception occured on getDeviceUUID: ', e);
             return null;
         }
+        let pubKey0;
+
+        try {
+            pubKey0 = (
+                await device.readCharacteristicForService(CFG_SERVICE, READ_PUB_KEY_0)
+            ).value;
+
+            if (!pubKey0) {
+                throw Error('device.value was null');
+            }
+
+            const arr = base64
+                .decode(pubKey0)
+                .split('')
+                .map((char) => char.charCodeAt(0));
+
+            const hexString = arr
+                .map((byte) => byte.toString(16).padStart(2, '0'))
+                .join('');
+
+            pubKey0 = hexString;
+            console.log('Read pubKey0: ', pubKey0);
+        } catch (e) {
+            console.log('Exception occured on getDeviceUUID: ', e);
+            return null;
+        }
+
+        let pubKey1;
+        try {
+            pubKey1 = (
+                await device.readCharacteristicForService(CFG_SERVICE, READ_PUB_KEY_1)
+            ).value;
+
+            if (!pubKey1) {
+                throw Error('device.value was null');
+            }
+
+            const arr = base64
+                .decode(pubKey1)
+                .split('')
+                .map((char) => char.charCodeAt(0));
+
+            const hexString = arr
+                .map((byte) => byte.toString(16).padStart(2, '0'))
+                .join('');
+
+            pubKey1 = hexString;
+            console.log('Read pubKey1: ', pubKey1);
+        } catch (e) {
+            console.log('Exception occured on getDeviceUUID: ', e);
+            return null;
+        }
+
+        let pubKey = pubKey0 + pubKey1.slice(0, 24);
+
+        return { sensorDeviceId: device_id, sensorPubKey: pubKey };
     };
 
     // Void means no error
@@ -251,7 +313,6 @@ function useBLE() {
     return {
         connectToDeviceAndConfigure,
         allDevices,
-        connectedDevice,
         requestPermissions,
         scanForPeripherals,
         stopScanForPeripherals,

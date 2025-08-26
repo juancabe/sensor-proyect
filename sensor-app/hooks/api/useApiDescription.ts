@@ -21,7 +21,7 @@ export function useApiDescription() {
         }
 
         for (const char of description) {
-            if (!isAlphanumeric(char) || !(char === ' ')) {
+            if (!(isAlphanumeric(char) || !(char === ' '))) {
                 return `Characters like "${char}" are not allowed`;
             }
         }

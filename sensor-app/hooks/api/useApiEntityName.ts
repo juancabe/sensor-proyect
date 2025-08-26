@@ -17,7 +17,7 @@ export function useApiEntityName() {
         }
 
         for (const char of name) {
-            if (!isAlphanumeric(char) || !(char === ' ')) {
+            if (!(isAlphanumeric(char) || !(char === ' '))) {
                 return `Characters like "${char}" are not allowed`;
             }
         }

@@ -1,39 +1,27 @@
-import {
-    createContext,
-    ReactNode,
-    useCallback,
-    useContext,
-    useEffect,
-    useState,
-} from 'react';
+import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { SessionData } from '@/persistence/SessionData';
 import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
 import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
 
-export type PlaceName = string;
-
-export type SummaryMap = Map<PlaceName, [ApiUserPlace, ApiUserSensor[]]>;
-type SummaryState = SummaryMap | 'Unauthorized' | 'Connection Error' | undefined;
-
 export interface AppContextType {
-    summary: SummaryState;
-    reloadSummary: () => Promise<void>;
     sessionData: SessionData | undefined;
     activePlace: ApiUserPlace | undefined;
     activeSensor: ApiUserSensor | undefined;
-    setActivePlace: (place_id: PlaceName) => boolean | undefined;
+    jwt: string | undefined;
+    setJwt: (jwt: string | undefined) => void;
+    setActivePlace: (place: ApiUserPlace | undefined) => void;
     setActiveSensor: (sensor: ApiUserSensor | undefined) => void;
     logOut: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
-    const [summary, setSummary] = useState<SummaryState>(undefined);
     const [activePlace, setActivePlace] = useState<ApiUserPlace | undefined>(undefined);
     const [activeSensor, setActiveSensor] = useState<ApiUserSensor | undefined>(
         undefined,
     );
     const [sessionData, setSessionData] = useState<SessionData | undefined>(undefined);
+    const [jwt, setJwt] = useState<string | undefined>(undefined);
 
     useEffect(() => {
         const setSessionDataState = async () => {
@@ -44,89 +32,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSessionDataState();
     }, []);
 
-    const reloadSummary = useCallback(async () => {
-        if (!sessionData) {
-            return;
-        }
-
-        if (!sessionData.all_set()) {
-            console.warn('[reloadSummary] session.sessionData was not set');
-            setSummary('Unauthorized');
-            return;
-        }
-
-        const username = sessionData.username!;
-        const api_id = sessionData.api_id!;
-        //
-        // let res;
-        //
-        // try {
-        //     // res = await fetchUserSummary(username, { id: api_id });
-        // } catch (e) {
-        //     console.error(`Unexpected error thrown on [reloadSummary]: ${e}`);
-        //     return;
-        // }
-        //
-        // if (!res) {
-        //     console.error(`[reloadSummary] res was nullish: (${res})`);
-        //     setSummary('Connection Error');
-        //     return;
-        // }
-        //
-        // console.log('Res: ', res);
-        // if (typeof res === 'object' && 'summary' in res) {
-        //     let result = res.summary;
-        //     let places = result.places;
-        //     let sensors = result.sensors;
-        //     let map = new Map<string, [ApiUserPlace, ApiUserSensor[]]>();
-        //
-        //     places.forEach((place) => {
-        //         map.set(place.place_id.id, [place, []]);
-        //     });
-        //     sensors.forEach((sensor) => {
-        //         let opt = map.get(sensor.place_id.id);
-        //         if (!opt) {
-        //             console.warn('Sensor without corresponding place');
-        //             console.warn('sensor: ', sensor);
-        //             return;
-        //         }
-        //         let [, sens_arr] = opt;
-        //         sens_arr.push(sensor);
-        //     });
-        //
-        //     setSummary(map);
-        // } else {
-        //     console.error(`[reloadSummary] Unexpected situation, res: (${res})`);
-        //     setSummary('Unauthorized');
-        // }
-    }, [sessionData]);
-
-    const RELOAD_TIMEOUT = 1_000; // ms
-
-    useEffect(() => {
-        reloadSummary();
-        const id = setInterval(() => {
-            reloadSummary();
-        }, RELOAD_TIMEOUT);
-        return () => clearInterval(id);
-    }, [reloadSummary]);
-
-    // useEffect(() => {
-    //     reloadSummary();
-    // }, [reloadSummary]);
-
-    const publicSetActivePlace = (place_id: string): boolean | undefined => {
-        if (typeof summary !== 'object') {
-            return undefined;
-        }
-
-        let place_summary = summary.get(place_id);
-        if (place_summary) {
-            setActivePlace(place_summary[0]);
-            return true;
-        } else {
-            return false;
-        }
+    const publicSetActivePlace = (place: ApiUserPlace | undefined) => {
+        setActivePlace(place);
     };
 
     const logOut = async () => {
@@ -134,13 +41,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        setSummary(undefined);
-        setSummary(undefined);
         setActivePlace(undefined);
 
-        console.debug(`summary: ${summary}, activePlace: ${activePlace}`);
         await sessionData.deleteSession();
-        await reloadSummary();
     };
 
     function publicSetActiveSensor(sensor: ApiUserSensor | undefined) {
@@ -150,11 +53,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return (
         <AppContext.Provider
             value={{
-                summary,
-                reloadSummary,
                 sessionData: sessionData,
                 activePlace,
                 activeSensor,
+                jwt,
+                setJwt,
                 setActivePlace: publicSetActivePlace,
                 setActiveSensor: publicSetActiveSensor,
                 logOut,

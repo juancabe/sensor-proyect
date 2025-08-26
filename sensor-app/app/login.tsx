@@ -1,7 +1,7 @@
 import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 // import * as auth from '@/helpers/auth';
@@ -13,9 +13,11 @@ import { useApiRawPassword } from '@/hooks/api/useApiRawPassword';
 import { useApiEmail } from '@/hooks/api/useApiEmail';
 import { PostUser } from '@/bindings/api/endpoints/user/PostUser';
 import { PostSession } from '@/bindings/api/endpoints/session/PostSession';
+import { useAppContext } from '@/components/AppProvider';
 
 export default function Login() {
     const redirect = useRedirect();
+    const ctx = useAppContext();
 
     const [type, setType] = useState<'register' | 'login'>('login');
 
@@ -24,6 +26,8 @@ export default function Login() {
     const repeatPassword = useApiRawPassword();
     const email = useApiEmail();
 
+    const [holeFormError, setHoleFormError] = useState<string | null>(null);
+
     const registerBody: PostUser = {
         username: username.username,
         raw_password: password.password,
@@ -31,20 +35,50 @@ export default function Login() {
     };
 
     const loginBody: PostSession = {
-        username: username.username,
-        raw_password: password.password,
+        'User': {
+            username: username.username,
+            raw_password: password.password,
+        },
     };
 
     const [method, setMethod] = useState<'POST' | undefined>(undefined);
     const api = useApi(
-        type === 'register' ? '/users' : `/session`,
+        type === 'register' ? '/user' : `/session`,
         type === 'register' ? registerBody : loginBody,
         method,
+        false,
     );
 
-    if (api.response) {
-        redirect.redirectToIndex();
-    }
+    useEffect(() => {
+        if (api.returnedOk) {
+            console.debug(
+                'setting session data to: ',
+                username.username,
+                password.password,
+            );
+            ctx.sessionData?.setSession(username.username, password.password);
+            redirect.redirectToIndex();
+        }
+    }, [api.returnedOk, redirect, username.username, password.password, ctx.sessionData]);
+
+    useEffect(() => {
+        if (api.error) {
+            setMethod(undefined);
+        }
+    }, [api.error]);
+
+    useEffect(() => {
+        if (
+            password.isValid &&
+            repeatPassword.isValid &&
+            !(password.password === repeatPassword.password)
+        ) {
+            api.clearError();
+            setHoleFormError("Passwords don't match");
+        } else if (password.password === repeatPassword.password) {
+            setHoleFormError(null);
+        }
+    }, [password, repeatPassword, api]);
 
     function isSubmissionDisabled(): boolean {
         if (api.loading) return true;
@@ -68,6 +102,8 @@ export default function Login() {
     };
 
     const handleSubmission = async () => {
+        setHoleFormError(null);
+        api.clearError();
         Keyboard.dismiss();
         setMethod('POST');
     };
@@ -77,12 +113,14 @@ export default function Login() {
             placeholder: 'Username',
             value: username.username,
             onChangeText: username.setUsername,
+            error: username.error,
         },
         {
             placeholder: 'Password',
             value: password.password,
             onChangeText: password.setPassword,
             secureTextEntry: true,
+            error: password.error,
         },
     ];
 
@@ -91,6 +129,7 @@ export default function Login() {
             placeholder: 'Email',
             value: email.email,
             onChangeText: email.setEmail,
+            error: email.error,
         },
         ...loginFields,
         {
@@ -98,6 +137,7 @@ export default function Login() {
             value: repeatPassword.password,
             onChangeText: repeatPassword.setPassword,
             secureTextEntry: true,
+            error: repeatPassword.error,
         },
     ];
 
@@ -125,7 +165,16 @@ export default function Login() {
                         onPress={handleSubmission}
                     />
                 </ThemedView>
-                <ErrorBox error={api.formattedError}></ErrorBox>
+                <ErrorBox
+                    error={
+                        api.error
+                            ? api.error[1]?.status === 401
+                                ? 'Invalid Credentials'
+                                : api.formattedError
+                            : null
+                    }
+                ></ErrorBox>
+                <ErrorBox error={holeFormError}></ErrorBox>
                 <Button title={oppositeType()} onPress={() => setType(oppositeType())} />
             </ThemedView>
         </SafeAreaView>

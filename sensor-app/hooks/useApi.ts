@@ -5,11 +5,11 @@ import { SessionData } from '@/persistence/SessionData';
 import { FetchRequestInit } from 'expo/fetch';
 import { useEffect, useState } from 'react';
 
-const BASE_API_URL = 'localhost:3000/api/v0';
+const BASE_API_URL = 'http://192.168.1.139:3000/api/v0';
 
 export interface ReturnedError<E> {
     status: number;
-    errorBody: E;
+    errorBody?: E;
 }
 
 export enum Error {
@@ -19,7 +19,7 @@ export enum Error {
     InvalidLocalSession,
 }
 
-export type ErrorState<E> = [Error, ReturnedError<E>?];
+export type ErrorState<E> = [Error, ReturnedError<E>];
 
 function errorText<E>(err: ErrorState<E>, displayBody: boolean): string {
     switch (err[0]) {
@@ -40,10 +40,13 @@ interface InternalFetchProps {
     endpoint_path: string;
     init: FetchRequestInit;
     sessionData: SessionData | undefined;
+    setJwt: (jwt: string | undefined) => void;
 }
 
+type Rerun = boolean;
+
 // Throws Error slice
-async function _fetchApi<R>(props: InternalFetchProps): Promise<R> {
+async function _fetchApi<R>(props: InternalFetchProps): Promise<[R, boolean] | Rerun> {
     let { endpoint_path, init, sessionData } = props;
 
     let res;
@@ -54,9 +57,12 @@ async function _fetchApi<R>(props: InternalFetchProps): Promise<R> {
         throw [Error.NetworkError];
     }
 
-    const readJson = res.headers.get('content-type')?.includes('application/json');
+    console.debug('response: ', res);
+
+    const readJson = res.headers.get('Content-type')?.includes('application/json');
     let response;
     if (readJson) {
+        console.debug('readJson was true');
         try {
             response = await res.json();
         } catch (jsonError) {
@@ -64,38 +70,46 @@ async function _fetchApi<R>(props: InternalFetchProps): Promise<R> {
             throw [Error.JsonError];
         }
     } else {
+        console.debug('readJson was false');
         response = null;
     }
 
     if (!res.ok) {
-        if (!sessionData) {
-            throw [
+        if (!sessionData || !sessionData.username || !sessionData.password) {
+            let error: ErrorState<any> = [
                 Error.ReturnedError,
-                response ? { status: res.status, errorBody: response } : undefined,
+                { status: res.status, errorBody: response },
             ];
+
+            throw error;
         } else {
             // TODO: Renew JWT
-            await renewJWT(sessionData);
-            return await _fetchApi(props);
+            let jwt = await renewJWT(sessionData);
+            props.setJwt(jwt);
+            console.assert(false, 'This code should not be run');
+            return true;
         }
     }
 
-    return response;
+    return [response, res.status === 200];
 }
 
-async function renewJWT(session: SessionData): Promise<void> {
-    if (!session.username || !session.hashed_password) {
+async function renewJWT(session: SessionData): Promise<string> {
+    if (!session.username || !session.password) {
         throw [Error.JsonError];
     }
 
     const body: PostSession = {
-        username: session.username,
-        raw_password: session.hashed_password,
+        'User': {
+            username: session.username,
+            raw_password: session.password,
+        },
     };
 
     const init: FetchRequestInit = {
         body: JSON.stringify(body),
         method: 'POST',
+        headers: [['Content-type', 'application/json']],
     };
 
     let res;
@@ -105,12 +119,22 @@ async function renewJWT(session: SessionData): Promise<void> {
         console.error('[renewJWT] networkError: ', networkError);
         throw [Error.NetworkError];
     }
-    // TODO: Check that JWT is set as cookie
+    console.log('[renewJWT] res: ', res);
+
+    if (res.status !== 200) {
+        if (res.status === 401 || res.status === 422) {
+            console.debug('Invalid SessionData');
+            await session.deleteSession();
+        } else {
+            console.error('Error received: ', res.status);
+        }
+    }
 
     try {
         let json: ApiSession;
         json = await res.json();
         console.log('GetSession response:', json);
+        return json.access_token;
     } catch (e) {
         console.error('UNEXPECTED JSON ERROR FROM GET SESSION API', e);
         throw [Error.JsonError];
@@ -121,12 +145,14 @@ export default function useApi<B, R, E>(
     endpoint_path: string,
     body: B,
     method: 'GET' | 'POST' | 'PUT' | 'DELETE' | undefined,
+    displayBody: boolean,
 ) {
     const ctx = useAppContext();
 
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<ErrorState<E> | undefined>(undefined);
     const [response, setResponse] = useState<R | undefined>(undefined);
+    const [returnedOk, setReturnedOk] = useState<boolean | undefined>(undefined);
 
     const stableBody = JSON.stringify(body);
 
@@ -143,25 +169,45 @@ export default function useApi<B, R, E>(
             setError(undefined);
             setResponse(undefined);
 
-            const init: FetchRequestInit = {
+            let init: FetchRequestInit = {
                 body: stableBody,
                 method: method,
                 signal,
             };
 
+            let headers: [string, string][] = [];
+
+            if (method !== 'GET') {
+                headers.push(['Content-type', 'application/json']);
+            }
+            if (ctx.jwt) {
+                headers.push(['Authorization', 'Bearer ' + ctx.jwt]);
+            }
+
+            init.headers = headers;
+
             const props: InternalFetchProps = {
                 endpoint_path,
                 init,
                 sessionData: ctx.sessionData,
+                setJwt: ctx.setJwt,
             };
 
             try {
-                const r = await _fetchApi<R>(props);
+                const ret = await _fetchApi<R>(props);
+                if (typeof ret === 'boolean') {
+                    console.assert(false, 'This code should not run as jwt was set');
+                    throw 'UNEXPECTED';
+                }
+                const [r, ok] = ret;
+                setReturnedOk(ok);
                 setResponse(r);
             } catch (e: any) {
                 if (e.name !== 'AbortError') {
+                    console.debug('setting api error to: ', e);
                     setError(e as ErrorState<E>);
                 }
+                setReturnedOk(false);
             } finally {
                 if (!signal.aborted) {
                     setLoading(false);
@@ -174,9 +220,13 @@ export default function useApi<B, R, E>(
         return () => {
             controller.abort();
         };
-    }, [endpoint_path, method, stableBody, ctx.sessionData]);
+    }, [endpoint_path, method, stableBody, ctx.sessionData, ctx.setJwt, ctx.jwt]);
 
-    const formattedError = error ? errorText(error, body ? true : false) : null;
+    const formattedError = error ? errorText(error, displayBody) : null;
 
-    return { response, loading, error, formattedError };
+    const clearError = () => {
+        setError(undefined);
+    };
+
+    return { response, loading, error, formattedError, clearError, returnedOk };
 }

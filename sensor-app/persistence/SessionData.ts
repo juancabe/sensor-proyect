@@ -2,21 +2,15 @@ import * as SecureStore from 'expo-secure-store';
 
 enum SessionKeys {
     USERNAME = 'USERNAME',
-    HASHED_PASSWORD = 'HASHED_PASSWORD',
-    API_ID = 'API_ID',
+    PASSWORD = 'PASSWORD',
 }
 
 type key = string | null;
 
-async function setSessionData(
-    api_id: string,
-    hashed_password: string,
-    username: string,
-): Promise<void> {
+async function setSessionData(username: string, password: string): Promise<void> {
     const promises = [
-        SecureStore.setItemAsync(SessionKeys.API_ID, api_id),
-        SecureStore.setItemAsync(SessionKeys.HASHED_PASSWORD, hashed_password),
         SecureStore.setItemAsync(SessionKeys.USERNAME, username),
+        SecureStore.setItemAsync(SessionKeys.PASSWORD, password),
     ];
 
     await Promise.all(promises);
@@ -25,62 +19,44 @@ async function setSessionData(
 async function deleteSessionData(): Promise<void> {
     const promises = [
         SecureStore.deleteItemAsync(SessionKeys.USERNAME),
-        SecureStore.deleteItemAsync(SessionKeys.API_ID),
-        SecureStore.deleteItemAsync(SessionKeys.HASHED_PASSWORD),
+        SecureStore.deleteItemAsync(SessionKeys.PASSWORD),
     ];
 
     await Promise.all(promises);
 }
 
-async function loadSessionData(): Promise<[key, key, key]> {
+async function loadSessionData(): Promise<[key, key]> {
     const promises = [
         SecureStore.getItemAsync(SessionKeys.USERNAME),
-        SecureStore.getItemAsync(SessionKeys.API_ID),
-        SecureStore.getItemAsync(SessionKeys.HASHED_PASSWORD),
+        SecureStore.getItemAsync(SessionKeys.PASSWORD),
     ];
 
-    let [username, api_key, hashed_password]: [
-        key | undefined,
-        key | undefined,
-        key | undefined,
-    ] = [null, null, null];
+    let [username, password]: [key | undefined, key | undefined] = [null, null];
 
     try {
-        [username, api_key, hashed_password] = await Promise.all(promises);
+        [username, password] = await Promise.all(promises);
     } catch (e) {
         console.error('Error thrown onSecureStore.getItemAsync: ', e);
-        return [null, null, null];
+        return [null, null];
     }
 
-    if (
-        username === undefined ||
-        api_key === undefined ||
-        hashed_password === undefined
-    ) {
-        console.log(
-            `some is undefined... username: ${username}, api_id: ${api_key}, hashed_password: ${hashed_password}`,
-        );
+    if (username === undefined || password === undefined) {
+        console.log(`some is undefined... username: ${username}, password: ${password}`);
         throw 'Some was undefined';
     }
 
-    return [username, api_key, hashed_password];
+    return [username, password];
 }
 
 export class SessionData {
     private static _instance: SessionData | Promise<SessionData> | null = null;
     private static _initializing: Promise<SessionData> | null = null;
 
-    private _api_id: string | null = null;
-    private _hashed_password: string | null = null;
+    private _password: string | null = null;
     private _username: string | null = null;
 
-    private constructor(
-        api_id: string | null,
-        hashed_password: string | null,
-        username: string | null,
-    ) {
-        this._api_id = api_id;
-        this._hashed_password = hashed_password;
+    private constructor(username: string | null, password: string | null) {
+        this._password = password;
         this._username = username;
     }
 
@@ -90,8 +66,8 @@ export class SessionData {
 
         this._initializing = (async () => {
             console.debug('[SessionData] initializing...');
-            const [username, api_id, hashed_password] = await loadSessionData();
-            this._instance = new SessionData(api_id, hashed_password, username);
+            const [username, password] = await loadSessionData();
+            this._instance = new SessionData(username, password);
             this._initializing = null;
             return this._instance;
         })();
@@ -100,36 +76,26 @@ export class SessionData {
     }
 
     all_set(): boolean {
-        return (
-            this._api_id !== null &&
-            this._hashed_password !== null &&
-            this._username !== null
-        );
+        return this._password !== null && this._username !== null;
     }
 
     async deleteSession() {
         // Can throw
         await deleteSessionData();
-        this._api_id = null;
-        this._hashed_password = null;
+        this._password = null;
         this._username = null;
     }
 
     // Can throw
-    async setSession(api_id: string, hashed_password: string, username: string) {
-        await setSessionData(api_id, hashed_password, username);
+    async setSession(username: string, password: string) {
+        await setSessionData(username, password);
 
-        this._api_id = api_id;
-        this._hashed_password = hashed_password;
         this._username = username;
+        this._password = password;
     }
 
-    get api_id(): string | null {
-        return this._api_id;
-    }
-
-    get hashed_password(): string | null {
-        return this._hashed_password;
+    get password(): string | null {
+        return this._password;
     }
 
     get username(): string | null {

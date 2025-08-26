@@ -3,27 +3,24 @@ import React from 'react';
 import { Button, StyleSheet, View } from 'react-native';
 import { useAppContext } from './AppProvider';
 import { TEXT_STYLES, ThemedText } from './ui-elements/ThemedText';
-import SensorCard from './SensorCard';
+// import SensorCard from './SensorCard';
 import { ThemedView } from './ui-elements/ThemedView';
 import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
-import { GetSensorResponse } from '@/bindings/api/endpoints/sensor/GetSensorResponse';
 
 export interface PlaceCardProps {
     place: ApiUserPlace;
-    sensors: GetSensorResponse[];
 }
 
-export default function PlaceCard({ place, sensors }: PlaceCardProps) {
+export default function PlaceCard({ place }: PlaceCardProps) {
     const router = useRouter();
     const ctx = useAppContext();
 
     const handleAddSensorPress = () => {
-        if (ctx.setActivePlace(place.name)) {
-            router.navigate('/AddSensorScreen');
-        } else {
-            // TODO: Display error
-        }
+        ctx.setActivePlace(place);
+        router.navigate('/AddSensorScreen');
     };
+
+    // TODO: Call get sensors api
 
     return (
         <ThemedView
@@ -41,9 +38,9 @@ export default function PlaceCard({ place, sensors }: PlaceCardProps) {
                     justifyContent: 'center',
                 }}
             >
-                {sensors.map((sensor) => (
-                    <SensorCard key={sensor.sensor.device_id} sensor={sensor} />
-                ))}
+                {/* {sensors.map(([sensor, data]) => ( */}
+                {/*     <SensorCard key={sensor.device_id} sensor={sensor} data={data} /> */}
+                {/* ))} */}
             </View>
         </ThemedView>
     );

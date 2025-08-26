@@ -1,6 +1,8 @@
 import { useTheme } from '@react-navigation/native';
 import React from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import ErrorBox from './ErrorBox';
+import { TEXT_STYLES } from './ThemedText';
 
 export type FieldConfig = {
     placeholder: string;
@@ -11,6 +13,7 @@ export type FieldConfig = {
         TextInputProps,
         'placeholder' | 'value' | 'onChangeText' | 'secureTextEntry'
     >;
+    error?: string;
 };
 
 export type ThemedFormProps = {
@@ -25,24 +28,29 @@ export default function ThemedForm({ fields, style }: ThemedFormProps) {
     return (
         <View style={[styles.container, style]}>
             {fields.map((f, idx) => (
-                <TextInput
-                    key={idx}
-                    style={[
-                        styles.input,
-                        {
-                            backgroundColor: colors.card,
-                            color: colors.text,
-                            borderColor: colors.border,
-                        },
-                    ]}
-                    placeholder={f.placeholder}
-                    placeholderTextColor={colors.text + '99'}
-                    value={f.value}
-                    onChangeText={f.onChangeText}
-                    secureTextEntry={f.secureTextEntry}
-                    autoCapitalize="none"
-                    {...f.inputProps}
-                />
+                <View key={idx}>
+                    <TextInput
+                        style={[
+                            styles.input,
+                            {
+                                backgroundColor: colors.card,
+                                color: colors.text,
+                                borderColor: colors.border,
+                            },
+                        ]}
+                        placeholder={f.placeholder}
+                        placeholderTextColor={colors.text + '99'}
+                        value={f.value}
+                        onChangeText={f.onChangeText}
+                        secureTextEntry={f.secureTextEntry}
+                        autoCapitalize="none"
+                        {...f.inputProps}
+                    />
+                    <ErrorBox
+                        error={f.error ? f.error : null}
+                        style={{ padding: 5, borderWidth: 1, margin: 10, marginTop: 0 }}
+                    />
+                </View>
             ))}
         </View>
     );

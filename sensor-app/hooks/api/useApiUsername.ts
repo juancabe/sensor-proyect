@@ -17,7 +17,7 @@ export function useApiUsername() {
         }
 
         for (const char of username) {
-            if (!isAlphanumeric(char) || !(char === '_')) {
+            if (!(isAlphanumeric(char) || char === '_')) {
                 return `Characters like "${char}" are not allowed`;
             }
         }

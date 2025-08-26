@@ -7,20 +7,23 @@ import { useRouter } from 'expo-router';
 import { timeDisplay } from '@/helpers/timeDisplay';
 import { safeGet } from '@/helpers/objectWork';
 import LabelValue from './ui-elements/LabelValue';
-import { GetSensorResponse } from '@/bindings/api/endpoints/sensor/GetSensorResponse';
+import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
+import { ApiSensorData } from '@/bindings/api/endpoints/sensor_data/ApiSensorData';
 
 export interface SensorCardProps {
-    sensor: GetSensorResponse;
+    sensor: ApiUserSensor;
+    data?: ApiSensorData;
 }
 
 export default function SensorCard(props: SensorCardProps) {
     const sensor = props.sensor;
+    const data = props.data;
     const ctx = useAppContext();
     const router = useRouter();
 
     let lastData: [string, string][] | undefined = undefined;
-    if (sensor.last_data) {
-        const parsed = JSON.parse(sensor.last_data.data);
+    if (data) {
+        const parsed = JSON.parse(data.data);
 
         const numberKeys = Object.entries(parsed)
             .filter(([, v]) => typeof v === 'number')
@@ -35,22 +38,21 @@ export default function SensorCard(props: SensorCardProps) {
     return (
         <TouchableOpacity
             onPress={() => {
-                ctx.setActiveSensor(sensor.sensor);
+                ctx.setActiveSensor(sensor);
                 router.navigate('/SensorDetail');
             }}
         >
             <ThemedView
                 style={[
-                    { backgroundColor: props.sensor.sensor.color.replace('HEX_', '#') },
+                    { backgroundColor: props.sensor.color.replace('HEX_', '#') },
                     styles.mainContainer,
                 ]}
             >
-                <ThemedText style={styles.sensorName}>{sensor.sensor.name}</ThemedText>
+                <ThemedText style={styles.sensorName}>{sensor.name}</ThemedText>
                 <LabelValue label="Last Update">
-                    {sensor.last_data ? (
+                    {data ? (
                         <ThemedText key={'formattedTime'} style={styles.value}>
-                            {timeDisplay(new Date(sensor.last_data.added_at * 1000)) +
-                                ' ago'}
+                            {timeDisplay(new Date(data.added_at * 1000)) + ' ago'}
                         </ThemedText>
                     ) : null}
                     {lastData ? (
