@@ -2,6 +2,7 @@
 import type { ApiColor } from "../../types/ApiColor";
 import type { ApiDescription } from "../../types/ApiDescription";
 import type { ApiEntityName } from "../../types/ApiEntityName";
+import type { ApiPubKey } from "../../types/ApiPubKey";
 import type { DeviceId } from "../../types/DeviceId";
 
-export type PostSensor = { place_name: ApiEntityName, device_id: DeviceId, access_id: DeviceId, name: ApiEntityName, description: ApiDescription | null, color: ApiColor, };
+export type PostSensor = { place_name: ApiEntityName, device_id: DeviceId, pub_key: ApiPubKey, name: ApiEntityName, description: ApiDescription | null, color: ApiColor, };

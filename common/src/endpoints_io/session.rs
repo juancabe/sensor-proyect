@@ -20,8 +20,13 @@ pub struct UserLogin {
 pub struct SensorLogin {
     #[validate]
     pub device_id: DeviceId,
-    #[validate]
-    pub access_id: DeviceId,
+    #[validate(max_length = 128)]
+    #[validate(min_length = 128)]
+    pub random_message: String,
+    #[validate(max_length = 128)]
+    #[validate(min_length = 128)]
+    #[validate(pattern = "^[0-9A-Fa-f]+$")] // Just HEX characters
+    pub signature_of_message: String,
 }
 
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]

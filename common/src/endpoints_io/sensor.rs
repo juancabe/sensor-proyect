@@ -8,7 +8,7 @@ use crate::{
         ApiTimestamp,
         validate::{
             api_color::ApiColor, api_description::ApiDescription, api_entity_name::ApiEntityName,
-            device_id::DeviceId,
+            api_pub_key::ApiPubKey, device_id::DeviceId,
         },
     },
 };
@@ -16,7 +16,10 @@ use crate::{
 #[derive(TS, Debug, Serialize, Deserialize, Validate)]
 #[ts(export, export_to = "./api/endpoints/sensor/")]
 pub struct ApiUserSensor {
+    #[validate]
     pub device_id: DeviceId,
+    #[validate]
+    pub pub_key: ApiPubKey,
     #[validate]
     pub name: ApiEntityName,
     #[validate]
@@ -91,7 +94,7 @@ pub struct PostSensor {
     #[validate]
     pub device_id: DeviceId,
     #[validate]
-    pub access_id: DeviceId,
+    pub pub_key: ApiPubKey,
     #[validate]
     pub name: ApiEntityName,
     #[validate]
