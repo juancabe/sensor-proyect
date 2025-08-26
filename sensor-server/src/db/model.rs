@@ -1,5 +1,9 @@
+use std::array::TryFromSliceError;
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use ed25519_dalek::{SignatureError, VerifyingKey};
+use hex::FromHexError;
 
 pub type HexValue = String;
 
@@ -59,8 +63,8 @@ pub struct UserSensor {
     pub id: i32,
     pub place_id: i32,     // Foreign key to UserPlace
     pub device_id: String, // 20 bytes HEX String -> Generated at the sensor runtime
-    pub access_id: String, // 20 bytes HEX String -> Generated at the sensor runtime and securely
-    // sent to pairing device with PUB KEY SCHEME
+    pub pub_key: String,   // ed25519 verify key generated securely in the device, used for
+    // sensor data authentication via JWT generation, stored as a HEX encoded string
     pub name: String,
     pub description: Option<String>,
     pub color_id: i32,
@@ -73,10 +77,48 @@ pub struct UserSensor {
 pub struct NewUserSensor {
     pub place_id: i32, // Foreign key to UserPlace
     pub device_id: String,
-    pub access_id: String,
+    pub_key: String,
     pub name: String,
     pub description: Option<String>,
     pub color_id: i32,
+}
+
+#[derive(Debug)]
+pub enum InvalidPubKey {
+    Hex(FromHexError),
+    SizedSlice(TryFromSliceError),
+    VerifyingKey(SignatureError),
+}
+
+impl NewUserSensor {
+    pub fn new(
+        place_id: i32,
+        device_id: String,
+        pub_key: String,
+        name: String,
+        description: Option<String>,
+        color_id: i32,
+    ) -> Result<Self, InvalidPubKey> {
+        // Validate pub_key
+        let pk_bytes = hex::decode(&pub_key).map_err(|e| InvalidPubKey::Hex(e))?;
+        // Try to construct it
+        VerifyingKey::from_bytes(
+            pk_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|e: TryFromSliceError| InvalidPubKey::SizedSlice(e))?,
+        )
+        .map_err(|e| InvalidPubKey::VerifyingKey(e))?;
+
+        Ok(Self {
+            place_id,
+            device_id,
+            pub_key,
+            name,
+            description,
+            color_id,
+        })
+    }
 }
 
 #[derive(Queryable, Selectable, AsChangeset, Clone, Debug)]

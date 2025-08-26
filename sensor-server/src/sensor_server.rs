@@ -79,6 +79,7 @@ impl SensorServer {
 mod tests {
     use axum_test::TestServer;
     use common::{
+        auth::keys::Keys,
         endpoints_io::{
             place::{ApiUserPlace, GetPlace, GetPlaceEnum, PostPlace},
             sensor::{ApiUserSensor, GetSensor, GetSensorEnum, GetSensorResponse, PostSensor},
@@ -91,12 +92,14 @@ mod tests {
             api_description::ApiDescription,
             api_email::ApiEmail,
             api_entity_name::ApiEntityName,
+            api_pub_key::ApiPubKey,
             api_raw_password::ApiRawPassword,
             api_username::ApiUsername,
             device_id::DeviceId,
         },
     };
     use hyper::StatusCode;
+    use rand::random;
     use serde_valid::json::json;
 
     use crate::{api::endpoints, db::tests::random_string, sensor_server::SensorServer};
@@ -291,7 +294,9 @@ mod tests {
         let sensor_name = ApiEntityName::random();
         let sensor_description = ApiDescription::random();
         let sensor_device_id = DeviceId::random();
-        let sensor_access_id = DeviceId::random();
+        let random_seed: [u8; 32] = random();
+        let mut keys = Keys::new(&random_seed);
+        let sensor_pub_key = ApiPubKey::from(hex::encode(keys.get_vk()));
 
         let body = PostSensor {
             name: sensor_name.clone().into(),
@@ -299,7 +304,7 @@ mod tests {
             color: COLOR_HEX_STRS[0].to_string().into(),
             place_name: name.clone().into(),
             device_id: sensor_device_id.clone(),
-            access_id: sensor_access_id.clone(),
+            pub_key: sensor_pub_key.clone(),
         };
 
         let res = server.post(path.as_str()).json(&body).await;
@@ -326,7 +331,7 @@ mod tests {
             color: color.clone(),
             place_name: name.clone(),
             device_id: sensor_device_id.clone(),
-            access_id: DeviceId::random(),
+            pub_key: ApiPubKey::random(&random::<[u8; 32]>()),
         };
 
         let res = server
@@ -343,14 +348,23 @@ mod tests {
             endpoints::session::Session::API_PATH
         );
 
-        let query = SensorLogin {
+        let random_message: String = random_string(128..129);
+        let signature = keys.sign(random_message.as_bytes());
+        let signature_of_message = signature.to_bytes();
+        let signature_of_message = hex::encode(signature_of_message);
+        log::debug!("signature_of_message.len(): {}", signature_of_message.len());
+
+        let body = SensorLogin {
             device_id: sensor_device_id.clone(),
-            access_id: sensor_access_id.clone(),
+            random_message,
+            signature_of_message,
         };
 
-        let query = PostSession::Sensor(query);
+        log::debug!("body: {body:?}");
 
-        let res = server.post(path.as_str()).json(&json!(query)).await;
+        let body = PostSession::Sensor(body);
+
+        let res = server.post(path.as_str()).json(&json!(body)).await;
         let session: ApiSession = res.json();
         log::trace!("Received session: {session:?}");
 
@@ -535,7 +549,7 @@ mod tests {
             color: color.clone(),
             place_name: name.clone(),
             device_id: DeviceId::random(),
-            access_id: DeviceId::random(),
+            pub_key: ApiPubKey::random(&random::<[u8; 32]>()),
         };
         let res = server
             .post(&sensor_list_path)

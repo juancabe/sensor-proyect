@@ -35,6 +35,7 @@ pub enum Error {
     NotFound(ExternalError),
     InternalError(ExternalError),
     NotUnique(ExternalError),
+    InvalidSignature(ExternalError),
 }
 
 impl Display for Error {
@@ -44,6 +45,7 @@ impl Display for Error {
             Error::NotFound(error) => write!(f, "Not Found: {error:?}"),
             Error::InternalError(error) => write!(f, "Internal Error: {error:?}"),
             Error::NotUnique(error) => write!(f, "NotUnique Error: {error:?}"),
+            Error::InvalidSignature(error) => write!(f, "InvalidSignature: {error:?}"),
         }
     }
 }
@@ -57,6 +59,7 @@ impl From<Error> for StatusCode {
             Error::ConnectionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Error::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Error::NotUnique(_) => StatusCode::CONFLICT,
+            Error::InvalidSignature(_) => StatusCode::UNAUTHORIZED,
         }
     }
 }
@@ -126,8 +129,11 @@ pub mod tests {
 
     use std::ops::Range;
 
-    use common::types::validate::{
-        api_raw_password::ApiRawPassword, api_username::ApiUsername, device_id::DeviceId,
+    use common::{
+        auth::keys::Keys,
+        types::validate::{
+            api_raw_password::ApiRawPassword, api_username::ApiUsername, device_id::DeviceId,
+        },
     };
     use diesel::{Insertable, RunQueryDsl};
     use rand::{Rng, distr::Alphabetic};
@@ -200,15 +206,18 @@ pub mod tests {
 
         let name = random_string(5..16);
         let description = random_string(5..16);
+        let keys = Keys::new(&[123u8; 32]);
+        let pub_key = hex::encode(keys.get_vk());
 
-        let test_user_sensor = NewUserSensor {
+        let test_user_sensor = NewUserSensor::new(
+            user_place.id,
+            DeviceId::random().to_string(),
+            pub_key,
             name,
-            description: Some(description),
-            color_id: 1,
-            place_id: user_place.id,
-            device_id: DeviceId::random().to_string(),
-            access_id: DeviceId::random().to_string(),
-        };
+            Some(description),
+            1,
+        )
+        .expect("Should be correct");
 
         let res: Vec<UserSensor> = test_user_sensor
             .clone()

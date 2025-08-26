@@ -109,6 +109,7 @@ impl Sensor {
             created_at: sensor.created_at.and_utc().timestamp() as ApiTimestamp,
             updated_at: sensor.updated_at.and_utc().timestamp() as ApiTimestamp,
             place_name: place_name.into(),
+            pub_key: sensor.pub_key.into(),
         }))
     }
 
@@ -153,6 +154,7 @@ impl Sensor {
                             device_id: DeviceId::from_string(&sensor.device_id)
                                 .expect("Should be valid"),
                             place_name: place.name.into(),
+                            pub_key: sensor.pub_key.into(),
                         };
 
                         let data = data.map(|d| ApiSensorData {
@@ -210,14 +212,18 @@ impl Sensor {
             .into(),
         ))?;
 
-        let sensor = NewUserSensor {
-            name: payload.name.into(),
-            description: payload.description.map(|d| d.into()),
-            color_id,
+        let sensor = NewUserSensor::new(
             place_id,
-            device_id: payload.device_id.to_string(),
-            access_id: payload.access_id.to_string(),
-        };
+            payload.device_id.to_string(),
+            payload.pub_key.clone().into(),
+            payload.name.into(),
+            payload.description.map(|d| d.into()),
+            color_id,
+        )
+        .map_err(|e| {
+            log::warn!("User provided a wrong pub_key and it passed api filters: {e:?}");
+            StatusCode::BAD_REQUEST
+        })?;
 
         log::trace!("NewUserSensor: {sensor:?}");
 
@@ -234,6 +240,7 @@ impl Sensor {
                 StatusCode::INTERNAL_SERVER_ERROR
             })?,
             place_name: payload.place_name,
+            pub_key: payload.pub_key,
         };
 
         log::trace!("Sensor created correctly: {res:?}");
@@ -274,7 +281,7 @@ impl Sensor {
                                 log::error!("Could not get color from id: {e:?}");
                                 db::Error::InternalError("Could not get color from id".into())
                             })?;
-                        let aup = ApiUserSensor {
+                        let aus = ApiUserSensor {
                             name: us.name.into(),
                             description: us.description.map(|d| d.into()),
                             created_at: us.created_at.and_utc().timestamp() as usize,
@@ -283,8 +290,9 @@ impl Sensor {
                             device_id: DeviceId::from_string(&us.device_id)
                                 .expect("Should be valid ApiId"),
                             place_name: up.name.into(),
+                            pub_key: us.pub_key.into(),
                         };
-                        Ok(aup)
+                        Ok(aus)
                     })
                     .collect();
 
@@ -316,7 +324,7 @@ mod tests {
 
     use axum::extract::Query;
     use axum_serde_valid::Json;
-    use common::types::validate::device_id::DeviceId;
+    use common::types::validate::{api_pub_key::ApiPubKey, device_id::DeviceId};
 
     use crate::{
         api::endpoints::sensor::{DeleteSensor, GetSensor, GetSensorEnum, PostSensor, Sensor},
@@ -403,7 +411,7 @@ mod tests {
             description: Some("A description for the new sensor.".to_string().into()),
             color: "#FF0000".to_string().into(),
             device_id: DeviceId::random(),
-            access_id: DeviceId::random(),
+            pub_key: ApiPubKey::random(&[123u8; 32]),
         };
 
         let claims = Claims {

@@ -1,17 +1,9 @@
 use axum::routing::MethodRouter;
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use axum_serde_valid::Json;
-use common::{
-    endpoints_io::session::ApiSession,
-    types::validate::{
-        api_raw_password::ApiRawPassword, api_username::ApiUsername, device_id::DeviceId,
-    },
-};
+use common::endpoints_io::session::{ApiSession, PostSession};
 use hyper::StatusCode;
-use serde::{Deserialize, Serialize};
-use serde_valid::Validate;
 use time::Duration;
-use ts_rs::TS;
 
 use crate::{
     RoutePath,
@@ -20,35 +12,6 @@ use crate::{
     db::{self, DbConnHolder, user_sensors::AuthorizedSensor, users},
     state::poisonable_identifier::PoisonableIdentifier,
 };
-
-#[derive(TS, Debug, Serialize, Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/session/")]
-pub struct UserLogin {
-    #[validate]
-    pub username: ApiUsername,
-    #[validate]
-    pub raw_password: ApiRawPassword,
-}
-
-#[derive(TS, Debug, Serialize, Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/session/")]
-pub struct SensorLogin {
-    #[validate]
-    pub device_id: DeviceId,
-    #[validate]
-    pub access_id: DeviceId,
-}
-
-#[derive(TS, Debug, Serialize, Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/session/")]
-pub enum PostSession {
-    User(#[validate] UserLogin),
-    Sensor(#[validate] SensorLogin),
-}
-
-#[derive(TS, Debug, Serialize, Deserialize, Validate)]
-#[ts(export, export_to = "./api/endpoints/session/")]
-pub struct PutSession {}
 
 #[derive(Debug)]
 pub struct ServerApiSession(ApiSession);
@@ -177,10 +140,26 @@ impl Session {
             PostSession::Sensor(sensor) => {
                 log::info!("Generating sensor session for sensor: {sensor:?}");
 
-                AuthorizedSensor::from_access_id(
+                let signature_bytes = hex::decode(&sensor.signature_of_message)
+                    .map_err(|e| {
+                        log::warn!(
+                            "Invalid signature received: {}, error: {e:?}",
+                            sensor.signature_of_message
+                        );
+                        StatusCode::BAD_REQUEST
+                    })?
+                    .as_slice()
+                    .try_into()
+                    .map_err(|e| {
+                        log::warn!("Invalid length of signature received: {e:?}");
+                        StatusCode::BAD_REQUEST
+                    })?;
+
+                AuthorizedSensor::from_signature_and_message(
                     &mut conn.0,
                     &sensor.device_id,
-                    &sensor.access_id,
+                    signature_bytes,
+                    sensor.random_message.as_bytes(),
                 )?;
 
                 let claims = SensorClaims::new(sensor.device_id);
@@ -216,6 +195,7 @@ impl Endpoint for Session {
 mod test {
 
     use chrono::TimeDelta;
+    use common::endpoints_io::session::UserLogin;
 
     use crate::{
         auth::claims::{Claims, get_new_id},

@@ -1,5 +1,8 @@
+use std::array::TryFromSliceError;
+
 use common::{endpoints_io::sensor::SensorChange, types::validate::device_id::DeviceId};
 use diesel::prelude::*;
+use ed25519_dalek::{Signature, VerifyingKey};
 
 use crate::{
     auth::sensor_claims::SensorClaims,
@@ -35,21 +38,37 @@ impl AuthorizedSensor {
         }
     }
 
-    pub fn from_access_id(
+    pub fn from_signature_and_message(
         conn: &mut DbConn,
         device_id: &DeviceId,
-        access_id: &DeviceId,
+        signature_bytes: [u8; 64],
+        signed_message: &[u8],
     ) -> Result<Self, Error> {
         let (_, sensor) = _get_user_sensor_and_place_unauthorized(conn, device_id.as_str())?;
-        if sensor.access_id.as_str() != access_id.as_str() {
-            log::warn!(
-                "Access Id ({}) tried to operate with sensor ({}) that didn't match",
-                access_id.as_str(),
-                device_id.as_str()
-            );
-            Err(Error::NotFound("Sensor not found".into()))
-        } else {
-            Ok(Self(sensor))
+
+        let pk_bytes = hex::decode(&sensor.pub_key).map_err(|e| {
+            log::error!("Internal inconsistency: tried to decode a pub key from sensor.pub_key and was invalid hex: {e:?}");
+            Error::InternalError(e.into())
+        })?;
+
+        let vk = VerifyingKey::from_bytes(pk_bytes.as_slice().try_into().map_err(|e: TryFromSliceError| {
+            log::error!("Internal inconsistency: tried to generate a pub key from sensor.pub_key and hex was invalid len: {e:?}");
+            Error::InternalError(e.into())
+        })?).map_err(|e| {
+            log::error!("Internal inconsistency: tried to generate a pub key from sensor.pub_key and data was invalid ed25519 pk: {e:?}");
+            Error::InternalError(e.into())
+        })?;
+
+        let signature = Signature::from_bytes(&signature_bytes);
+
+        match vk.verify_strict(signed_message, &signature) {
+            Ok(()) => Ok(AuthorizedSensor(sensor)),
+            Err(e) => {
+                log::warn!(
+                    "Someone tried to acccess to sensor {device_id:?} using invalid signature: {e:?}"
+                );
+                Err(Error::InvalidSignature(e.into()))?
+            }
         }
     }
 
@@ -282,6 +301,8 @@ pub fn delete_user_sensor(
 #[cfg(test)]
 mod tests {
 
+    use common::auth::keys::Keys;
+
     use crate::{
         db::model::NewUserSensor,
         db::{
@@ -297,22 +318,25 @@ mod tests {
         let mut conn = establish_connection(true).unwrap();
         let (user, _) = create_test_user(&mut conn);
         let place = create_test_user_place(&mut conn, &user);
+        let keys = Keys::new(&[0u8; 32]);
+        let pub_key = hex::encode(keys.get_vk());
 
-        let new_up: NewUserSensor = NewUserSensor {
-            name: "new_testuserplace".to_string(),
-            description: Some("le description".to_string()),
-            color_id: 1,
-            place_id: place.id,
-            device_id: DeviceId::random().to_string(),
-            access_id: DeviceId::random().to_string(),
-        };
+        let new_us = NewUserSensor::new(
+            place.id,
+            DeviceId::random().to_string(),
+            pub_key,
+            "new_testuserplace".to_string(),
+            Some("le description".to_string()),
+            1,
+        )
+        .expect("Should be valid!");
 
-        let i_up = insert_user_sensor(&mut conn, new_up.clone()).expect("No errors expected");
+        let i_up = insert_user_sensor(&mut conn, new_us.clone()).expect("No errors expected");
 
-        assert_eq!(i_up.name, new_up.name);
-        assert_eq!(i_up.description, new_up.description);
-        assert_eq!(i_up.color_id, new_up.color_id);
-        assert_eq!(i_up.place_id, new_up.place_id);
+        assert_eq!(i_up.name, new_us.name);
+        assert_eq!(i_up.description, new_us.description);
+        assert_eq!(i_up.color_id, new_us.color_id);
+        assert_eq!(i_up.place_id, new_us.place_id);
     }
 
     #[test]

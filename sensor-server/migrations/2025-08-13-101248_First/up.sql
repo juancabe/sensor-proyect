@@ -74,7 +74,7 @@ CREATE TABLE user_sensors (
     id SERIAL PRIMARY KEY,
     place_id INTEGER NOT NULL REFERENCES user_places(id) ON DELETE CASCADE,
     device_id TEXT NOT NULL UNIQUE,
-    access_id TEXT NOT NULL,
+    pub_key TEXT NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
     color_id INTEGER NOT NULL REFERENCES colors(id) ON DELETE RESTRICT,
