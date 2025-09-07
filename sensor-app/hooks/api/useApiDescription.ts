@@ -9,7 +9,7 @@ export function useApiDescription() {
 
     const fabricateError = (): string | undefined => {
         if (description === null) {
-            return;
+            return undefined;
         }
 
         if (description.length < MIN_LEN) {
@@ -21,14 +21,29 @@ export function useApiDescription() {
         }
 
         for (const char of description) {
-            if (!(isAlphanumeric(char) || !(char === ' '))) {
+            if (!(isAlphanumeric(char) || char === ' ')) {
                 return `Characters like "${char}" are not allowed`;
             }
         }
+
+        return undefined;
     };
 
     const error = fabricateError();
     const isValid = error === undefined;
 
-    return { description, setDescription, error, isValid };
+    const publicSetDescription = (description: string | null) => {
+        if (!description) {
+            setDescription(null);
+            return;
+        }
+
+        if (description.length < 1) {
+            setDescription(null);
+        } else {
+            setDescription(description);
+        }
+    };
+
+    return { description, setDescription: publicSetDescription, error, isValid };
 }

@@ -5,7 +5,6 @@ import BackgroundView from '@/components/ui-elements/BackgroundView';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
 import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
-import { ApiArgs, SensorDataLoader } from '@/helpers/sensorDataLoader';
 import { DataShape, ShapedDatumArray } from '@/model/ShapedData';
 import { useCallback, useEffect, useState } from 'react';
 import { SafeAreaView, StyleSheet } from 'react-native';
@@ -17,6 +16,8 @@ interface ChartParams {
     yAxisOffset: number;
     spacing: number;
 }
+
+// TODO: Make it work again! (MIWA)
 
 function calculateParams(keyData: ShapedDatumArray, frame: Rect): ChartParams {
     const minVal = keyData?.dataInsights.minValue;
@@ -55,7 +56,7 @@ export default function SensorDetail() {
     const sensor = ctx.activeSensor;
 
     const [errorText, setErrorText] = useState<string | null>(null);
-    const [dataLoader, setDataLoader] = useState<SensorDataLoader | undefined>(undefined);
+    // const [dataLoader, setDataLoader] = useState<SensorDataLoader | undefined>(undefined);
     const [availableKeys, setAvailableKeys] = useState<string[] | undefined>(undefined);
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [selectedInterval, setSelectedInterval] = useState<string>(
@@ -68,62 +69,62 @@ export default function SensorDetail() {
             return;
         }
 
-        try {
-            const last = new Date();
-
-            let diff;
-
-            switch (selectedInterval) {
-                case TimeInterval.HalfHour:
-                    diff = 30 * 60 * 1000;
-                    break;
-                case TimeInterval.Hour:
-                    diff = 60 * 60 * 1000;
-                    break;
-                case TimeInterval.FourHour:
-                    diff = 4 * 60 * 60 * 1000;
-                    break;
-                case TimeInterval.TwelveHour:
-                    diff = 12 * 60 * 60 * 1000;
-                    break;
-                case TimeInterval.Day:
-                    diff = 24 * 60 * 60 * 1000;
-                    break;
-                case TimeInterval.Week:
-                    diff = 7 * 24 * 60 * 60 * 1000;
-                    break;
-                case TimeInterval.Month:
-                    diff = 30 * 24 * 60 * 60 * 1000;
-                    break;
-                default:
-                    throw 'Impossible!';
-            }
-
-            const first = new Date(last.getTime() - diff);
-
-            const apiArgs: ApiArgs = {
-                user_api_id: { id: session.api_id! },
-                sensor_api_id: sensor.api_id,
-                first,
-                last,
-            };
-
-            const dataShape: DataShape = {
-                maxLabels: 4,
-                maxPoints: 1000,
-            };
-
-            try {
-                const dl = await SensorDataLoader.load(apiArgs, dataShape);
-                setDataLoader(dl);
-                setAvailableKeys(dl.getKeys());
-            } catch (e) {
-                console.error('Error SensorDataLoader.load: ', e);
-            }
-        } catch (e) {
-            console.warn('[SensorDetail] error on getData: ', e);
-            if (typeof e === 'string') setErrorText(e);
-        }
+        //     try {
+        //         const last = new Date();
+        //
+        //         let diff;
+        //
+        //         switch (selectedInterval) {
+        //             case TimeInterval.HalfHour:
+        //                 diff = 30 * 60 * 1000;
+        //                 break;
+        //             case TimeInterval.Hour:
+        //                 diff = 60 * 60 * 1000;
+        //                 break;
+        //             case TimeInterval.FourHour:
+        //                 diff = 4 * 60 * 60 * 1000;
+        //                 break;
+        //             case TimeInterval.TwelveHour:
+        //                 diff = 12 * 60 * 60 * 1000;
+        //                 break;
+        //             case TimeInterval.Day:
+        //                 diff = 24 * 60 * 60 * 1000;
+        //                 break;
+        //             case TimeInterval.Week:
+        //                 diff = 7 * 24 * 60 * 60 * 1000;
+        //                 break;
+        //             case TimeInterval.Month:
+        //                 diff = 30 * 24 * 60 * 60 * 1000;
+        //                 break;
+        //             default:
+        //                 throw 'Impossible!';
+        //         }
+        //
+        //         const first = new Date(last.getTime() - diff);
+        //
+        //         const apiArgs: ApiArgs = {
+        //             user_api_id: { id: session.api_id! },
+        //             sensor_api_id: sensor.api_id,
+        //             first,
+        //             last,
+        //         };
+        //
+        //         const dataShape: DataShape = {
+        //             maxLabels: 4,
+        //             maxPoints: 1000,
+        //         };
+        //
+        //         try {
+        //             const dl = await SensorDataLoader.load(apiArgs, dataShape);
+        //             setDataLoader(dl);
+        //             setAvailableKeys(dl.getKeys());
+        //         } catch (e) {
+        //             console.error('Error SensorDataLoader.load: ', e);
+        //         }
+        //     } catch (e) {
+        //         console.warn('[SensorDetail] error on getData: ', e);
+        //         if (typeof e === 'string') setErrorText(e);
+        //     }
     }, [sensor, session, selectedInterval]);
 
     useEffect(() => {
@@ -136,13 +137,13 @@ export default function SensorDetail() {
         return () => clearInterval(id);
     }, [getData]);
 
-    const data = dataLoader?.getData().data;
-    if (!data) {
-        return <LoadingScreen></LoadingScreen>;
-    }
+    // const data = dataLoader?.getData().data;
+    // if (!data) {
+    //     return <LoadingScreen></LoadingScreen>;
+    // }
 
-    const keyData = data.filter((d) => d.key === selectedKey).at(0);
-    const chartParams = keyData ? calculateParams(keyData, frame) : null;
+    // const keyData = data.filter((d) => d.key === selectedKey).at(0);
+    // const chartParams = keyData ? calculateParams(keyData, frame) : null;
 
     return (
         <BackgroundView secondaryColor={sensor!.color}>
@@ -165,41 +166,41 @@ export default function SensorDetail() {
                             title={'Data Series'}
                         ></CheckboxesSelector>
                     ) : null}
-                    <ThemedView style={[styles.chartContainer]}>
-                        {chartParams ? (
-                            <LineChart
-                                dataPointsColor="white"
-                                verticalLinesColor={'white'}
-                                data={keyData?.array}
-                                maxValue={chartParams?.maxValue}
-                                noOfSections={3}
-                                spacing={chartParams?.spacing}
-                                hideRules
-                                color="orange"
-                                yAxisColor={'orange'}
-                                yAxisOffset={chartParams?.yAxisOffset}
-                                showYAxisIndices
-                                yAxisIndicesColor={'orange'}
-                                yAxisIndicesWidth={10}
-                                yAxisTextStyle={{
-                                    color: 'white',
-                                }}
-                                xAxisColor={'white'}
-                                xAxisIndicesColor={'white'}
-                                xAxisLabelTextStyle={{
-                                    color: 'white',
-                                    width: 80,
-                                    marginLeft: -26,
-                                }}
-                                xAxisIndicesHeight={10}
-                                xAxisIndicesWidth={2}
-                            />
-                        ) : (
-                            <ThemedText style={TEXT_STYLES.heading2}>
-                                Select some data key!
-                            </ThemedText>
-                        )}
-                    </ThemedView>
+                    {/* <ThemedView style={[styles.chartContainer]}> */}
+                    {/*     {chartParams ? ( */}
+                    {/*         <LineChart */}
+                    {/*             dataPointsColor="white" */}
+                    {/*             verticalLinesColor={'white'} */}
+                    {/*             data={keyData?.array} */}
+                    {/*             maxValue={chartParams?.maxValue} */}
+                    {/*             noOfSections={3} */}
+                    {/*             spacing={chartParams?.spacing} */}
+                    {/*             hideRules */}
+                    {/*             color="orange" */}
+                    {/*             yAxisColor={'orange'} */}
+                    {/*             yAxisOffset={chartParams?.yAxisOffset} */}
+                    {/*             showYAxisIndices */}
+                    {/*             yAxisIndicesColor={'orange'} */}
+                    {/*             yAxisIndicesWidth={10} */}
+                    {/*             yAxisTextStyle={{ */}
+                    {/*                 color: 'white', */}
+                    {/*             }} */}
+                    {/*             xAxisColor={'white'} */}
+                    {/*             xAxisIndicesColor={'white'} */}
+                    {/*             xAxisLabelTextStyle={{ */}
+                    {/*                 color: 'white', */}
+                    {/*                 width: 80, */}
+                    {/*                 marginLeft: -26, */}
+                    {/*             }} */}
+                    {/*             xAxisIndicesHeight={10} */}
+                    {/*             xAxisIndicesWidth={2} */}
+                    {/*         /> */}
+                    {/*     ) : ( */}
+                    {/*         <ThemedText style={TEXT_STYLES.heading2}> */}
+                    {/*             Select some data key! */}
+                    {/*         </ThemedText> */}
+                    {/*     )} */}
+                    {/* </ThemedView> */}
                     <CheckboxesSelector
                         title="Time interval"
                         selectedValue={selectedInterval}

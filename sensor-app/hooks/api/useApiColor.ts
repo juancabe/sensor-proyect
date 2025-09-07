@@ -13,9 +13,8 @@ export const API_COLORS = [
 ];
 
 export function useApiColor(initial?: string) {
-    const LEN = 10;
     const starting = initial
-        ? initial in API_COLORS
+        ? API_COLORS.some((inColor) => inColor === initial)
             ? initial
             : API_COLORS[0]
         : API_COLORS[0];
@@ -23,11 +22,10 @@ export function useApiColor(initial?: string) {
     const [color, setColor] = useState<string>(starting);
 
     const fabricateError = (): string | undefined => {
-        if (color.length !== LEN) {
+        if (color.length !== API_COLORS[0].length) {
             return `Color length invalid`;
         }
-
-        if (!(color in API_COLORS)) {
+        if (!API_COLORS.some((inColor) => inColor === color)) {
             return `The selected color (${color}) isn't available`;
         }
     };

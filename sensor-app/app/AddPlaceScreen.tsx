@@ -4,7 +4,7 @@ import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
 import { Button, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
@@ -30,12 +30,19 @@ export default function AddPlaceScreen() {
         color: color.color,
     };
     const [method, setMethod] = useState<'POST' | undefined>(undefined);
-    const postPlace = useApi('/place', body, method);
+    const postPlace = useApi('/place', body, method, false);
 
-    if (postPlace.response) {
-        // TODO: Add place to context
-        redirectToIndex();
-    }
+    useEffect(() => {
+        if (postPlace.returnedOk) {
+            redirectToIndex();
+        }
+    }, [postPlace.returnedOk, redirectToIndex]);
+
+    useEffect(() => {
+        if (postPlace.error) {
+            setMethod(undefined);
+        }
+    }, [postPlace.error]);
 
     const handleAdd = async () => {
         setMethod('POST');
@@ -46,11 +53,13 @@ export default function AddPlaceScreen() {
             placeholder: 'Name',
             onChangeText: name.setName,
             value: name.name,
+            error: name.error,
         },
         {
             placeholder: 'Description (optional)',
             onChangeText: description.setDescription,
             value: description.description ? description.description : '',
+            error: description.error,
         },
     ];
     return (

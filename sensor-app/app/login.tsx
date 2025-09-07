@@ -50,15 +50,18 @@ export default function Login() {
     );
 
     useEffect(() => {
-        if (api.returnedOk) {
-            console.debug(
-                'setting session data to: ',
-                username.username,
-                password.password,
-            );
-            ctx.sessionData?.setSession(username.username, password.password);
-            redirect.redirectToIndex();
-        }
+        const fn = async () => {
+            if (api.returnedOk) {
+                console.debug(
+                    'setting session data to: ',
+                    username.username,
+                    password.password,
+                );
+                await ctx.sessionData?.setSession(username.username, password.password);
+                redirect.redirectToIndex();
+            }
+        };
+        fn();
     }, [api.returnedOk, redirect, username.username, password.password, ctx.sessionData]);
 
     useEffect(() => {

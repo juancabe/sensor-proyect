@@ -1,66 +1,83 @@
-import { useAppContext } from '@/components/AppProvider';
 import BackgroundView from '@/components/ui-elements/BackgroundView';
 import PlaceCard from '@/components/PlaceCard';
-import { ThemedText } from '@/components/ui-elements/ThemedText';
 import { ThemedScrollView } from '@/components/ui-elements/ThemedScrollView';
-import { useTheme } from '@react-navigation/native';
-import { Button, View } from 'react-native';
+import { Button, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
 import useApi from '@/hooks/useApi';
 import { GetPlace } from '@/bindings/api/endpoints/place/GetPlace';
 import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
+import ErrorBox from '@/components/ui-elements/ErrorBox';
+import { useState } from 'react';
+import LoadingScreen from '@/components/LoadingScreen';
+
+const secondaryColor = '#ff00003f';
 
 export default function Home() {
-    const theme = useTheme();
-    const ctx = useAppContext();
     const router = useRouter();
 
-    let placeQuery: GetPlace = 'UserPlaces';
+    const [method, setMethod] = useState<'GET' | undefined>('GET');
+    let placeQuery: GetPlace = { kind: 'UserPlaces' };
     const placeApi = useApi<undefined, ApiUserPlace[], undefined>(
-        '/place?kind=' + placeQuery,
+        '/place?kind=' + placeQuery.kind,
         undefined,
-        'GET',
+        method,
         false,
     );
 
-    console.debug('placeApi.response: ', placeApi.response);
+    const reloadApi = () => {
+        setMethod(undefined);
+        setTimeout(() => {
+            // Using setTimeout so that it runs in next React cycle
+            setMethod('GET');
+        }, 0);
+    };
 
-    let response: ApiUserPlace[] | undefined = placeApi.response;
+    const isLoading = placeApi.loading || (!placeApi.response && !placeApi.error);
 
     return (
-        <BackgroundView secondaryColor="#ff00003f">
-            <ThemedView style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <BackgroundView secondaryColor={secondaryColor}>
+            <ThemedView style={[styles.buttonsContainer]}>
                 <Button
                     title="Add Place"
                     onPress={() => {
                         router.navigate('/AddPlaceScreen');
                     }}
-                />
+                ></Button>
+                <Button
+                    disabled={placeApi.loading}
+                    onPress={reloadApi}
+                    title="Reload Places"
+                ></Button>
             </ThemedView>
-            <ThemedScrollView
-                style={{
-                    backgroundColor: 'transparent',
-                }}
-            >
-                {placeApi.loading && <ThemedText>Loading summary…</ThemedText>}
-                {placeApi.response &&
-                    placeApi.response.map((place) => (
-                        <View key={place.name}>
-                            <PlaceCard place={place} />
-                        </View>
-                    ))}
-                {ctx.summary === 'Unauthorized' && (
-                    <ThemedText style={{ color: theme.colors.notification }}>
-                        Unauthorized. Please log in again.
-                    </ThemedText>
-                )}
-                {ctx.summary === 'Connection Error' && (
-                    <ThemedText>
-                        Could not fetch summary. Check your connection.
-                    </ThemedText>
-                )}
-            </ThemedScrollView>
+            {isLoading ? (
+                <LoadingScreen />
+            ) : (
+                <ThemedScrollView
+                    style={{
+                        backgroundColor: 'transparent',
+                    }}
+                >
+                    {placeApi.response &&
+                        placeApi.response.map((place) => (
+                            <View key={place.name}>
+                                <PlaceCard place={place} />
+                            </View>
+                        ))}
+                    <ErrorBox error={placeApi.formattedError} />
+                </ThemedScrollView>
+            )}
         </BackgroundView>
     );
 }
+
+const styles = StyleSheet.create({
+    buttonsContainer: {
+        display: 'flex',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 40,
+        backgroundColor: 'transparent',
+    },
+});

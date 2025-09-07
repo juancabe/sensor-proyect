@@ -17,7 +17,15 @@ export default function RootLayout() {
                         <Stack.Screen name="login" options={{ headerShown: false }} />
                         <Stack.Screen
                             name="AddSensorScreen"
-                            options={{ headerShown: false }}
+                            options={{
+                                title: 'Add your sensor',
+                            }}
+                        />
+                        <Stack.Screen
+                            name="AddPlaceScreen"
+                            options={{
+                                title: 'Add a place',
+                            }}
                         />
                     </Stack>
                 </ThemeProvider>

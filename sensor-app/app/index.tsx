@@ -6,7 +6,6 @@ import Login from './login';
 
 export default function Index() {
     const [sessionData, setSessionData] = useState<SessionData | undefined>(undefined);
-
     useEffect(() => {
         const loadSession = async () => {
             const sd = await SessionData.create();

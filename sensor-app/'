@@ -12,13 +12,6 @@ const READ_SENSOR_DEVICE_ID = '7af24399-6c3f-4bc3-b576-7a4f8fb59d41';
 const READ_PUB_KEY_0 = 'f4f1c584-e3c0-4723-9e46-1f72b015aa88';
 const READ_PUB_KEY_1 = '7d725923-ca33-41c6-9a15-821be70eac7d';
 
-const WRITE_WIFI_SSID_0 = '141ae9a4-f662-425f-b1b5-5bb35a9e043f';
-const WRITE_WIFI_SSID_1 = '4b928144-f17a-478f-ab0e-c2c1b5ffad7a';
-const WRITE_WIFI_PASS_0 = '7ccf2c21-1708-4189-b4c1-c09b3bf45f9d';
-const WRITE_WIFI_PASS_1 = '52765c89-cfc0-45b6-89da-10d4d6eeb8ec';
-const WRITE_WIFI_PASS_2 = '77b2f6d8-3ebc-46a6-85b3-0c01251d2430';
-const WRITE_WIFI_PASS_3 = '32581ebc-3766-431d-bd2f-390ce6bee0c9';
-
 let bleManager: BleManager | null;
 if (Platform.OS !== 'web') {
     bleManager = new BleManager();
@@ -89,25 +82,28 @@ function useBLE() {
             throw 'Unexpected no bleManager';
         }
 
-        let registerInfo;
-
         try {
             const deviceConnection = await bleManager.connectToDevice(device.id);
             await deviceConnection.discoverAllServicesAndCharacteristics();
             bleManager.stopDeviceScan();
 
-            registerInfo = await getDeviceRegisterInfo(device);
-            if (!registerInfo) {
+            const device_uuid = await getDeviceRegisterInfo(device);
+            if (!device_uuid) {
                 console.log('No device_uuid read from characteristic');
-                throw 'No device_uuid read from characteristic';
+                return 'No device_uuid read from characteristic';
             } else {
-                console.debug('device_uuid: ', registerInfo);
+                console.debug('device_uuid: ', device_uuid);
             }
+
+            throw 'Unimplemented';
+
+            // await configureSensor(deviceConnection, username, password);
         } catch (e) {
             console.log('FAILED TO CONNECT:', e);
-            throw 'Unexpected error';
+            return 'Unexpected error';
         }
-        return registerInfo;
+        // No errors, we return void
+        return;
     };
 
     const isDuplicatedDevice = (devices: Device[], nextDevice: Device) =>
@@ -216,8 +212,7 @@ function useBLE() {
 
             const hexString = arr
                 .map((byte) => byte.toString(16).padStart(2, '0'))
-                .join('')
-                .slice(0, 41);
+                .join('');
 
             device_id = hexString;
         } catch (e) {
@@ -242,8 +237,7 @@ function useBLE() {
 
             const hexString = arr
                 .map((byte) => byte.toString(16).padStart(2, '0'))
-                .join('')
-                .slice(0, 41);
+                .join('');
 
             pubKey0 = hexString;
             console.log('Read pubKey0: ', pubKey0);
@@ -269,8 +263,7 @@ function useBLE() {
 
             const hexString = arr
                 .map((byte) => byte.toString(16).padStart(2, '0'))
-                .join('')
-                .slice(0, 41);
+                .join('');
 
             pubKey1 = hexString;
             console.log('Read pubKey1: ', pubKey1);
@@ -284,143 +277,46 @@ function useBLE() {
         return { sensorDeviceId: device_id, sensorPubKey: pubKey };
     };
 
-    const configureSensor = async (
-        device: Device,
-        wifiSsid: string,
-        wifiPass: string,
-    ): Promise<void> => {
-        const WRITE_BUFFER_LEN = 20;
-
-        // WIFI_SSID
-        let wifiSsidArr = new Uint8Array(WRITE_BUFFER_LEN * 2);
-        for (let i = 0; i < WRITE_BUFFER_LEN * 2; i++) {
-            wifiSsidArr[i] = wifiSsid[i].charCodeAt(0);
-        }
-
-        try {
-            const encoded = base64.encodeFromByteArray(
-                wifiSsidArr.slice(0, WRITE_BUFFER_LEN),
-            );
-            await device.writeCharacteristicWithoutResponseForService(
-                CFG_SERVICE,
-                WRITE_WIFI_SSID_0,
-                encoded,
-            );
-            console.log(
-                'WRITE_WIFI_SSID_0 wrote with: ',
-                wifiSsid.slice(0, WRITE_BUFFER_LEN),
-            );
-        } catch (e) {
-            console.error('Error occured on WRITE_WIFI_SSID_0: ', e);
-            throw 'BLE Error';
-        }
-
-        try {
-            const encoded = base64.encodeFromByteArray(
-                wifiSsidArr.slice(WRITE_BUFFER_LEN),
-            );
-            await device.writeCharacteristicWithoutResponseForService(
-                CFG_SERVICE,
-                WRITE_WIFI_SSID_1,
-                encoded,
-            );
-            console.log(
-                'WRITE_WIFI_SSID_1 wrote with: ',
-                wifiSsid.slice(WRITE_BUFFER_LEN),
-            );
-        } catch (e) {
-            console.error('Error occured on WRITE_WIFI_SSID_1: ', e);
-            throw 'BLE Error';
-        }
-
-        // WIFI_PASS
-        let wifiPassArr = new Uint8Array(WRITE_BUFFER_LEN * 4);
-        for (let i = 0; i < WRITE_BUFFER_LEN * 4; i++) {
-            wifiPassArr[i] = wifiPass[i].charCodeAt(0);
-        }
-
-        try {
-            const encoded = base64.encodeFromByteArray(
-                wifiPassArr.slice(0, WRITE_BUFFER_LEN),
-            );
-            await device.writeCharacteristicWithoutResponseForService(
-                CFG_SERVICE,
-                WRITE_WIFI_PASS_0,
-                encoded,
-            );
-            console.log(
-                'WRITE_WIFI_PASS_0 wrote with: ',
-                wifiPass.slice(0, WRITE_BUFFER_LEN),
-            );
-        } catch (e) {
-            console.error('Error occured on WRITE_WIFI_PASS_0: ', e);
-            throw 'BLE Error';
-        }
-
-        try {
-            const encoded = base64.encodeFromByteArray(
-                wifiPassArr.slice(WRITE_BUFFER_LEN, WRITE_BUFFER_LEN * 2),
-            );
-            await device.writeCharacteristicWithoutResponseForService(
-                CFG_SERVICE,
-                WRITE_WIFI_PASS_1,
-                encoded,
-            );
-            console.log(
-                'WRITE_WIFI_PASS_1 wrote with: ',
-                wifiPass.slice(WRITE_BUFFER_LEN, WRITE_BUFFER_LEN * 2),
-            );
-        } catch (e) {
-            console.error('Error occured on WRITE_WIFI_PASS_1: ', e);
-            throw 'BLE Error';
-        }
-
-        try {
-            const encoded = base64.encodeFromByteArray(
-                wifiPassArr.slice(WRITE_BUFFER_LEN * 2, WRITE_BUFFER_LEN * 3),
-            );
-            await device.writeCharacteristicWithoutResponseForService(
-                CFG_SERVICE,
-                WRITE_WIFI_PASS_2,
-                encoded,
-            );
-            console.log(
-                'WRITE_WIFI_PASS_2 wrote with: ',
-                wifiPass.slice(WRITE_BUFFER_LEN * 2, WRITE_BUFFER_LEN * 3),
-            );
-        } catch (e) {
-            console.error('Error occured on WRITE_WIFI_PASS_2: ', e);
-            throw 'BLE Error';
-        }
-
-        try {
-            const encoded = base64.encodeFromByteArray(
-                wifiPassArr.slice(WRITE_BUFFER_LEN * 3, WRITE_BUFFER_LEN * 4),
-            );
-            await device.writeCharacteristicWithoutResponseForService(
-                CFG_SERVICE,
-                WRITE_WIFI_PASS_3,
-                encoded,
-            );
-            console.log(
-                'WRITE_WIFI_PASS_3 wrote with: ',
-                wifiPass.slice(WRITE_BUFFER_LEN * 3, WRITE_BUFFER_LEN * 4),
-            );
-        } catch (e) {
-            console.error('Error occured on WRITE_WIFI_PASS_3: ', e);
-            throw 'BLE Error';
-        }
-
-        // ALL DONE! Promise resolves
-    };
+    // Void means no error
+    // const configureSensor = async (
+    //     device: Device,
+    //     username: string,
+    //     password: string,
+    // ): Promise<string | void> => {
+    //     if (!device) {
+    //         console.error('No device connected');
+    //         return 'Device disconnected while configuring...';
+    //     }
+    //     const sensorApiId = encodeHexId20(sensorApiIdHEX);
+    //     const accountId = encodeHexId20(accountIdHEX);
+    //
+    //     // Set the sensor data using the provided API ID and account ID
+    //     try {
+    //         await device.writeCharacteristicWithResponseForService(
+    //             CFG_SERVICE_UUID,
+    //             SENSOR_API_ID_CHAR_UUID,
+    //             sensorApiId,
+    //         );
+    //         await device.writeCharacteristicWithResponseForService(
+    //             CFG_SERVICE_UUID,
+    //             API_ACCOUNT_ID_CHAR_UUID,
+    //             accountId,
+    //         );
+    //         console.log('Sensor data set successfully');
+    //         return;
+    //     } catch (error) {
+    //         console.error('Failed to set sensor data', error);
+    //         return 'Failed to set sensor data through BLE';
+    //     }
+    // };
 
     return {
-        connectToDevice,
+        connectToDeviceAndConfigure,
         allDevices,
         requestPermissions,
         scanForPeripherals,
         stopScanForPeripherals,
-        configureSensor,
+        // configureSensor,
     };
 }
 

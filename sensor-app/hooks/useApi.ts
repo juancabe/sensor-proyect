@@ -5,7 +5,7 @@ import { SessionData } from '@/persistence/SessionData';
 import { FetchRequestInit } from 'expo/fetch';
 import { useEffect, useState } from 'react';
 
-const BASE_API_URL = 'http://192.168.1.139:3000/api/v0';
+const BASE_API_URL = 'http://192.168.1.130:3000/api/v0';
 
 export interface ReturnedError<E> {
     status: number;
@@ -62,7 +62,6 @@ async function _fetchApi<R>(props: InternalFetchProps): Promise<[R, boolean] | R
     const readJson = res.headers.get('Content-type')?.includes('application/json');
     let response;
     if (readJson) {
-        console.debug('readJson was true');
         try {
             response = await res.json();
         } catch (jsonError) {
@@ -70,24 +69,27 @@ async function _fetchApi<R>(props: InternalFetchProps): Promise<[R, boolean] | R
             throw [Error.JsonError];
         }
     } else {
-        console.debug('readJson was false');
         response = null;
     }
 
     if (!res.ok) {
-        if (!sessionData || !sessionData.username || !sessionData.password) {
+        if (!sessionData) {
+            let error: ErrorState<any> = [Error.InvalidLocalSession, { status: 401 }];
+
+            throw error;
+        }
+        if (res.status === 401) {
+            // Unauthorized
+            let jwt = await renewJWT(sessionData);
+            props.setJwt(jwt);
+            return true;
+        } else {
             let error: ErrorState<any> = [
                 Error.ReturnedError,
                 { status: res.status, errorBody: response },
             ];
 
             throw error;
-        } else {
-            // TODO: Renew JWT
-            let jwt = await renewJWT(sessionData);
-            props.setJwt(jwt);
-            console.assert(false, 'This code should not be run');
-            return true;
         }
     }
 
@@ -196,8 +198,7 @@ export default function useApi<B, R, E>(
             try {
                 const ret = await _fetchApi<R>(props);
                 if (typeof ret === 'boolean') {
-                    console.assert(false, 'This code should not run as jwt was set');
-                    throw 'UNEXPECTED';
+                    throw 'Shortcuting api call due to JWT change';
                 }
                 const [r, ok] = ret;
                 setReturnedOk(ok);

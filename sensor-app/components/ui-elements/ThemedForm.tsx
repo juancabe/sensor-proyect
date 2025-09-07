@@ -1,8 +1,8 @@
 import { useTheme } from '@react-navigation/native';
 import React from 'react';
-import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import { StyleSheet, View, type TextInputProps } from 'react-native';
+import { TextInput } from 'react-native';
 import ErrorBox from './ErrorBox';
-import { TEXT_STYLES } from './ThemedText';
 
 export type FieldConfig = {
     placeholder: string;
@@ -46,10 +46,17 @@ export default function ThemedForm({ fields, style }: ThemedFormProps) {
                         autoCapitalize="none"
                         {...f.inputProps}
                     />
-                    <ErrorBox
-                        error={f.error ? f.error : null}
-                        style={{ padding: 5, borderWidth: 1, margin: 10, marginTop: 0 }}
-                    />
+                    {f.error ? (
+                        <ErrorBox
+                            error={f.error}
+                            style={{
+                                padding: 5,
+                                borderWidth: 1,
+                                margin: 10,
+                                marginTop: 0,
+                            }}
+                        />
+                    ) : null}
                 </View>
             ))}
         </View>

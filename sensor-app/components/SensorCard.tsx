@@ -9,10 +9,11 @@ import { safeGet } from '@/helpers/objectWork';
 import LabelValue from './ui-elements/LabelValue';
 import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
 import { ApiSensorData } from '@/bindings/api/endpoints/sensor_data/ApiSensorData';
+import { Label } from '@react-navigation/elements';
 
 export interface SensorCardProps {
     sensor: ApiUserSensor;
-    data?: ApiSensorData;
+    data: ApiSensorData | null;
 }
 
 export default function SensorCard(props: SensorCardProps) {
@@ -35,6 +36,9 @@ export default function SensorCard(props: SensorCardProps) {
         }
     }
 
+    const backgroundColor = props.sensor.color.replace('HEX_', '#');
+    console.log('backgroundColor: ', backgroundColor);
+
     return (
         <TouchableOpacity
             onPress={() => {
@@ -43,29 +47,33 @@ export default function SensorCard(props: SensorCardProps) {
             }}
         >
             <ThemedView
-                style={[
-                    { backgroundColor: props.sensor.color.replace('HEX_', '#') },
-                    styles.mainContainer,
-                ]}
+                style={[{ backgroundColor: backgroundColor }, styles.mainContainer]}
             >
                 <ThemedText style={styles.sensorName}>{sensor.name}</ThemedText>
-                <LabelValue label="Last Update">
-                    {data ? (
-                        <ThemedText key={'formattedTime'} style={styles.value}>
-                            {timeDisplay(new Date(data.added_at * 1000)) + ' ago'}
-                        </ThemedText>
-                    ) : null}
-                    {lastData ? (
-                        <LabelValue label="Information">
-                            {lastData.map(([label, value], index) => (
-                                <LabelValue label={label} horizontal key={value}>
-                                    <ThemedText key={index} style={styles.value}>
-                                        {value}
-                                    </ThemedText>
-                                </LabelValue>
-                            ))}
-                        </LabelValue>
-                    ) : null}
+                {data && (
+                    <LabelValue label="Last Update">
+                        {data ? (
+                            <ThemedText key={'formattedTime'} style={styles.value}>
+                                {timeDisplay(new Date(data.added_at * 1000)) + ' ago'}
+                            </ThemedText>
+                        ) : null}
+                        {lastData ? (
+                            <LabelValue label="Information">
+                                {lastData.map(([label, value], index) => (
+                                    <LabelValue label={label} horizontal key={value}>
+                                        <ThemedText key={index} style={styles.value}>
+                                            {value}
+                                        </ThemedText>
+                                    </LabelValue>
+                                ))}
+                            </LabelValue>
+                        ) : null}
+                    </LabelValue>
+                )}
+                <LabelValue label="Last sensor change">
+                    <ThemedText>
+                        {timeDisplay(new Date(sensor.updated_at * 1000))}
+                    </ThemedText>
                 </LabelValue>
             </ThemedView>
         </TouchableOpacity>
