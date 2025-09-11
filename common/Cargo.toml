@@ -4,15 +4,31 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-argon2 = { version = "0.5.3", features = ["simple"] }
-ed25519-dalek = "2.2.0"
-hex = "0.4.3"
-log = "0.4.27"
-password-hash = { version = "0.5.0", features = ["getrandom"] }
-rand = "0.9.2"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_valid = "1.0.5"
-ts-rs = "11.0.1"
+argon2 = { version = "0.5.3", features = ["simple"], optional=true}
+ed25519-dalek = {version = "2.2.0", optional = true}
+hex = {version = "0.4.3" }
+log = {version = "0.4.27"}
+password-hash = { version = "0.5.0", features = ["getrandom"], optional=true}
+rand = {version = "0.9.2", optional = true}
+serde = { version = "1.0.219", features = ["derive"], optional=true}
+serde_valid = {version = "1.0.5", optional = true}
+ts-rs = {version = "11.0.1", optional = true}
+
+[features]
+api = [
+"dep:argon2",
+"dep:password-hash",
+"dep:rand",
+"dep:serde",
+"dep:serde_valid",
+"dep:ts-rs",
+]
+
+auth = [
+    "dep:ed25519-dalek",
+]
+
+
 
 [dev-dependencies]
 rand = "0.9.2"
