@@ -293,7 +293,7 @@ function useBLE() {
 
         // WIFI_SSID
         let wifiSsidArr = new Uint8Array(WRITE_BUFFER_LEN * 2);
-        for (let i = 0; i < WRITE_BUFFER_LEN * 2; i++) {
+        for (let i = 0; i < wifiSsid.length; i++) {
             wifiSsidArr[i] = wifiSsid[i].charCodeAt(0);
         }
 
@@ -335,7 +335,7 @@ function useBLE() {
 
         // WIFI_PASS
         let wifiPassArr = new Uint8Array(WRITE_BUFFER_LEN * 4);
-        for (let i = 0; i < WRITE_BUFFER_LEN * 4; i++) {
+        for (let i = 0; i < wifiPass.length; i++) {
             wifiPassArr[i] = wifiPass[i].charCodeAt(0);
         }
 

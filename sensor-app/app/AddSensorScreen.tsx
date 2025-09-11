@@ -135,19 +135,23 @@ export default function AddSensorScreen() {
     const [modalVisible, setModalVisible] = useState(false);
 
     useEffect(() => {
+        const fn = async (dev: Device) => {
+            try {
+                await ble.configureSensor(dev, wifiSsid!, wifiPass!);
+                setModalVisible(true);
+            } catch (e) {
+                setError('An error occured while configuring the sensor via BLE');
+                console.error('Error on configure sensor: ', e);
+            }
+        };
+
         if (api.returnedOk && api.response) {
             console.log('api returned ok: ', api.response);
             if (!selectedDevice) {
                 console.error('API returned ok and no device was previously selected');
                 return;
             }
-            try {
-                ble.configureSensor(selectedDevice, wifiSsid!, wifiPass!);
-                setModalVisible(true);
-            } catch (e) {
-                setError('An error occured while configuring the sensor via BLE');
-                console.error('Error on configure sensor: ', e);
-            }
+            fn(selectedDevice);
         }
 
         if (api.error) {
