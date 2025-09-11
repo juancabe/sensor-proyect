@@ -4,6 +4,7 @@ use adafruit_aht10::AdafruitAHT10;
 use esp_idf_svc::hal::{delay::FreeRtos, i2c::I2cDriver};
 use esp_idf_sys::esp_timer_get_time;
 use scd4x::Scd4x;
+use serde::{Deserialize, Serialize};
 
 // TODO: Get rid of this constant
 const SENSOR_READ_TRIES: u32 = 10;
@@ -52,7 +53,7 @@ impl Scd41WorkingMode {
 #[derive(Debug)]
 pub struct Scd41WorkingData {
     mode: Scd41WorkingMode,
-    serial: Serial,
+    // serial: Serial,
     last_measurement: i64,
 }
 
@@ -61,9 +62,12 @@ impl Scd41WorkingData {
         unsafe { esp_timer_get_time() }
     }
 
-    pub fn new(serial: Serial, mode: Scd41WorkingMode) -> Self {
+    pub fn new(
+        // serial: Serial,
+        mode: Scd41WorkingMode,
+    ) -> Self {
         Scd41WorkingData {
-            serial,
+            // serial,
             last_measurement: Self::get_time(),
             mode,
         }
@@ -95,6 +99,8 @@ pub enum Scd41Status {
     InitFailed(InitScd41Error<'static>),
 }
 
+/// Contains runtime information for sensors lifecycle
+/// Use Sensors::measure for measuring
 pub struct Sensors<'a> {
     pub i2c: I2cDriver<'a>,
     pub aht10: Aht10Status,
@@ -106,7 +112,7 @@ pub enum SensorsError {}
 
 pub type Serial = u64;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SensorsData {
     pub co2: Option<u16>,
     pub humidity: Option<f32>,
@@ -139,8 +145,11 @@ impl<'a> Sensors<'a> {
                 i2c
             }
             Some(d) => match init_scd41_sensor(i2c) {
-                Ok((i2c, serial)) => {
-                    scd41 = Scd41Status::Created(Scd41WorkingData::new(serial, d.mode));
+                Ok((i2c, _serial)) => {
+                    scd41 = Scd41Status::Created(Scd41WorkingData::new(
+                        // serial,
+                        d.mode,
+                    ));
                     i2c
                 }
                 Err(err_enum) => {
@@ -304,6 +313,7 @@ impl<'a> Sensors<'a> {
 
 // HELPERS
 
+#[allow(mismatched_lifetime_syntaxes)]
 fn init_scd41_sensor(i2c: I2cDriver<'_>) -> Result<(I2cDriver<'_>, Serial), InitScd41Error> {
     let delay = esp_idf_svc::hal::delay::FreeRtos;
     let mut scd41 = Scd4x::new(i2c, delay);
@@ -334,7 +344,7 @@ fn init_scd41_sensor(i2c: I2cDriver<'_>) -> Result<(I2cDriver<'_>, Serial), Init
             )))
         }
     };
-    log::info!("SCD41 serial: {:#04x}", serial);
+    log::trace!("SCD41 serial: {:#04x}", serial);
 
     match scd41.self_test_is_ok() {
         Ok(true) => log::info!("SCD41 self-test passed"),
@@ -414,6 +424,7 @@ impl<'a> Debug for InitScd41Error<'a> {
     }
 }
 
+#[allow(mismatched_lifetime_syntaxes)]
 fn init_aht10_sensor(i2c: I2cDriver<'_>) -> Result<I2cDriver<'_>, InitAht10Error> {
     let mut aht10 = adafruit_aht10::AdafruitAHT10::new(i2c);
 

@@ -1,10 +1,10 @@
 use common::{
     auth::keys::Keys,
     endpoints_io::{
-        sensor_data::PostSensorData,
+        sensor_data::{PostSensorData, PostSensorDataResponse},
         session::{ApiSession, PostSession, SensorLogin},
     },
-    types::validate::device_id::{self, DeviceId},
+    types::validate::device_id::DeviceId,
 };
 use embedded_svc::http::client::Client;
 use esp_idf_svc::{
@@ -16,9 +16,10 @@ use http::StatusCode;
 
 use crate::helpers::get_random_buf;
 
-const BASE_URL: &str = "http://192.168.1.139:3000/api/v0";
+const BASE_URL: &str = "http://192.168.1.130:3000/api/v0";
 
 const SESSION_POST_RESPONSE_SIZE: usize = 2_000;
+const POST_DATA_RESPONSE_SIZE: usize = 2_000;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -26,7 +27,6 @@ pub enum Error {
     Deserialization(serde_json::Error),
     Serialization(serde_json::Error),
     HttpCreation(esp_idf_sys::EspError),
-    DeviceId(device_id::Error),
     RequestCreation(esp_idf_svc::io::EspIOError),
     RequestWrite(esp_idf_svc::io::EspIOError),
     RequestSubmission(esp_idf_svc::io::EspIOError),
@@ -35,8 +35,9 @@ pub enum Error {
 }
 
 #[allow(dead_code)]
+/// Struct that contains neccessary objects for communication with our server
 pub struct ServerCommunicator {
-    jwt: String,
+    jwt_header_value: String,
     device_id: String,
     http_client: Client<EspHttpConnection>,
 }
@@ -67,15 +68,14 @@ impl ServerCommunicator {
             Err(e) => Err(Error::Serialization(e))?,
         };
 
+        let headers = &[
+            ("accept", "application/json"),
+            ("Content-Type", "application/json"),
+        ];
+
         log::info!("Initializing post request for url: {url}");
 
-        let resp = match client.post(
-            &url,
-            &[
-                ("accept", "application/json"),
-                ("Content-Type", "application/json"),
-            ],
-        ) {
+        let resp = match client.post(&url, headers) {
             Ok(mut req) => {
                 if let Err(e) = req.write_all(request_body.as_bytes()) {
                     Err(Error::RequestWrite(e))?
@@ -97,8 +97,10 @@ impl ServerCommunicator {
                     .read(buffer.as_mut_slice())
                     .map_err(|e| Error::ErrorReadingResponse(e))?;
                 log::info!("Read {read} bytes from server");
-                let session: ApiSession = serde_json::from_slice(buffer.as_mut_slice())
-                    .map_err(|e| Error::Deserialization(e))?;
+                // Get rid of NUL chars
+                let buffer = &buffer[..read];
+                let session: ApiSession =
+                    serde_json::from_slice(buffer).map_err(|e| Error::Deserialization(e))?;
                 log::info!("Got session: {session:?}");
                 session
             }
@@ -108,13 +110,55 @@ impl ServerCommunicator {
         log::info!("ServerCommunicator correctly generated");
 
         Ok(Self {
-            jwt: sess.access_token,
+            jwt_header_value: format!("Bearer {}", sess.access_token),
             device_id: device_id.to_string(),
             http_client: client,
         })
     }
 
-    pub fn post(_data: PostSensorData) -> Result<(), ()> {
-        todo!()
+    pub fn post(&mut self, data: &PostSensorData) -> Result<(), Error> {
+        let url = format!("{BASE_URL}/sensor_data");
+
+        let data = serde_json::to_string(data).map_err(|e| Error::Serialization(e))?;
+
+        let headers = [
+            ("accept", "application/json"),
+            ("Content-Type", "application/json"),
+            ("Authorization", &self.jwt_header_value),
+        ];
+
+        let resp = match self.http_client.post(&url, &headers) {
+            Ok(mut req) => {
+                if let Err(e) = req.write_all(data.as_bytes()) {
+                    Err(Error::RequestWrite(e))?
+                } else {
+                    req.submit()
+                }
+            }
+            Err(e) => Err(Error::RequestCreation(e))?,
+        };
+
+        let sess = match resp {
+            Ok(mut r) => {
+                if r.status() != StatusCode::OK {
+                    Err(Error::UnexpectedResponse(r.status()))?
+                }
+
+                let mut buffer = [0u8; POST_DATA_RESPONSE_SIZE];
+                let read = r
+                    .read(buffer.as_mut_slice())
+                    .map_err(|e| Error::ErrorReadingResponse(e))?;
+                let buffer = &buffer[..read];
+                log::info!("Read {read} bytes from server");
+                let resp: PostSensorDataResponse =
+                    serde_json::from_slice(buffer).map_err(|e| Error::Deserialization(e))?;
+                // log::info!("Got PostSensorDataResponse: {resp:?}"); TODO: This segfaults
+                resp.new_session
+            }
+            Err(e) => Err(Error::RequestSubmission(e))?,
+        };
+
+        self.jwt_header_value = format!("Bearer {}", sess.access_token);
+        Ok(())
     }
 }

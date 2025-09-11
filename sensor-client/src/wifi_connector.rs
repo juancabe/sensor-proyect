@@ -1,8 +1,12 @@
 use esp_idf_svc::{
     eventloop::System,
     nvs::{EspNvsPartition, NvsDefault},
-    wifi::{BlockingWifi, Configuration, EspWifi},
+    wifi::{
+        AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi, PmfConfiguration,
+        ScanMethod, ScanSortMethod,
+    },
 };
+use serde::{Deserialize, Serialize};
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -17,11 +21,54 @@ pub enum Error {
     NotConnected,
 }
 
+const HARDCODED_AUTH_METHOD: AuthMethod = AuthMethod::WPA2Personal;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WifiClientConfig {
+    pub ssid: heapless::String<32>,
+    pub auth_method: AuthMethod,
+    pub password: heapless::String<64>,
+}
+
+impl Into<ClientConfiguration> for WifiClientConfig {
+    fn into(self) -> ClientConfiguration {
+        ClientConfiguration {
+            ssid: self.ssid,
+            bssid: None,
+            auth_method: HARDCODED_AUTH_METHOD,
+            password: self.password,
+            channel: None,
+            scan_method: ScanMethod::CompleteScan(ScanSortMethod::Signal),
+            pmf_cfg: PmfConfiguration::NotCapable,
+        }
+    }
+}
+
 pub struct WifiConnector {
     wifi: BlockingWifi<EspWifi<'static>>,
 }
 
 impl WifiConnector {
+    // For single config
+    pub fn from_config(
+        retries: usize,
+        config: &Configuration,
+        modem: esp_idf_svc::hal::modem::Modem,
+        sysloop: esp_idf_svc::eventloop::EspEventLoop<System>,
+        nvs: EspNvsPartition<NvsDefault>,
+    ) -> Result<WifiConnector, Error> {
+        let mut device = Self::load_wifi_device(modem, sysloop, nvs)?;
+        log::info!("Connecting to wifi: {:?}", config);
+        match Self::connect_wifi(&mut device, config, retries) {
+            Ok(()) => return Ok(Self { wifi: device }),
+            Err(e) => {
+                log::error!("Could not connect to wifi, {e:?}");
+            }
+        }
+        Err(Error::NotConnected)
+    }
+
+    // For multiple configs
     pub fn from_configs(
         retries_per_config: usize,
         configs: &[Configuration],

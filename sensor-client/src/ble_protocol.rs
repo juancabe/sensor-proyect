@@ -1,12 +1,17 @@
 use std::sync::{Arc, Mutex};
 
-use common::{auth::keys::Keys, types::validate::device_id::DeviceId};
+use common::{
+    auth::keys::Keys,
+    ble_protocol::BleInitalConfig,
+    types::{
+        validate::device_id::DeviceId,
+        zstr20::{ZStr20, ZStr20Error},
+    },
+};
 use esp32_nimble::{
     utilities::BleUuid, uuid128, BLEAdvertisementData, BLEDevice, BLEError, NimbleProperties,
 };
 use esp_idf_svc::hal::delay::FreeRtos;
-
-use crate::helpers::zstr20::{ZStr20, ZStr20Error};
 
 const SENSOR_CONFIG_SERVICE_UUID: BleUuid = uuid128!("4b80ba9d-64fd-4ffa-86fb-544e73d26ed1");
 const WRITE_WIFI_SSID_0: BleUuid = uuid128!("141ae9a4-f662-425f-b1b5-5bb35a9e043f");
@@ -19,34 +24,7 @@ const READ_SENSOR_DEVICE_ID: BleUuid = uuid128!("7af24399-6c3f-4bc3-b576-7a4f8fb
 const READ_PUB_KEY_0: BleUuid = uuid128!("f4f1c584-e3c0-4723-9e46-1f72b015aa88");
 const READ_PUB_KEY_1: BleUuid = uuid128!("7d725923-ca33-41c6-9a15-821be70eac7d");
 
-#[derive(Default, Clone, Copy, Debug)]
-pub struct BleInitalConfig {
-    device_id_read: bool,
-    pub_key_1_read: bool,
-    pub_key_2_read: bool,
-    wifi_ssid: Option<ZStr20>,
-    wifi_pass_0: Option<ZStr20>,
-    wifi_pass_1: Option<ZStr20>,
-    wifi_pass_2: Option<ZStr20>,
-    wifi_pass_3: Option<ZStr20>,
-}
-
-impl BleInitalConfig {
-    pub fn get_wifi_ssid(&self) -> Result<String, ()> {
-        todo!()
-    }
-
-    pub fn is_written(&self) -> bool {
-        self.device_id_read
-            && self.pub_key_1_read
-            && self.pub_key_2_read
-            && self.wifi_ssid.is_some()
-            && self.wifi_pass_0.is_some()
-            && self.wifi_pass_1.is_some()
-            && self.wifi_pass_2.is_some()
-            && self.wifi_pass_3.is_some()
-    }
-}
+pub struct BleInitialConfigImplementation;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -57,7 +35,7 @@ pub enum BleInitialConfigError {
     MutexLock(String),
 }
 
-impl BleInitalConfig {
+impl BleInitialConfigImplementation {
     pub fn run(device_id: DeviceId, keys: &Keys) -> Result<BleInitalConfig, BleInitialConfigError> {
         let ble_device = BLEDevice::take();
         let result_mutex = Arc::new(Mutex::new(BleInitalConfig::default()));
@@ -114,6 +92,10 @@ impl BleInitalConfig {
         let server = ble_device.get_server();
         let svc = server.create_service(SENSOR_CONFIG_SERVICE_UUID);
 
+        log::info!(
+            "Setting READ_SENSOR_DEVICE_ID to: {}",
+            device_id.as_hex_string()
+        );
         // READ_SENSOR_DEVICE_ID
         svc.lock()
             .create_characteristic(READ_SENSOR_DEVICE_ID, NimbleProperties::READ)
@@ -123,6 +105,7 @@ impl BleInitalConfig {
             })
             .set_value(device_id.inner_info_slice());
 
+        log::info!("Setting READ_PUB_KEY_0 to: {}", pub_key_0.as_hex_string());
         // READ_PUB_KEY_0
         svc.lock()
             .create_characteristic(READ_PUB_KEY_0, NimbleProperties::READ)
@@ -132,6 +115,7 @@ impl BleInitalConfig {
             })
             .set_value(pub_key_0.inner_info_slice());
 
+        log::info!("Setting READ_PUB_KEY_1 to: {}", pub_key_1.as_hex_string());
         // READ_PUB_KEY_1
         svc.lock()
             .create_characteristic(READ_PUB_KEY_1, NimbleProperties::READ)
@@ -153,7 +137,7 @@ impl BleInitalConfig {
                         result_clone
                             .lock()
                             .expect("[WRITE_WIFI_SSID_0] Error unlocking result on characteristic ")
-                            .wifi_ssid = Some(ssid)
+                            .wifi_ssid0 = Some(ssid)
                     }
                     Err(e) => {
                         log::error!(
@@ -175,7 +159,7 @@ impl BleInitalConfig {
                         result_clone
                             .lock()
                             .expect("[WRITE_WIFI_SSID_1] Error unlocking result on characteristic ")
-                            .wifi_ssid = Some(ssid)
+                            .wifi_ssid1 = Some(ssid)
                     }
                     Err(e) => {
                         log::error!(

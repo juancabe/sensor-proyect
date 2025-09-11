@@ -2,30 +2,33 @@ use esp_idf_svc::nvs::{EspNvs, NvsDefault};
 
 pub const NAMESPACE: &'static str = "default";
 
-pub enum Keys<'a> {
-    UserApiId(Option<&'a str>),
-    SensorApiId(Option<&'a str>),
+/// Keys enum
+/// - Represents the available keys on the persistence storage
+/// - Must be initialized with a str
+pub enum Keys {
+    WifiConfigSerialized,
+    AuthKeysSerialized,
 }
 
-impl<'a> Keys<'a> {
+impl Keys {
     pub const fn key_string(&self) -> &'static str {
         match self {
-            Keys::UserApiId(_) => "user_api_id",
-            Keys::SensorApiId(_) => "sensor_api_id",
+            Keys::WifiConfigSerialized => "wifi_config",
+            Keys::AuthKeysSerialized => "auth_keys",
         }
     }
     // str lenghth limit for JWTs is 2047 characters, str buffer size is 2048: need 1 byte for null terminator
     pub const fn max_value_length(&self) -> usize {
         match self {
-            Keys::UserApiId(_) => 40,
-            Keys::SensorApiId(_) => 40,
+            Keys::WifiConfigSerialized => 1 << 10, // 2^10
+            Keys::AuthKeysSerialized => 1 << 10,   // 2^10
         }
     }
 
-    pub const fn min_buffer_size(&self) -> usize {
+    pub const fn min_recv_buffer_size(&self) -> usize {
         match self {
-            Keys::UserApiId(_) => self.max_value_length() + 1,
-            Keys::SensorApiId(_) => self.max_value_length() + 1,
+            Keys::WifiConfigSerialized => self.max_value_length() + 1,
+            Keys::AuthKeysSerialized => self.max_value_length() + 1,
         }
     }
 }
@@ -36,6 +39,7 @@ pub type Lack = usize;
 #[derive(Debug)]
 pub enum Error {
     CreationError(esp_idf_sys::EspError),
+    RemoveError(esp_idf_sys::EspError),
     SizeLimitExceeded(Excess),
     LackingBuffer(Lack),
     SetError(esp_idf_sys::EspError),
@@ -52,27 +56,21 @@ impl Persistence {
         Ok(Persistence { nvs })
     }
 
-    pub fn set(&mut self, key: &Keys<'_>) -> Result<(), Error> {
+    pub fn set(&mut self, key: Keys, value: &str) -> Result<(), Error> {
         match key {
             // UserApiId
-            Keys::UserApiId(Some(value)) => {
+            Keys::WifiConfigSerialized => {
                 if value.len() > key.max_value_length() {
                     return Err(Error::SizeLimitExceeded(
                         value.len() - key.max_value_length(),
                     ));
                 }
-
                 self.nvs
                     .set_str(key.key_string(), value)
                     .map_err(|e| Error::SetError(e))?;
-            }
-            Keys::UserApiId(None) => {
-                self.nvs
-                    .remove(key.key_string())
-                    .map_err(Error::CreationError)?;
             }
             // SensorApiId
-            Keys::SensorApiId(Some(value)) => {
+            Keys::AuthKeysSerialized => {
                 if value.len() > key.max_value_length() {
                     return Err(Error::SizeLimitExceeded(
                         value.len() - key.max_value_length(),
@@ -82,31 +80,37 @@ impl Persistence {
                 self.nvs
                     .set_str(key.key_string(), value)
                     .map_err(|e| Error::SetError(e))?;
-            }
-            Keys::SensorApiId(None) => {
-                self.nvs
-                    .remove(key.key_string())
-                    .map_err(Error::CreationError)?;
-            }
+            } // Keys::AuthKeysSerialized => {
+              //     self.nvs
+              //         .remove(key.key_string())
+              //         .map_err(Error::CreationError)?;
+              // }
         }
 
         Ok(())
     }
 
-    pub fn get(&self, key: &Keys<'_>, buf: &mut [u8]) -> Result<bool, Error> {
-        if buf.len() < (key.min_buffer_size()) {
-            return Err(Error::LackingBuffer(key.min_buffer_size() - buf.len()));
+    // Returns false on NOT FOUND
+    pub fn remove(&mut self, key: Keys) -> Result<bool, Error> {
+        self.nvs
+            .remove(key.key_string())
+            .map_err(Error::RemoveError)
+    }
+
+    pub fn get(&self, key: Keys, buf: &mut [u8]) -> Result<bool, Error> {
+        if buf.len() < (key.min_recv_buffer_size()) {
+            return Err(Error::LackingBuffer(key.min_recv_buffer_size() - buf.len()));
         }
 
         match key {
-            Keys::UserApiId(_) => {
+            Keys::WifiConfigSerialized => {
                 let res = self
                     .nvs
                     .get_str(key.key_string(), buf)
                     .map_err(|e| Error::GetError(e))?;
                 Ok(res.is_some())
             }
-            Keys::SensorApiId(_) => {
+            Keys::AuthKeysSerialized => {
                 let res = self
                     .nvs
                     .get_str(key.key_string(), buf)
