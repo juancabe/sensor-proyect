@@ -71,7 +71,7 @@ impl Sensor {
     async fn sensor_put(
         claims: Claims,
         mut conn: DbConnHolder,
-        Query(PutSensor { device_id, change }): Query<PutSensor>,
+        Json(PutSensor { device_id, change }): Json<PutSensor>,
     ) -> Result<Json<ApiUserSensor>, StatusCode> {
         let conn = &mut conn.0;
 
@@ -84,7 +84,7 @@ impl Sensor {
         } else {
             get_user_place(conn, db::user_places::Identifier::UserId(user_id))?
                 .into_iter()
-                .filter(|place| place.id == sensor.id)
+                .filter(|place| place.id == sensor.place_id)
                 .next()
                 .ok_or_else(|| {
                     log::error!("The place wasn't found after updating a sensor");
@@ -140,7 +140,7 @@ impl Sensor {
                 let vec: Result<Vec<GetSensorResponse>, db::Error> = vec
                     .into_iter()
                     .map(|(place, sensor, data)| {
-                        let color = db::colors::get_color_by_id(&mut conn.0, place.color_id)
+                        let color = db::colors::get_color_by_id(&mut conn.0, sensor.color_id)
                             .map_err(|e| {
                                 log::error!("Could not get color from id: {e:?}");
                                 db::Error::InternalError("Could not get color from id".into())
