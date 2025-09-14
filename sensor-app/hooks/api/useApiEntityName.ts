@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { isAlphanumeric } from './helpers/formatHelpers';
 
-export function useApiEntityName() {
+export function useApiEntityName(initName?: string) {
     const MAX_LEN = 15;
     const MIN_LEN = 3;
 
-    const [name, setName] = useState<string>('');
+    const [name, setName] = useState<string>(initName ? initName : '');
 
     const fabricateError = (): string | undefined => {
         if (name.length < MIN_LEN) {

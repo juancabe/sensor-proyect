@@ -15,6 +15,8 @@ import { useApiEntityName } from '@/hooks/api/useApiEntityName';
 import { useApiDescription } from '@/hooks/api/useApiDescription';
 import { useApiColor } from '@/hooks/api/useApiColor';
 
+const secondaryColor = '#ffd9009b';
+
 export default function AddPlaceScreen() {
     const { redirectToIndex } = useRedirect();
 
@@ -30,7 +32,7 @@ export default function AddPlaceScreen() {
         color: color.color,
     };
     const [method, setMethod] = useState<'POST' | undefined>(undefined);
-    const postPlace = useApi('/place', body, method, false);
+    const postPlace = useApi('/place', method, false, body);
 
     useEffect(() => {
         if (postPlace.returnedOk) {
@@ -63,7 +65,7 @@ export default function AddPlaceScreen() {
         },
     ];
     return (
-        <BackgroundView secondaryColor="#ffd9009b">
+        <BackgroundView secondaryColor={secondaryColor}>
             <SafeAreaView>
                 <ThemedView style={[styles.mainContainer]}>
                     <ThemedText style={TEXT_STYLES.heading1}>Add place</ThemedText>
@@ -88,15 +90,6 @@ export default function AddPlaceScreen() {
 }
 
 const styles = StyleSheet.create({
-    deviceContainer: {
-        padding: 20,
-        backgroundColor: '#d2ac00ff',
-        borderRadius: 10,
-        margin: 20,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 20,
-    },
     mainContainer: {
         display: 'flex',
         justifyContent: 'center',
@@ -104,5 +97,7 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         padding: 20,
         gap: 10,
+        borderWidth: 3,
+        borderColor: secondaryColor,
     },
 });

@@ -1,6 +1,8 @@
 import { StyleSheet } from 'react-native';
 import { ThemedText } from './ThemedText';
 import { ThemedView } from './ThemedView';
+import { useTheme } from '@react-navigation/native';
+import useLayerColor from '@/hooks/useLayerColor';
 
 // New props interface
 export interface LabelValueProps {
@@ -10,6 +12,8 @@ export interface LabelValueProps {
 }
 
 export default function LabelValue(props: LabelValueProps) {
+    const backgroundColor = useLayerColor();
+
     return (
         <ThemedView
             style={[
@@ -19,6 +23,7 @@ export default function LabelValue(props: LabelValueProps) {
                     : {
                           flexDirection: 'column',
                       },
+                { backgroundColor: backgroundColor },
             ]}
         >
             <ThemedText style={styles.label}>{props.label}</ThemedText>
@@ -33,13 +38,11 @@ const styles = StyleSheet.create({
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#00000040',
         padding: 10,
         borderRadius: 10,
         gap: 10,
     },
     label: {
         fontSize: 15,
-        fontWeight: 'bold',
     },
 });

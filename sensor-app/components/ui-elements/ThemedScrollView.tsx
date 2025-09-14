@@ -20,11 +20,7 @@ export function ThemedScrollView({
     const backgroundColor = resolvedTheme?.colors?.background ?? 'transparent';
 
     return (
-        <ScrollView
-            style={[{ backgroundColor }, style]}
-            contentContainerStyle={{ padding: 10 }}
-            {...otherProps}
-        >
+        <ScrollView style={[{ backgroundColor }, style]} {...otherProps}>
             {children}
         </ScrollView>
     );

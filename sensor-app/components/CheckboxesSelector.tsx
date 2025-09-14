@@ -1,6 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ThemedView } from './ui-elements/ThemedView';
 import { TEXT_STYLES, ThemedText } from './ui-elements/ThemedText';
+import useLayerColor from '@/hooks/useLayerColor';
 
 interface CheckboxesSelectorProps {
     selectedValue: string | null;
@@ -17,10 +18,12 @@ export default function CheckboxesSelector({
     title,
     style,
 }: CheckboxesSelectorProps) {
+    const layerColor = useLayerColor();
+
     return (
-        <ThemedView style={styles.mainContainer}>
+        <ThemedView style={[style, styles.mainContainer]}>
             {title ? <ThemedText style={TEXT_STYLES.heading2}>{title}</ThemedText> : null}
-            <ThemedView style={[style, styles.container]}>
+            <ThemedView style={[styles.container, { backgroundColor: layerColor }]}>
                 {values.map((value) => {
                     const isSelected = selectedValue === value;
                     const isSelectedBorder = isSelected
@@ -65,7 +68,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignContent: 'center',
         justifyContent: 'space-around',
-        backgroundColor: '#000',
         gap: 6,
     },
     checkBox: {
@@ -91,7 +93,6 @@ const styles = StyleSheet.create({
         gap: 10,
         borderColor: '#7777bb99',
         borderWidth: 3,
-        backgroundColor: '#001155FF',
         padding: 5,
         borderRadius: 10,
     },

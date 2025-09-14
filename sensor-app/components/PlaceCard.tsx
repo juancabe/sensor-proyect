@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
-import { Button, StyleSheet, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Button, ScrollView, StyleSheet, View } from 'react-native';
 import { useAppContext } from './AppProvider';
 import { TEXT_STYLES, ThemedText } from './ui-elements/ThemedText';
 // import SensorCard from './SensorCard';
@@ -10,6 +10,10 @@ import useApi from '@/hooks/useApi';
 import { GetSensor } from '@/bindings/api/endpoints/sensor/GetSensor';
 import { GetSensorResponse } from '@/bindings/api/endpoints/sensor/GetSensorResponse';
 import SensorCard from './SensorCard';
+import LabelValue from './ui-elements/LabelValue';
+import ThemedButton from './ui-elements/ThemedButton';
+import { ListPlus } from 'lucide-react-native';
+import useLayerColor from '@/hooks/useLayerColor';
 
 export interface PlaceCardProps {
     place: ApiUserPlace;
@@ -25,13 +29,12 @@ export default function PlaceCard({ place }: PlaceCardProps) {
     };
 
     const getSensor: GetSensor = { 'FromPlaceName': place.name };
-
-    const api = useApi(
-        '/sensor?FromPlaceName=' + getSensor.FromPlaceName,
-        undefined,
-        'GET',
-        false,
+    const apiParams = useMemo(
+        () => [['FromPlaceName', getSensor.FromPlaceName]],
+        [getSensor.FromPlaceName],
     );
+    const [apiMethod, setApiMethod] = useState<undefined | 'GET'>('GET');
+    const api = useApi('/sensor', apiMethod, false, undefined, apiParams);
 
     useEffect(() => {
         if (api.response) {
@@ -43,46 +46,78 @@ export default function PlaceCard({ place }: PlaceCardProps) {
         }
     }, [api.response]);
 
+    const reloadApi = () => {
+        setApiMethod(undefined);
+        setTimeout(() => {
+            // Using setTimeout so that it runs in next React cycle
+            setApiMethod('GET');
+        }, 0);
+    };
+
+    const layerBg = useLayerColor();
+
     return (
         <ThemedView
             style={[
                 styles.container,
-                { backgroundColor: place.color.replace('HEX_', '#') + 'AA' },
+                { backgroundColor: place.color.replace('HEX_', '#') + '77' },
             ]}
         >
-            <ThemedText style={TEXT_STYLES.heading2}>{place.name}</ThemedText>
-            <ThemedText style={TEXT_STYLES.label}>{place.description}</ThemedText>
-            <Button title="Add Sensor" onPress={handleAddSensorPress} />
-            <View
-                style={{
-                    flexDirection: 'row',
-                    flexWrap: 'wrap',
-                    justifyContent: 'center',
-                }}
-            >
-                {api.response
-                    ? (api.response as GetSensorResponse[]).map(
-                          ({ sensor, last_data }) => (
-                              <SensorCard
-                                  key={sensor.device_id}
-                                  sensor={sensor}
-                                  data={last_data}
-                              />
-                          ),
-                      )
-                    : null}
+            <View style={styles.headerContainer}>
+                <LabelValue label="Name" horizontal={true}>
+                    <ThemedText style={TEXT_STYLES.heading3}>{place.name}</ThemedText>
+                </LabelValue>
+                <ThemedButton
+                    icon={ListPlus}
+                    title="Add Sensor"
+                    onPress={handleAddSensorPress}
+                />
+            </View>
+            {place.description ? (
+                <ThemedText style={TEXT_STYLES.label}>{place.description}</ThemedText>
+            ) : null}
+
+            <View style={[styles.layer, { backgroundColor: layerBg, width: '100%' }]}>
+                <ThemedText style={[TEXT_STYLES.heading2, { padding: 5 }]}>
+                    Place sensors
+                </ThemedText>
+                <ScrollView style={{}}>
+                    {api.response
+                        ? (api.response as GetSensorResponse[]).map(
+                              ({ sensor, last_data }) => (
+                                  <SensorCard
+                                      key={sensor.device_id}
+                                      sensor={sensor}
+                                      data={last_data}
+                                      reloadSensorSource={() => {
+                                          reloadApi();
+                                      }}
+                                  />
+                              ),
+                          )
+                        : null}
+                </ScrollView>
             </View>
         </ThemedView>
     );
 }
 
 const styles = StyleSheet.create({
+    layer: {
+        padding: 0,
+        borderRadius: 10,
+    },
+    headerContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        gap: 20,
+        justifyContent: 'space-between',
+    },
     container: {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
         borderRadius: 10,
-        margin: 10,
         padding: 10,
         gap: 10,
     },

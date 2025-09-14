@@ -1,8 +1,8 @@
 import LoadingScreen from '@/components/LoadingScreen';
-import { Redirect } from 'expo-router';
 import { SessionData } from '@/persistence/SessionData';
 import { useEffect, useState } from 'react';
 import Login from './login';
+import Home from './home';
 
 export default function Index() {
     const [sessionData, setSessionData] = useState<SessionData | undefined>(undefined);
@@ -21,7 +21,7 @@ export default function Index() {
     }
 
     if (sessionData.all_set()) {
-        return <Redirect href={'/(tabs)/home'}></Redirect>;
+        return <Home></Home>;
     } else {
         return <Login></Login>;
     }

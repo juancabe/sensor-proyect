@@ -32,6 +32,11 @@ export const TEXT_STYLES = StyleSheet.create({
         fontWeight: '600',
         lineHeight: 32,
     },
+    heading3: {
+        fontSize: 18,
+        fontWeight: '500',
+        lineHeight: 26,
+    },
     body: {
         fontSize: 16,
         fontWeight: '400',

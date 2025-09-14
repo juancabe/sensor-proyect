@@ -4,7 +4,7 @@ export interface FeedbackModalProps extends ModalProps {
     borderColor: string;
 }
 
-export default function FeedbackModal(props: FeedbackModalProps) {
+export default function SensorsModal(props: FeedbackModalProps) {
     const { children, ...rest } = props;
     return (
         <Modal

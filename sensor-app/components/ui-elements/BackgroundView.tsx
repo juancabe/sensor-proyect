@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '@react-navigation/native';
 import Svg, { Defs, RadialGradient, Stop, Circle, CircleProps } from 'react-native-svg';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type BackgroundViewProps = {
     children: React.ReactNode;
@@ -26,15 +27,17 @@ export default function BackgroundView({
 
     const CIRCLES_NUM = 10;
 
-    const circles: CircleProps[] = [];
-    const maxRadious = 60;
-
-    for (let i = 0; i < CIRCLES_NUM; i++) {
-        const cx = Math.random() * 100;
-        const cy = Math.random() * mappedMaxHeight;
-        const r = Math.random() * maxRadious;
-        circles.push({ cx, cy, r });
-    }
+    const maxRadius = 60;
+    const circles = React.useMemo(() => {
+        const arr: CircleProps[] = [];
+        for (let i = 0; i < CIRCLES_NUM; i++) {
+            const cx = Math.random() * 100;
+            const cy = Math.random() * mappedMaxHeight;
+            const r = Math.random() * maxRadius;
+            arr.push({ cx, cy, r });
+        }
+        return arr;
+    }, [mappedMaxHeight]); // add `accent` if the layout should change with color
 
     return (
         <View style={[styles.container, style]}>
@@ -68,7 +71,7 @@ export default function BackgroundView({
                             <Stop
                                 offset="0"
                                 stopColor={accent}
-                                stopOpacity={`${r && (r.valueOf() as number) / maxRadious / 3}`}
+                                stopOpacity={`${r && (r.valueOf() as number) / maxRadius / 3}`}
                             />
                             <Stop offset="1" stopColor={accent} stopOpacity="0" />
                         </RadialGradient>
@@ -87,12 +90,12 @@ export default function BackgroundView({
                 pointerEvents="none"
             />
 
-            <View style={styles.content}>{children}</View>
+            <SafeAreaView style={styles.content}>{children}</SafeAreaView>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    content: { flex: 1, padding: 16 },
+    content: { flex: 1 },
 });

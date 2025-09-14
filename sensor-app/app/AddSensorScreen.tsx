@@ -17,7 +17,7 @@ import useApi from '@/hooks/useApi';
 import { ThemedScrollView } from '@/components/ui-elements/ThemedScrollView';
 import { PostSensor } from '@/bindings/api/endpoints/sensor/PostSensor';
 import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
-import FeedbackModal from '@/components/FeedbackModal';
+import SensorsModal from '@/components/FeedbackModal';
 import useRedirect from '@/hooks/useRedirect';
 
 const secondaryColor = '#58a4b0';
@@ -98,9 +98,9 @@ export default function AddSensorScreen() {
 
     const api = useApi<PostSensor | undefined, ApiUserSensor, unknown>(
         '/sensor',
-        sensorsApiBody,
         sensorsApiMethod,
         false,
+        sensorsApiBody,
     );
 
     const handleConnect = async (dev: Device) => {
@@ -209,7 +209,7 @@ export default function AddSensorScreen() {
 
     return (
         <BackgroundView secondaryColor={secondaryColor}>
-            <FeedbackModal borderColor={secondaryColor} visible={modalVisible}>
+            <SensorsModal borderColor={secondaryColor} visible={modalVisible}>
                 <ThemedView style={[styles.feedbackContainer]}>
                     <ThemedText>Sensor correctly configured</ThemedText>
                     <ThemedView style={[styles.feedbackButtonsContainer]}>
@@ -219,7 +219,7 @@ export default function AddSensorScreen() {
                         ></Button>
                     </ThemedView>
                 </ThemedView>
-            </FeedbackModal>
+            </SensorsModal>
             <ThemedView style={[styles.mainContainer]}>
                 <ThemedText style={TEXT_STYLES.heading1}>
                     Add sensor to {ctx.activePlace.name}

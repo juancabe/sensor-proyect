@@ -5,24 +5,25 @@ import { Button, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
 import useApi from '@/hooks/useApi';
-import { GetPlace } from '@/bindings/api/endpoints/place/GetPlace';
 import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import LoadingScreen from '@/components/LoadingScreen';
 
 const secondaryColor = '#ff00003f';
 
 export default function Home() {
     const router = useRouter();
-
+    console.log('home reloaded');
     const [method, setMethod] = useState<'GET' | undefined>('GET');
-    let placeQuery: GetPlace = { kind: 'UserPlaces' };
+    // let placeQuery: GetPlace = { kind: 'UserPlaces' };
+    const queryParams = useMemo<[string, string][]>(() => [['kind', 'UserPlaces']], []);
     const placeApi = useApi<undefined, ApiUserPlace[], undefined>(
-        '/place?kind=' + placeQuery.kind,
-        undefined,
+        '/place',
         method,
         false,
+        undefined,
+        queryParams,
     );
 
     const reloadApi = () => {
@@ -79,5 +80,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 40,
         backgroundColor: 'transparent',
+        margin: 10,
     },
 });

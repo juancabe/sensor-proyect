@@ -53,7 +53,7 @@ async function _fetchApi<R>(props: InternalFetchProps): Promise<[R, boolean] | R
     try {
         res = await fetch(BASE_API_URL + endpoint_path, init);
     } catch (networkError) {
-        console.error('networkError: ', networkError);
+        console.log('networkError: ', networkError);
         throw [Error.NetworkError];
     }
 
@@ -145,9 +145,10 @@ async function renewJWT(session: SessionData): Promise<string> {
 
 export default function useApi<B, R, E>(
     endpoint_path: string,
-    body: B,
     method: 'GET' | 'POST' | 'PUT' | 'DELETE' | undefined,
     displayBody: boolean,
+    body?: B,
+    urlParams?: string[][],
 ) {
     const ctx = useAppContext();
 
@@ -156,8 +157,6 @@ export default function useApi<B, R, E>(
     const [response, setResponse] = useState<R | undefined>(undefined);
     const [returnedOk, setReturnedOk] = useState<boolean | undefined>(undefined);
 
-    const stableBody = JSON.stringify(body);
-
     useEffect(() => {
         if (!method) {
             return;
@@ -165,6 +164,7 @@ export default function useApi<B, R, E>(
 
         const controller = new AbortController();
         const signal = controller.signal;
+        const stableBody = JSON.stringify(body);
 
         const fetchApi = async () => {
             setLoading(true);
@@ -188,8 +188,12 @@ export default function useApi<B, R, E>(
 
             init.headers = headers;
 
+            const parsed_params = urlParams
+                ? '?' + new URLSearchParams(urlParams as string[][]).toString()
+                : '';
+
             const props: InternalFetchProps = {
-                endpoint_path,
+                endpoint_path: endpoint_path + parsed_params,
                 init,
                 sessionData: ctx.sessionData,
                 setJwt: ctx.setJwt,
@@ -221,7 +225,7 @@ export default function useApi<B, R, E>(
         return () => {
             controller.abort();
         };
-    }, [endpoint_path, method, stableBody, ctx.sessionData, ctx.setJwt, ctx.jwt]);
+    }, [urlParams, endpoint_path, method, body, ctx.sessionData, ctx.setJwt, ctx.jwt]);
 
     const formattedError = error ? errorText(error, displayBody) : null;
 

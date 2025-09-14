@@ -11,8 +11,8 @@ export function timeDisplay(date: Date): string {
     }
 
     if (diff > TWO_MINUTES) {
-        return `${~~(diff / MS_PER_MINUTE)} mins`;
+        return `${~~(diff / MS_PER_MINUTE)} mins ago`;
     }
 
-    return `${~~(diff / MS_PER_SECOND)} secs`;
+    return `${~~(diff / MS_PER_SECOND)} secs ago`;
 }

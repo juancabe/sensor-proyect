@@ -44,9 +44,9 @@ export default function Login() {
     const [method, setMethod] = useState<'POST' | undefined>(undefined);
     const api = useApi(
         type === 'register' ? '/user' : `/session`,
-        type === 'register' ? registerBody : loginBody,
         method,
         false,
+        type === 'register' ? registerBody : loginBody,
     );
 
     useEffect(() => {
