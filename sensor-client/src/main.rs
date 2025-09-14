@@ -18,7 +18,10 @@ use esp_idf_svc::{
     nvs::EspDefaultNvsPartition,
     wifi::Configuration,
 };
-use esp_idf_sys::esp_read_mac;
+use esp_idf_sys::{
+    esp_get_free_heap_size, esp_get_minimum_free_heap_size, esp_read_mac,
+    uxTaskGetStackHighWaterMark,
+};
 
 pub mod ble_protocol;
 pub mod client_state;
@@ -136,6 +139,7 @@ fn main() {
             Err(e) => match e {
                 server_communicator::Error::UnexpectedResponse(code) => match code {
                 401 // UNAUTHORIZED
+                | 404 // NOT FOUND
                     => {
                         handle_unauthorized(persistence);
                 }
@@ -157,10 +161,10 @@ fn main() {
     // - on each success IT recovers one point
     // - on each failure IT looses one point
     let mut measurement_errors_left = MAX_CONSECUTIVE_MEASUREMENT_ERRORS_ALLOWED;
-    let mut post_failures_left = MAX_CONSECUTIVE_MEASUREMENT_ERRORS_ALLOWED;
+    let mut post_failures_left = MAX_SEND_DATA_LOOP_FAILED_ON_POST_DATA_ERRORS_ALLOWED;
 
     // main loop, measuring
-    'measure: while !(measurement_errors_left == 0) {
+    'measure: while !(measurement_errors_left == 0) || !(post_failures_left == 0) {
         // -- Measure
         let measurement = match sensors.measure() {
             Ok((ret_sensors, measurement)) => {
@@ -190,6 +194,8 @@ fn main() {
         for _ in 0..POST_DATA_RETRIES {
             // A post data retry doesn't count as failure as ESP Wifi
             // fails many times, so we don't panic so easily for it
+            log::info!("Trying to send data to server");
+            print_heap_and_stack();
             match communicator.post(&data) {
                 Ok(ret_data) => {
                     log::info!("Correctly sent sensor_data: {ret_data:?}");
@@ -200,7 +206,7 @@ fn main() {
                 }
                 Err(e) => match e {
                     server_communicator::Error::UnexpectedResponse(c) => match c {
-                        401 => handle_unauthorized(persistence),
+                        401 | 404 => handle_unauthorized(persistence),
                         _ => {
                             log::error!("Response was an error on post data: {e:?}");
                         }
@@ -214,6 +220,7 @@ fn main() {
         post_failures_left -= 1;
         // --
     }
+    panic!("Errors exceeded");
 }
 
 fn handle_unauthorized(mut persistence: Persistence) -> ! {
@@ -307,4 +314,24 @@ fn get_device_mac() -> [u8; 6] {
     log::debug!("get_device_mac: {:?}", mac);
 
     mac
+}
+
+pub fn print_heap_and_stack() {
+    unsafe {
+        // Heap (bytes)
+        let free_heap: u32 = esp_get_free_heap_size();
+        let min_free_heap: u32 = esp_get_minimum_free_heap_size();
+
+        // Stack high-water mark of the current task (bytes on ESP-IDF)
+        // Pass null to query the calling task per ESP-IDF docs
+        let hwm_bytes = uxTaskGetStackHighWaterMark(core::ptr::null_mut());
+
+        // Print using println! or the log crate if configured
+        log::info!(
+            "Free heap: {} B, Min free heap: {} B, Stack HWM (current task): {} B",
+            free_heap,
+            min_free_heap,
+            hwm_bytes
+        );
+    }
 }

@@ -102,6 +102,7 @@ pub enum Scd41Status {
 /// Contains runtime information for sensors lifecycle
 /// Use Sensors::measure for measuring
 pub struct Sensors<'a> {
+    allow_partial_sensor: bool,
     pub i2c: I2cDriver<'a>,
     pub aht10: Aht10Status,
     pub scd41: Scd41Status,
@@ -185,7 +186,12 @@ impl<'a> Sensors<'a> {
         } else if available < TO_BUILD_SENSORS && !allow_partial_sensor {
             Err((i2c, scd41, aht10))
         } else {
-            Ok(Sensors { i2c, aht10, scd41 })
+            Ok(Sensors {
+                allow_partial_sensor,
+                i2c,
+                aht10,
+                scd41,
+            })
         }
     }
 
@@ -297,6 +303,8 @@ impl<'a> Sensors<'a> {
         };
 
         if !aht10_measured && !scd41_measured {
+            return Err((self, ()));
+        } else if !aht10_measured || !scd41_measured && !self.allow_partial_sensor {
             return Err((self, ()));
         } else {
             Ok((
