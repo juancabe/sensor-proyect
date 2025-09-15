@@ -79,24 +79,39 @@ export default function PlaceCard({ place }: PlaceCardProps) {
 
             <View style={[styles.layer, { backgroundColor: layerBg, width: '100%' }]}>
                 <ThemedText style={[TEXT_STYLES.heading2, { padding: 5 }]}>
-                    Place sensors
+                    Sensors
                 </ThemedText>
-                <ScrollView style={{}}>
-                    {api.response
-                        ? (api.response as GetSensorResponse[]).map(
-                              ({ sensor, last_data }) => (
-                                  <SensorCard
-                                      key={sensor.device_id}
-                                      sensor={sensor}
-                                      data={last_data}
-                                      reloadSensorSource={() => {
-                                          reloadApi();
-                                      }}
-                                  />
-                              ),
-                          )
-                        : null}
-                </ScrollView>
+                {api.response && (api.response as any).length ? (
+                    <ScrollView style={{}}>
+                        {(api.response as GetSensorResponse[]).map(
+                            ({ sensor, last_data }) => (
+                                <SensorCard
+                                    key={sensor.device_id}
+                                    sensor={sensor}
+                                    data={last_data}
+                                    reloadSensorSource={() => {
+                                        reloadApi();
+                                    }}
+                                />
+                            ),
+                        )}
+                    </ScrollView>
+                ) : (
+                    <View
+                        style={{
+                            display: 'flex',
+                            flexDirection: 'row',
+                            justifyContent: 'center',
+                            padding: 10,
+                            backgroundColor: layerBg,
+                            borderRadius: 10,
+                        }}
+                    >
+                        <ThemedText style={TEXT_STYLES.heading3}>
+                            No sensors available
+                        </ThemedText>
+                    </View>
+                )}
             </View>
         </ThemedView>
     );
@@ -120,5 +135,6 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         padding: 10,
         gap: 10,
+        marginBottom: 20,
     },
 });

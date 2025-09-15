@@ -65,6 +65,9 @@ export default function Home() {
                     <ThemedScrollView
                         style={{
                             backgroundColor: 'transparent',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 20,
                         }}
                     >
                         {placeApi.response &&
@@ -89,6 +92,7 @@ const styles = StyleSheet.create({
         marginLeft: 10,
     },
     placesContainer: {
+        flex: 1,
         margin: 10,
         borderRadius: 10,
         padding: 10,

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Button, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { TEXT_STYLES, ThemedText } from './ui-elements/ThemedText';
 import { ThemedView } from './ui-elements/ThemedView';
 import { useAppContext } from './AppProvider';
@@ -9,13 +9,7 @@ import { safeGet } from '@/helpers/objectWork';
 import LabelValue from './ui-elements/LabelValue';
 import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
 import { ApiSensorData } from '@/bindings/api/endpoints/sensor_data/ApiSensorData';
-import SensorsModal from './FeedbackModal';
-import useApi from '@/hooks/useApi';
-import { DeleteSensor } from '@/bindings/api/endpoints/sensor/DeleteSensor';
-import ErrorBox from './ui-elements/ErrorBox';
-import ThemedForm, { FieldConfig } from './ui-elements/ThemedForm';
-import { PutSensor } from '@/bindings/api/endpoints/sensor/PutSensor';
-import { useApiEntityName } from '@/hooks/api/useApiEntityName';
+import SensorCrudModal from './SensorCrudModal';
 
 export interface SensorCardProps {
     sensor: ApiUserSensor;
@@ -44,64 +38,14 @@ export default function SensorCard(props: SensorCardProps) {
 
     const [crudModalDisplayed, setCrudModalDisplayed] = useState<boolean>(false);
 
-    const [apiMethod, setApiMethod] = useState<undefined | 'DELETE' | 'PUT'>(undefined);
-    const [apiBody, setApiBody] = useState<undefined | DeleteSensor | PutSensor>();
-    const api = useApi('/sensor', apiMethod, false, apiBody as any);
-
-    useEffect(() => {
-        if (api.response && api.returnedOk) {
-            // TODO: Call reload on parent
-            props.reloadSensorSource();
-        }
-    }, [api.response, api.returnedOk, props]);
-
-    const apiName = useApiEntityName(props.sensor.name);
-    const crudModalFormFields: FieldConfig[] = [
-        {
-            placeholder: 'Sensor Name',
-            value: apiName.name,
-            onChangeText: (name) => {
-                apiName.setName(name);
-            },
-            error: apiName.error,
-        },
-    ];
-
     return (
         <View>
-            <SensorsModal borderColor={sensor.color} visible={crudModalDisplayed}>
-                <ThemedView style={styles.crudModal}>
-                    <Button
-                        title="Delete sensor"
-                        onPress={() => {
-                            const body: DeleteSensor = {
-                                'FromSensorDeviceId': props.sensor.device_id,
-                            };
-                            setApiBody(body);
-                            setApiMethod('DELETE');
-                        }}
-                    ></Button>
-                    <Button
-                        title="Close"
-                        onPress={() => setCrudModalDisplayed(false)}
-                    ></Button>
-                    <ThemedText style={TEXT_STYLES.label}>Edit sensor name:</ThemedText>
-                    <ThemedForm fields={crudModalFormFields}></ThemedForm>
-                    <Button
-                        title="Confirm edit"
-                        onPress={() => {
-                            const body: PutSensor = {
-                                device_id: props.sensor.device_id,
-                                change: { 'Name': apiName.name },
-                            };
-                            setApiBody(body);
-                            setApiMethod('PUT');
-                        }}
-                        disabled={!apiName.isValid}
-                    ></Button>
-                    <ErrorBox error={api.formattedError}></ErrorBox>
-                </ThemedView>
-            </SensorsModal>
+            <SensorCrudModal
+                reloadSensorSource={props.reloadSensorSource}
+                sensor={props.sensor}
+                displayed={crudModalDisplayed}
+                setDisplayed={setCrudModalDisplayed}
+            ></SensorCrudModal>
             <TouchableOpacity
                 onPress={() => {
                     ctx.setActiveSensor(sensor);
@@ -149,14 +93,20 @@ export default function SensorCard(props: SensorCardProps) {
 }
 
 const styles = StyleSheet.create({
+    modalLayer: {
+        padding: 10,
+        margin: 5,
+        borderRadius: 10,
+        gap: 10,
+    },
     crudModal: {
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
-        backgroundColor: '#222',
-        borderColor: '#222',
+        justifyContent: 'space-between',
+        gap: 20,
         borderRadius: 10,
-        padding: 5,
+        padding: 15,
+        width: '80%',
     },
     value: {
         backgroundColor: '#00000040',

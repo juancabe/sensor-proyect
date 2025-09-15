@@ -27,6 +27,12 @@ export default function RootLayout() {
                                 title: 'Add a place',
                             }}
                         />
+                        <Stack.Screen
+                            name="SensorDetail"
+                            options={{
+                                headerShown: false,
+                            }}
+                        />
                     </Stack>
                 </ThemeProvider>
             </SafeAreaProvider>

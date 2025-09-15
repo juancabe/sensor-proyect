@@ -1,8 +1,6 @@
 import { Modal, ModalProps, StyleSheet, View } from 'react-native';
 
-export interface FeedbackModalProps extends ModalProps {
-    borderColor: string;
-}
+export interface FeedbackModalProps extends ModalProps {}
 
 export default function SensorsModal(props: FeedbackModalProps) {
     const { children, ...rest } = props;
@@ -10,12 +8,10 @@ export default function SensorsModal(props: FeedbackModalProps) {
         <Modal
             animationType={props.animationType ? props.animationType : 'slide'}
             transparent={false}
-            backdropColor={'#0000'}
+            backdropColor={'#0003'}
             {...rest}
         >
-            <View style={[styles.container, { borderColor: props.borderColor }]}>
-                {children}
-            </View>
+            <View style={[styles.container]}>{children}</View>
         </Modal>
     );
 }

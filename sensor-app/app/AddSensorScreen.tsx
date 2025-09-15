@@ -209,7 +209,7 @@ export default function AddSensorScreen() {
 
     return (
         <BackgroundView secondaryColor={secondaryColor}>
-            <SensorsModal borderColor={secondaryColor} visible={modalVisible}>
+            <SensorsModal visible={modalVisible}>
                 <ThemedView style={[styles.feedbackContainer]}>
                     <ThemedText>Sensor correctly configured</ThemedText>
                     <ThemedView style={[styles.feedbackButtonsContainer]}>
