@@ -4,8 +4,11 @@ import { useAppContext } from '@/components/AppProvider';
 import { SessionData } from '@/persistence/SessionData';
 import { FetchRequestInit } from 'expo/fetch';
 import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 
-const BASE_API_URL = 'http://192.168.1.130:3000/api/v0';
+// const BASE_API_URL = 'http://192.168.1.130:3000/api/v0';
+const BASE_API_URL = 'http://localhost:3000/api/v0';
+// const BASE_API_URL = 'http://172.28.234.97:3000/api/v0';
 
 export interface ReturnedError<E> {
     status: number;
@@ -19,10 +22,16 @@ export enum Error {
     InvalidLocalSession,
 }
 
-export type ErrorState<E> = [Error, ReturnedError<E>];
+// const doFetch = Platform.OS === 'web' ? globalThis.fetch.bind(globalThis) : fetch;
+const doFetch = fetch;
+
+export interface ErrorState<E> {
+    errorType: Error;
+    error?: ReturnedError<E>;
+}
 
 function errorText<E>(err: ErrorState<E>, displayBody: boolean): string {
-    switch (err[0]) {
+    switch (err.errorType) {
         case Error.InvalidLocalSession:
             return `Invalid session set on local device, try to login again`;
         case Error.JsonError:
@@ -31,7 +40,7 @@ function errorText<E>(err: ErrorState<E>, displayBody: boolean): string {
             return `Faced network related error when requesting server, try again`;
         case Error.ReturnedError:
             return displayBody
-                ? `The following error occured: ${err[1]?.errorBody}`
+                ? `The following error occured: ${err.error?.errorBody}`
                 : `The server returned an error, try again`;
     }
 }
@@ -47,14 +56,16 @@ type Rerun = boolean;
 
 // Throws Error slice
 async function _fetchApi<R>(props: InternalFetchProps): Promise<[R, boolean] | Rerun> {
+    console.log('_fetchApi called with props: ', props);
     let { endpoint_path, init, sessionData } = props;
 
     let res;
     try {
-        res = await fetch(BASE_API_URL + endpoint_path, init);
+        console.log('doFetch:', doFetch);
+        res = await doFetch(BASE_API_URL + endpoint_path, init);
     } catch (networkError) {
-        console.log('networkError: ', networkError);
-        throw [Error.NetworkError];
+        console.log('networkError on first fetch: ', networkError);
+        throw { errorType: Error.NetworkError } as ErrorState<undefined>;
     }
 
     console.debug('response: ', res);
@@ -66,7 +77,7 @@ async function _fetchApi<R>(props: InternalFetchProps): Promise<[R, boolean] | R
             response = await res.json();
         } catch (jsonError) {
             console.error('JsonError: ', jsonError);
-            throw [Error.JsonError];
+            throw { errorType: Error.JsonError } as ErrorState<undefined>;
         }
     } else {
         response = null;
@@ -74,21 +85,35 @@ async function _fetchApi<R>(props: InternalFetchProps): Promise<[R, boolean] | R
 
     if (!res.ok) {
         if (!sessionData) {
-            let error: ErrorState<any> = [Error.InvalidLocalSession, { status: 401 }];
+            let error: ErrorState<any> = {
+                errorType: Error.InvalidLocalSession,
+                error: { status: 401 },
+            };
 
             throw error;
         }
         if (res.status === 401) {
             // Unauthorized
-            let jwt = await renewJWT(sessionData);
-            props.setJwt(jwt);
-            return true;
+            console.warn('Unauthorized, calling renewJWT');
+            try {
+                let jwt = await renewJWT(sessionData);
+                props.setJwt(jwt);
+                return true;
+            } catch (e: any) {
+                if (typeof e === typeof Error.InvalidLocalSession) {
+                    // i.e.: its an Error we threw
+                    const error: ErrorState<undefined> = {
+                        errorType: e,
+                        error: { status: res.status, errorBody: response },
+                    };
+                    throw error;
+                }
+            }
         } else {
-            let error: ErrorState<any> = [
-                Error.ReturnedError,
-                { status: res.status, errorBody: response },
-            ];
-
+            let error: ErrorState<any> = {
+                errorType: Error.ReturnedError,
+                error: { status: res.status, errorBody: response },
+            };
             throw error;
         }
     }
@@ -97,8 +122,9 @@ async function _fetchApi<R>(props: InternalFetchProps): Promise<[R, boolean] | R
 }
 
 async function renewJWT(session: SessionData): Promise<string> {
+    console.log('renewJWT called with session: ', session);
     if (!session.username || !session.password) {
-        throw [Error.JsonError];
+        throw Error.JsonError;
     }
 
     const body: PostSession = {
@@ -112,6 +138,7 @@ async function renewJWT(session: SessionData): Promise<string> {
         body: JSON.stringify(body),
         method: 'POST',
         headers: [['Content-type', 'application/json']],
+        credentials: 'include',
     };
 
     let res;
@@ -119,7 +146,7 @@ async function renewJWT(session: SessionData): Promise<string> {
         res = await fetch(BASE_API_URL + '/session', init);
     } catch (networkError) {
         console.error('[renewJWT] networkError: ', networkError);
-        throw [Error.NetworkError];
+        throw Error.NetworkError;
     }
     console.log('[renewJWT] res: ', res);
 
@@ -129,6 +156,7 @@ async function renewJWT(session: SessionData): Promise<string> {
             await session.deleteSession();
         } else {
             console.error('Error received: ', res.status);
+            throw Error.ReturnedError;
         }
     }
 
@@ -139,7 +167,7 @@ async function renewJWT(session: SessionData): Promise<string> {
         return json.access_token;
     } catch (e) {
         console.error('UNEXPECTED JSON ERROR FROM GET SESSION API', e);
-        throw [Error.JsonError];
+        throw Error.JsonError;
     }
 }
 
@@ -175,6 +203,7 @@ export default function useApi<B, R, E>(
                 body: stableBody,
                 method: method,
                 signal,
+                credentials: 'include',
             };
 
             let headers: [string, string][] = [];
@@ -223,7 +252,8 @@ export default function useApi<B, R, E>(
         fetchApi();
 
         return () => {
-            controller.abort();
+            controller.abort('useApi dependencies changed');
+            setLoading(false);
         };
     }, [urlParams, endpoint_path, method, body, ctx.sessionData, ctx.setJwt, ctx.jwt]);
 

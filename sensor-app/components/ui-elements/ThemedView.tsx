@@ -5,6 +5,7 @@ export type ThemedViewProps = ViewProps & {
     theme?: Theme;
     style?: object;
     children?: React.ReactNode;
+    noBackground?: boolean;
 };
 
 export function ThemedView({ theme, style, children, ...otherProps }: ThemedViewProps) {

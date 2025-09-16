@@ -1,7 +1,7 @@
 import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 // import * as auth from '@/helpers/auth';
@@ -28,47 +28,48 @@ export default function Login() {
 
     const [holeFormError, setHoleFormError] = useState<string | null>(null);
 
-    const registerBody: PostUser = {
-        username: username.username,
-        raw_password: password.password,
-        email: email.email,
-    };
+    const body = useMemo(() => {
+        if (type === 'register') {
+            let body: PostUser = {
+                username: username.username,
+                raw_password: password.password,
+                email: email.email,
+            };
+            return body;
+        } else {
+            let body: PostSession = {
+                'User': {
+                    username: username.username,
+                    raw_password: password.password,
+                },
+            };
+            return body;
+        }
+    }, [type, email.email, password.password, username.username]);
 
-    const loginBody: PostSession = {
-        'User': {
-            username: username.username,
-            raw_password: password.password,
-        },
-    };
+    const endpoint = useMemo(() => {
+        return type === 'register' ? '/user' : `/session`;
+    }, [type]);
 
     const [method, setMethod] = useState<'POST' | undefined>(undefined);
-    const api = useApi(
-        type === 'register' ? '/user' : `/session`,
-        method,
-        false,
-        type === 'register' ? registerBody : loginBody,
-    );
+    const api = useApi(endpoint, method, false, body);
 
     useEffect(() => {
         const fn = async () => {
-            if (api.returnedOk) {
-                console.debug(
+            if (api.returnedOk === true) {
+                console.log(
                     'setting session data to: ',
                     username.username,
                     password.password,
                 );
                 await ctx.sessionData?.setSession(username.username, password.password);
                 redirect.redirectToIndex();
+            } else if (api.returnedOk === false) {
+                setMethod(undefined);
             }
         };
         fn();
     }, [api.returnedOk, redirect, username.username, password.password, ctx.sessionData]);
-
-    useEffect(() => {
-        if (api.error) {
-            setMethod(undefined);
-        }
-    }, [api.error]);
 
     useEffect(() => {
         if (
@@ -76,14 +77,14 @@ export default function Login() {
             repeatPassword.isValid &&
             !(password.password === repeatPassword.password)
         ) {
-            api.clearError();
             setHoleFormError("Passwords don't match");
         } else if (password.password === repeatPassword.password) {
             setHoleFormError(null);
         }
-    }, [password, repeatPassword, api]);
+    }, [password, repeatPassword]);
 
-    function isSubmissionDisabled(): boolean {
+    const isSubmissionDisabled = useMemo(() => {
+        console.log('api.loading: ', api.loading);
         if (api.loading) return true;
 
         const isLoginValid = username.isValid && password.isValid;
@@ -94,7 +95,16 @@ export default function Login() {
             password.password === repeatPassword.password;
 
         return type === 'login' ? !isLoginValid : !isRegisterValid;
-    }
+    }, [
+        api.loading,
+        email.isValid,
+        password.isValid,
+        password.password,
+        repeatPassword.isValid,
+        repeatPassword.password,
+        type,
+        username.isValid,
+    ]);
 
     const oppositeType = () => {
         if (type === 'login') {
@@ -104,7 +114,7 @@ export default function Login() {
         }
     };
 
-    const handleSubmission = async () => {
+    const handleSubmission = () => {
         setHoleFormError(null);
         api.clearError();
         Keyboard.dismiss();
@@ -164,14 +174,14 @@ export default function Login() {
                     />
                     <Button
                         title={type}
-                        disabled={isSubmissionDisabled()}
+                        disabled={isSubmissionDisabled}
                         onPress={handleSubmission}
                     />
                 </ThemedView>
                 <ErrorBox
                     error={
                         api.error
-                            ? api.error[1]?.status === 401
+                            ? api.error.error?.status === 401
                                 ? 'Invalid Credentials'
                                 : api.formattedError
                             : null

@@ -7,5 +7,9 @@ export default function useRedirect() {
         router.replace('/');
     };
 
-    return { redirectToIndex };
+    const redirectToLogin = () => {
+        router.replace('/login');
+    };
+
+    return { redirectToIndex, redirectToLogin };
 }

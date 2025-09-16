@@ -4,7 +4,7 @@ import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
 import { ThemedView } from '@/components/ui-elements/ThemedView';
 import { Button, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
@@ -26,11 +26,16 @@ export default function AddPlaceScreen() {
     const color = useApiColor();
     const isAddable = name.isValid && description.isValid && color;
 
-    const body: PostPlace = {
-        name: name.name,
-        description: description.description,
-        color: color.color,
-    };
+    const body = useMemo(() => {
+        const body: PostPlace = {
+            name: name.name,
+            description: description.description,
+            color: color.color,
+        };
+
+        return body;
+    }, [name.name, description.description, color.color]);
+
     const [method, setMethod] = useState<'POST' | undefined>(undefined);
     const postPlace = useApi('/place', method, false, body);
 

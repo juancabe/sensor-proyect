@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 enum SessionKeys {
     USERNAME = 'USERNAME',
@@ -7,10 +8,35 @@ enum SessionKeys {
 
 type key = string | null;
 
+function isSecureStoreCapable() {
+    return Platform.OS !== 'web';
+}
+
+async function setItemSecure(key: SessionKeys, value: string): Promise<void> {
+    if (!isSecureStoreCapable()) {
+        return undefined;
+    }
+    return await SecureStore.setItemAsync(key, value);
+}
+
+async function getItemSecure(key: SessionKeys): Promise<string | null> {
+    if (!isSecureStoreCapable()) {
+        return null;
+    }
+    return await SecureStore.getItemAsync(key);
+}
+
+async function deleteItemSecure(key: SessionKeys): Promise<void> {
+    if (!isSecureStoreCapable()) {
+        return;
+    }
+    return await SecureStore.deleteItemAsync(key);
+}
+
 async function setSessionData(username: string, password: string): Promise<void> {
     const promises = [
-        SecureStore.setItemAsync(SessionKeys.USERNAME, username),
-        SecureStore.setItemAsync(SessionKeys.PASSWORD, password),
+        setItemSecure(SessionKeys.USERNAME, username),
+        setItemSecure(SessionKeys.PASSWORD, password),
     ];
 
     await Promise.all(promises);
@@ -18,8 +44,8 @@ async function setSessionData(username: string, password: string): Promise<void>
 
 async function deleteSessionData(): Promise<void> {
     const promises = [
-        SecureStore.deleteItemAsync(SessionKeys.USERNAME),
-        SecureStore.deleteItemAsync(SessionKeys.PASSWORD),
+        deleteItemSecure(SessionKeys.USERNAME),
+        deleteItemSecure(SessionKeys.PASSWORD),
     ];
 
     await Promise.all(promises);
@@ -27,8 +53,8 @@ async function deleteSessionData(): Promise<void> {
 
 async function loadSessionData(): Promise<[key, key]> {
     const promises = [
-        SecureStore.getItemAsync(SessionKeys.USERNAME),
-        SecureStore.getItemAsync(SessionKeys.PASSWORD),
+        getItemSecure(SessionKeys.USERNAME),
+        getItemSecure(SessionKeys.PASSWORD),
     ];
 
     let [username, password]: [key | undefined, key | undefined] = [null, null];
@@ -36,7 +62,7 @@ async function loadSessionData(): Promise<[key, key]> {
     try {
         [username, password] = await Promise.all(promises);
     } catch (e) {
-        console.error('Error thrown onSecureStore.getItemAsync: ', e);
+        console.error('Error thrown ongetItemSecure: ', e);
         return [null, null];
     }
 

@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, ScrollView, StyleSheet, View } from 'react-native';
+import { Button, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useAppContext } from './AppProvider';
 import { TEXT_STYLES, ThemedText } from './ui-elements/ThemedText';
 // import SensorCard from './SensorCard';
@@ -67,17 +67,24 @@ export default function PlaceCard({ place }: PlaceCardProps) {
                 <LabelValue label="Name" horizontal={true}>
                     <ThemedText style={TEXT_STYLES.heading3}>{place.name}</ThemedText>
                 </LabelValue>
-                <ThemedButton
-                    icon={ListPlus}
-                    title="Add Sensor"
-                    onPress={handleAddSensorPress}
-                />
+                {Platform.OS !== 'web' && (
+                    <ThemedButton
+                        icon={ListPlus}
+                        title="Add Sensor"
+                        onPress={handleAddSensorPress}
+                    />
+                )}
             </View>
             {place.description ? (
                 <ThemedText style={TEXT_STYLES.label}>{place.description}</ThemedText>
             ) : null}
 
-            <View style={[styles.layer, { backgroundColor: layerBg, width: '100%' }]}>
+            <View
+                style={[
+                    styles.layer,
+                    { backgroundColor: layerBg, width: '100%', padding: 5 },
+                ]}
+            >
                 <ThemedText style={[TEXT_STYLES.heading2, { padding: 5 }]}>
                     Sensors
                 </ThemedText>
