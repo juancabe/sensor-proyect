@@ -1,8 +1,16 @@
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    path::PathBuf,
+};
 
+use axum_server::tls_rustls::RustlsConfig;
 use dotenv::dotenv;
 use sensor_server::{PORT, sensor_server::SensorServer};
-use tokio::net::TcpListener;
+
+#[cfg(not(feature = "production"))]
+const CERTS_DIR: &str = "self_signed_certs";
+#[cfg(feature = "production")]
+const CERTS_DIR: &str = "authorized_certs";
 
 #[tokio::main]
 async fn main() {
@@ -14,11 +22,18 @@ async fn main() {
 
     let sensor_server = SensorServer::new();
 
-    let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, PORT))
-        .await
-        .unwrap();
+    let config = RustlsConfig::from_pem_file(
+        PathBuf::from("./").join(CERTS_DIR).join("cert.pem"),
+        PathBuf::from("./").join(CERTS_DIR).join("key.pem"),
+    )
+    .await
+    .unwrap();
 
     let router = sensor_server.into_router();
 
-    axum::serve(listener, router).await.unwrap()
+    let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, PORT));
+    axum_server::bind_rustls(addr, config)
+        .serve(router.into_make_service())
+        .await
+        .unwrap()
 }

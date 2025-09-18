@@ -35,7 +35,9 @@ impl ServerApiSession {
             .path("/")
             .http_only(true)
             .secure(true)
-            .same_site(axum_extra::extract::cookie::SameSite::Lax)
+            // .same_site(axum_extra::extract::cookie::SameSite::Lax) // TODO: Get back to
+            // SameSite::Lax
+            .same_site(axum_extra::extract::cookie::SameSite::None)
             .max_age(Duration::seconds(self.0.expires_in as i64))
             .into()
     }

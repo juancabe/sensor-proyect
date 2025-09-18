@@ -1,5 +1,10 @@
-use axum::{Router, routing::MethodRouter};
+use axum::{Router, http::HeaderValue, routing::MethodRouter};
 use dotenv::dotenv;
+use hyper::{
+    Method,
+    header::{AUTHORIZATION, CONTENT_TYPE},
+};
+use tower_http::cors::CorsLayer;
 
 use crate::{
     api::{Endpoint, endpoints::generate_endpoints},
@@ -71,7 +76,16 @@ impl SensorServer {
             router = router.route(&path, route);
         }
 
-        router.layer(axum::middleware::from_fn(crate::middleware::log_request))
+        // TODO: done for development where web domain !==  server domain, check for "production"
+        let cors_layer = CorsLayer::new()
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_origin("http://localhost:8081".parse::<HeaderValue>().unwrap())
+            .allow_headers([AUTHORIZATION, CONTENT_TYPE])
+            .allow_credentials(true);
+
+        router
+            .layer(axum::middleware::from_fn(crate::middleware::log_request))
+            .layer(cors_layer)
     }
 }
 
