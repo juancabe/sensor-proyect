@@ -2,15 +2,19 @@ import { createContext, ReactNode, useContext, useEffect, useState } from 'react
 import { SessionData } from '@/persistence/SessionData';
 import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
 import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
+import { ApiSensorData } from '@/bindings/api/endpoints/sensor_data/ApiSensorData';
 
 export interface AppContextType {
     sessionData: SessionData | undefined;
     activePlace: ApiUserPlace | undefined;
     activeSensor: ApiUserSensor | undefined;
+    activeSensorData: ApiSensorData | undefined;
     jwt: string | undefined;
     setJwt: (jwt: string | undefined) => void;
     setActivePlace: (place: ApiUserPlace | undefined) => void;
-    setActiveSensor: (sensor: ApiUserSensor | undefined) => void;
+    setActiveSensor: (
+        value: { sensor: ApiUserSensor; data: ApiSensorData | null } | undefined,
+    ) => void;
     logOut: () => Promise<void>;
 }
 
@@ -21,6 +25,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         undefined,
     );
     const [sessionData, setSessionData] = useState<SessionData | undefined>(undefined);
+    const [activeSensorData, setactiveSensorData] = useState<ApiSensorData | undefined>(
+        undefined,
+    );
     const [jwt, setJwt] = useState<string | undefined>(undefined);
 
     useEffect(() => {
@@ -46,8 +53,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await sessionData.deleteSession();
     };
 
-    function publicSetActiveSensor(sensor: ApiUserSensor | undefined) {
-        setActiveSensor(sensor);
+    function publicSetActiveSensor(
+        value: { sensor: ApiUserSensor; data: ApiSensorData } | undefined,
+    ) {
+        setActiveSensor(value?.sensor);
+        setactiveSensorData(value?.data);
     }
 
     return (
@@ -56,6 +66,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 sessionData: sessionData,
                 activePlace,
                 activeSensor,
+                activeSensorData,
                 jwt,
                 setJwt,
                 setActivePlace: publicSetActivePlace,

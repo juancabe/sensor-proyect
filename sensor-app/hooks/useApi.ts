@@ -6,8 +6,8 @@ import { FetchRequestInit } from 'expo/fetch';
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
-// const BASE_API_URL = 'http://192.168.1.130:3000/api/v0';
-const BASE_API_URL = 'http://localhost:3000/api/v0';
+// const BASE_API_URL = 'https://192.168.1.130:3000/api/v0';
+const BASE_API_URL = 'https://localhost:3000/api/v0';
 // const BASE_API_URL = 'http://172.28.234.97:3000/api/v0';
 
 export interface ReturnedError<E> {
@@ -234,6 +234,7 @@ export default function useApi<B, R, E>(
                     throw 'Shortcuting api call due to JWT change';
                 }
                 const [r, ok] = ret;
+                setError(undefined);
                 setReturnedOk(ok);
                 setResponse(r);
             } catch (e: any) {
@@ -253,6 +254,7 @@ export default function useApi<B, R, E>(
 
         return () => {
             controller.abort('useApi dependencies changed');
+            setError(undefined);
             setLoading(false);
         };
     }, [urlParams, endpoint_path, method, body, ctx.sessionData, ctx.setJwt, ctx.jwt]);

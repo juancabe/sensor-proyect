@@ -1,8 +1,7 @@
 import { StyleSheet } from 'react-native';
-import { ThemedText } from './ThemedText';
-import { ThemedView } from './ThemedView';
-import { useTheme } from '@react-navigation/native';
-import useLayerColor from '@/hooks/useLayerColor';
+import { Card } from '@/ui/components/Card';
+import { Box, Text } from '@/ui/theme';
+import { BoxV } from '@/ui/components/BoxV';
 
 // New props interface
 export interface LabelValueProps {
@@ -12,23 +11,19 @@ export interface LabelValueProps {
 }
 
 export default function LabelValue(props: LabelValueProps) {
-    const backgroundColor = useLayerColor();
-
     return (
-        <ThemedView
-            style={[
-                styles.labelValueContainer,
-                props.horizontal
-                    ? { flexDirection: 'row' }
-                    : {
-                          flexDirection: 'column',
-                      },
-                { backgroundColor: backgroundColor },
-            ]}
+        <BoxV
+            variant="field"
+            backgroundColor="keyBackground"
+            flexDirection={props.horizontal ? 'row' : 'column'}
+            alignItems="center"
+            style={{ padding: 0 }}
         >
-            <ThemedText style={styles.label}>{props.label}</ThemedText>
-            {props.children}
-        </ThemedView>
+            <Text variant="body" paddingRight="m" paddingLeft="m">
+                {props.label}
+            </Text>
+            <BoxV variant="valueCell">{props.children}</BoxV>
+        </BoxV>
     );
 }
 

@@ -4,7 +4,7 @@ import { ThemedView } from './ui-elements/ThemedView';
 import { TEXT_STYLES, ThemedText } from './ui-elements/ThemedText';
 import CloseButton from './CloseButton';
 import ThemedButton from './ui-elements/ThemedButton';
-import ThemedForm, { FieldConfig } from './ui-elements/ThemedForm';
+import Form, { FieldConfig } from './ui-elements/ThemedForm';
 import useLayerColor from '@/hooks/useLayerColor';
 import useInvertedLayerColor from '@/hooks/useInvertedLayerColor';
 import { useEffect, useState } from 'react';
@@ -85,7 +85,7 @@ export default function SensorCrudModal({
                     >
                         {sensor.name}
                     </ThemedText>
-                    <CloseButton onPress={() => handleClose(false)}></CloseButton>
+                    <CloseButton onPress={() => handleClose()}></CloseButton>
                 </View>
                 {deletePressed === 0 ? (
                     <View
@@ -104,7 +104,7 @@ export default function SensorCrudModal({
                             <ThemedText style={[TEXT_STYLES.body, { paddingLeft: 5 }]}>
                                 Edit sensor name
                             </ThemedText>
-                            <ThemedForm fields={crudModalFormFields}></ThemedForm>
+                            <Form fields={crudModalFormFields}></Form>
                         </View>
                         <ThemedButton
                             title="Confirm edit"

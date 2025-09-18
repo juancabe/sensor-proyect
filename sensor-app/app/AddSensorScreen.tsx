@@ -1,5 +1,5 @@
 import BindedColorPicker from '@/components/BindedColorPicker';
-import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
+import Form, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import { useAppContext } from '@/components/AppProvider';
 import BackgroundView from '@/components/ui-elements/BackgroundView';
 import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
@@ -18,13 +18,11 @@ import { ThemedScrollView } from '@/components/ui-elements/ThemedScrollView';
 import { PostSensor } from '@/bindings/api/endpoints/sensor/PostSensor';
 import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
 import SensorsModal from '@/components/FeedbackModal';
-import useRedirect from '@/hooks/useRedirect';
+import { Redirect } from 'expo-router';
 
 const secondaryColor = '#58a4b0';
 
 export default function AddSensorScreen() {
-    const redirect = useRedirect();
-
     const ble = useBLE();
     const ctx = useAppContext();
 
@@ -208,14 +206,14 @@ export default function AddSensorScreen() {
     ];
 
     return (
-        <BackgroundView secondaryColor={secondaryColor}>
+        <BackgroundView>
             <SensorsModal visible={modalVisible}>
                 <ThemedView style={[styles.feedbackContainer]}>
                     <ThemedText>Sensor correctly configured</ThemedText>
                     <ThemedView style={[styles.feedbackButtonsContainer]}>
                         <Button
                             title="Go back to places"
-                            onPress={() => redirect.redirectToIndex()}
+                            onPress={() => <Redirect href={'/'}></Redirect>}
                         ></Button>
                     </ThemedView>
                 </ThemedView>
@@ -228,7 +226,7 @@ export default function AddSensorScreen() {
                     Fill the form and select the sensor from the sensors discovered via
                     Bluethooth
                 </ThemedText>
-                <ThemedForm fields={formFields}></ThemedForm>
+                <Form fields={formFields}></Form>
                 <BindedColorPicker
                     colorValues={color.API_COLORS}
                     selectedColor={color.color}

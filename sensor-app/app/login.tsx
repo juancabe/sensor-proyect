@@ -1,35 +1,39 @@
-import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
-import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
-import { ThemedView } from '@/components/ui-elements/ThemedView';
+import Form, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Keyboard } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Keyboard } from 'react-native';
 // import * as auth from '@/helpers/auth';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
 import useApi from '@/hooks/useApi';
-import useRedirect from '@/hooks/useRedirect';
 import { useApiUsername } from '@/hooks/api/useApiUsername';
 import { useApiRawPassword } from '@/hooks/api/useApiRawPassword';
 import { useApiEmail } from '@/hooks/api/useApiEmail';
 import { PostUser } from '@/bindings/api/endpoints/user/PostUser';
 import { PostSession } from '@/bindings/api/endpoints/session/PostSession';
 import { useAppContext } from '@/components/AppProvider';
+import { Card } from '@/ui/components/Card';
+import { Box, Text } from '@/ui/theme';
+import { Button } from '@/ui/components/Button';
+import BackgroundView from '@/components/ui-elements/BackgroundView';
+import { ApiRawPassword } from '@/bindings/api/types/ApiRawPassword';
+import { ApiUsername } from '@/bindings/api/types/ApiUsername';
+import { Redirect, useRouter } from 'expo-router';
 
 export default function Login() {
-    const redirect = useRedirect();
     const ctx = useAppContext();
 
-    const [type, setType] = useState<'register' | 'login'>('login');
+    const [type, setType] = useState<'Register' | 'Login'>('Login');
 
     const username = useApiUsername();
     const password = useApiRawPassword();
     const repeatPassword = useApiRawPassword();
     const email = useApiEmail();
 
+    const [triedInvalidField, setTriedInvalidField] = useState<boolean>(false);
+
     const [holeFormError, setHoleFormError] = useState<string | null>(null);
 
     const body = useMemo(() => {
-        if (type === 'register') {
+        if (type === 'Register') {
             let body: PostUser = {
                 username: username.username,
                 raw_password: password.password,
@@ -48,11 +52,13 @@ export default function Login() {
     }, [type, email.email, password.password, username.username]);
 
     const endpoint = useMemo(() => {
-        return type === 'register' ? '/user' : `/session`;
+        return type === 'Register' ? '/user' : `/session`;
     }, [type]);
 
     const [method, setMethod] = useState<'POST' | undefined>(undefined);
     const api = useApi(endpoint, method, false, body);
+
+    const router = useRouter();
 
     useEffect(() => {
         const fn = async () => {
@@ -63,40 +69,42 @@ export default function Login() {
                     password.password,
                 );
                 await ctx.sessionData?.setSession(username.username, password.password);
-                redirect.redirectToIndex();
+                router.replace('/');
+                return;
             } else if (api.returnedOk === false) {
                 setMethod(undefined);
             }
         };
         fn();
-    }, [api.returnedOk, redirect, username.username, password.password, ctx.sessionData]);
+    }, [api.returnedOk, username.username, password.password, ctx.sessionData, router]);
 
     useEffect(() => {
         if (
+            !(type === 'Login') &&
             password.isValid &&
-            repeatPassword.isValid &&
+            (repeatPassword.password.length > 0 || triedInvalidField) &&
             !(password.password === repeatPassword.password)
         ) {
             setHoleFormError("Passwords don't match");
-        } else if (password.password === repeatPassword.password) {
+        } else if (
+            type === 'Login' ||
+            password.password === repeatPassword.password ||
+            (repeatPassword.password.length <= 0 && !triedInvalidField)
+        ) {
             setHoleFormError(null);
         }
-    }, [password, repeatPassword]);
+    }, [type, password, repeatPassword, triedInvalidField]);
 
-    const isSubmissionDisabled = useMemo(() => {
-        console.log('api.loading: ', api.loading);
-        if (api.loading) return true;
-
-        const isLoginValid = username.isValid && password.isValid;
-        const isRegisterValid =
-            isLoginValid &&
+    const validFormInput = useMemo(() => {
+        const loginValid = username.isValid && password.isValid;
+        const registerValid =
+            loginValid &&
             repeatPassword.isValid &&
             email.isValid &&
             password.password === repeatPassword.password;
 
-        return type === 'login' ? !isLoginValid : !isRegisterValid;
+        return type === 'Login' ? loginValid : registerValid;
     }, [
-        api.loading,
         email.isValid,
         password.isValid,
         password.password,
@@ -106,15 +114,32 @@ export default function Login() {
         username.isValid,
     ]);
 
+    const isSubmissionDisabled = useMemo(() => {
+        console.log('api.loading: ', api.loading);
+        if (api.loading) return true;
+        if (!triedInvalidField) return false;
+        return !validFormInput;
+    }, [api.loading, validFormInput, triedInvalidField]);
+
     const oppositeType = () => {
-        if (type === 'login') {
-            return 'register';
+        if (type === 'Login') {
+            return 'Register';
         } else {
-            return 'login';
+            return 'Login';
         }
     };
 
     const handleSubmission = () => {
+        if (!triedInvalidField) {
+            setTriedInvalidField(true);
+            if (!validFormInput) {
+                console.log('the form is invalid');
+                return;
+            } else {
+                console.log('the form is valid');
+            }
+        }
+
         setHoleFormError(null);
         api.clearError();
         Keyboard.dismiss();
@@ -126,14 +151,14 @@ export default function Login() {
             placeholder: 'Username',
             value: username.username,
             onChangeText: username.setUsername,
-            error: username.error,
+            error: triedInvalidField || type === 'Register' ? username.error : undefined,
         },
         {
             placeholder: 'Password',
             value: password.password,
             onChangeText: password.setPassword,
             secureTextEntry: true,
-            error: password.error,
+            error: triedInvalidField || type === 'Register' ? password.error : undefined,
         },
     ];
 
@@ -150,13 +175,12 @@ export default function Login() {
             value: repeatPassword.password,
             onChangeText: repeatPassword.setPassword,
             secureTextEntry: true,
-            error: repeatPassword.error,
         },
     ];
 
     return (
-        <SafeAreaView>
-            <ThemedView
+        <BackgroundView>
+            <Box
                 style={{
                     padding: 20,
                     paddingTop: 60,
@@ -167,29 +191,40 @@ export default function Login() {
                     height: '100%',
                 }}
             >
-                <ThemedText style={TEXT_STYLES.heading1}>Sensor App</ThemedText>
-                <ThemedView style={{ width: '100%', gap: 30 }}>
-                    <ThemedForm
-                        fields={type === 'login' ? loginFields : registerFields}
-                    />
-                    <Button
-                        title={type}
-                        disabled={isSubmissionDisabled}
-                        onPress={handleSubmission}
-                    />
-                </ThemedView>
-                <ErrorBox
-                    error={
-                        api.error
-                            ? api.error.error?.status === 401
-                                ? 'Invalid Credentials'
-                                : api.formattedError
-                            : null
-                    }
-                ></ErrorBox>
-                <ErrorBox error={holeFormError}></ErrorBox>
-                <Button title={oppositeType()} onPress={() => setType(oppositeType())} />
-            </ThemedView>
-        </SafeAreaView>
+                <Text variant="title">Sensor App</Text>
+                <Box
+                    flex={1}
+                    alignContent="center"
+                    justifyContent="space-between"
+                    flexDirection="column"
+                    style={{ marginTop: '7%', marginBottom: '7%' }}
+                >
+                    <Card variant="elevated" style={{ minWidth: 300 }}>
+                        <Form fields={type === 'Login' ? loginFields : registerFields} />
+                        <Button
+                            variant="positive"
+                            label={type}
+                            disabled={isSubmissionDisabled}
+                            onPress={handleSubmission}
+                        />
+                    </Card>
+                    {api.error && (
+                        <ErrorBox
+                            error={
+                                api.error.error?.status === 401
+                                    ? 'Invalid Credentials'
+                                    : api.formattedError
+                            }
+                        ></ErrorBox>
+                    )}
+                    {holeFormError && <ErrorBox error={holeFormError}></ErrorBox>}
+                </Box>
+                <Button
+                    variant="warning"
+                    label={oppositeType()}
+                    onPress={() => setType(oppositeType())}
+                />
+            </Box>
+        </BackgroundView>
     );
 }

@@ -6,20 +6,18 @@ import { Button, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect, useMemo, useState } from 'react';
 
-import ThemedForm, { FieldConfig } from '@/components/ui-elements/ThemedForm';
+import Form, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import ErrorBox from '@/components/ui-elements/ErrorBox';
 import useApi from '@/hooks/useApi';
 import { PostPlace } from '@/bindings/api/endpoints/place/PostPlace';
-import useRedirect from '@/hooks/useRedirect';
 import { useApiEntityName } from '@/hooks/api/useApiEntityName';
 import { useApiDescription } from '@/hooks/api/useApiDescription';
 import { useApiColor } from '@/hooks/api/useApiColor';
+import { Redirect } from 'expo-router';
 
 const secondaryColor = '#ffd9009b';
 
 export default function AddPlaceScreen() {
-    const { redirectToIndex } = useRedirect();
-
     // -- API RELATED --
     const name = useApiEntityName();
     const description = useApiDescription();
@@ -38,12 +36,6 @@ export default function AddPlaceScreen() {
 
     const [method, setMethod] = useState<'POST' | undefined>(undefined);
     const postPlace = useApi('/place', method, false, body);
-
-    useEffect(() => {
-        if (postPlace.returnedOk) {
-            redirectToIndex();
-        }
-    }, [postPlace.returnedOk, redirectToIndex]);
 
     useEffect(() => {
         if (postPlace.error) {
@@ -69,12 +61,17 @@ export default function AddPlaceScreen() {
             error: description.error,
         },
     ];
+
+    if (postPlace.returnedOk) {
+        return <Redirect href={'/home'} />;
+    }
+
     return (
-        <BackgroundView secondaryColor={secondaryColor}>
+        <BackgroundView>
             <SafeAreaView>
                 <ThemedView style={[styles.mainContainer]}>
                     <ThemedText style={TEXT_STYLES.heading1}>Add place</ThemedText>
-                    <ThemedForm fields={formFields}></ThemedForm>
+                    <Form fields={formFields}></Form>
                     <BindedColorPicker
                         selectedColor={color.color}
                         onColorChange={(new_color) => {

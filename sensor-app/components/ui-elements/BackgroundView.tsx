@@ -2,32 +2,33 @@ import React from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { useTheme } from '@react-navigation/native';
 import Svg, { Defs, RadialGradient, Stop, Circle, CircleProps } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '@shopify/restyle';
+import { palette, Theme } from '@/ui/theme';
+import { hex6WithAlpha } from '@/helpers/withAlpha';
 
 type BackgroundViewProps = {
     children: React.ReactNode;
-    secondaryColor?: string;
     style?: object;
 };
 
-export default function BackgroundView({
-    children,
-    secondaryColor,
-    style,
-}: BackgroundViewProps) {
-    const theme = useTheme();
-    const bg = theme.colors.background;
-    const accent = secondaryColor ?? '#7c3aed';
+export default function BackgroundView({ children, style }: BackgroundViewProps) {
+    const theme = useTheme<Theme>();
+
+    const bg = theme.colors.mainBackground;
+    console.warn('bg: ', bg);
+    const accent = bg;
+    console.warn('accent: ', accent);
+
     const { width, height } = useWindowDimensions();
 
     const aspectRatio = height / width;
     const mappedMaxHeight = aspectRatio * 100;
 
-    const CIRCLES_NUM = 10;
+    const CIRCLES_NUM = 20;
 
-    const maxRadius = 60;
+    const maxRadius = 100;
     const circles = React.useMemo(() => {
         const arr: CircleProps[] = [];
         for (let i = 0; i < CIRCLES_NUM; i++) {
@@ -48,8 +49,6 @@ export default function BackgroundView({
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
             />
-
-            {/* Soft, fused aurora blobs */}
 
             <Svg
                 width="100%"
@@ -96,6 +95,6 @@ export default function BackgroundView({
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
+    container: { flex: 1, padding: 10 },
     content: { flex: 1 },
 });

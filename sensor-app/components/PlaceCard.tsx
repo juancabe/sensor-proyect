@@ -1,19 +1,18 @@
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet } from 'react-native';
 import { useAppContext } from './AppProvider';
-import { TEXT_STYLES, ThemedText } from './ui-elements/ThemedText';
-// import SensorCard from './SensorCard';
-import { ThemedView } from './ui-elements/ThemedView';
 import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
 import useApi from '@/hooks/useApi';
 import { GetSensor } from '@/bindings/api/endpoints/sensor/GetSensor';
 import { GetSensorResponse } from '@/bindings/api/endpoints/sensor/GetSensorResponse';
-import SensorCard from './SensorCard';
 import LabelValue from './ui-elements/LabelValue';
 import ThemedButton from './ui-elements/ThemedButton';
-import { ListPlus } from 'lucide-react-native';
+import { Circle, ListPlus } from 'lucide-react-native';
 import useLayerColor from '@/hooks/useLayerColor';
+import { Card } from '@/ui/components/Card';
+import { Box, Text } from '@/ui/theme';
+import { Button } from '@/ui/components/Button';
 
 export interface PlaceCardProps {
     place: ApiUserPlace;
@@ -54,18 +53,20 @@ export default function PlaceCard({ place }: PlaceCardProps) {
         }, 0);
     };
 
-    const layerBg = useLayerColor();
-
     return (
-        <ThemedView
-            style={[
-                styles.container,
-                { backgroundColor: place.color.replace('HEX_', '#') + '77' },
-            ]}
+        <Card
+            variant="elevated"
+            gap="s"
+            style={{
+                display: 'flex',
+                flexDirection: 'column',
+                borderColor: place.color,
+                borderWidth: 2,
+            }}
         >
-            <View style={styles.headerContainer}>
+            <Box flexDirection="row">
                 <LabelValue label="Name" horizontal={true}>
-                    <ThemedText style={TEXT_STYLES.heading3}>{place.name}</ThemedText>
+                    <Text variant="heading">{place.name}</Text>
                 </LabelValue>
                 {Platform.OS !== 'web' && (
                     <ThemedButton
@@ -74,53 +75,38 @@ export default function PlaceCard({ place }: PlaceCardProps) {
                         onPress={handleAddSensorPress}
                     />
                 )}
-            </View>
+            </Box>
             {place.description ? (
-                <ThemedText style={TEXT_STYLES.label}>{place.description}</ThemedText>
+                <Text variant="caption">{place.description}</Text>
             ) : null}
 
-            <View
-                style={[
-                    styles.layer,
-                    { backgroundColor: layerBg, width: '100%', padding: 5 },
-                ]}
-            >
-                <ThemedText style={[TEXT_STYLES.heading2, { padding: 5 }]}>
-                    Sensors
-                </ThemedText>
-                {api.response && (api.response as any).length ? (
+            <Text variant="body">Sensors</Text>
+            {api.response && (api.response as any).length ? (
+                <Box flexDirection="column">
                     <ScrollView style={{}}>
                         {(api.response as GetSensorResponse[]).map(
                             ({ sensor, last_data }) => (
-                                <SensorCard
+                                <Button
+                                    variant="primary"
                                     key={sensor.device_id}
-                                    sensor={sensor}
-                                    data={last_data}
-                                    reloadSensorSource={() => {
-                                        reloadApi();
+                                    label={sensor.name}
+                                    icon={Circle}
+                                    iconColor={sensor.color}
+                                    onPress={() => {
+                                        ctx.setActiveSensor({ sensor, data: last_data });
+                                        router.push('/sensor_detail');
                                     }}
-                                />
+                                ></Button>
                             ),
                         )}
                     </ScrollView>
-                ) : (
-                    <View
-                        style={{
-                            display: 'flex',
-                            flexDirection: 'row',
-                            justifyContent: 'center',
-                            padding: 10,
-                            backgroundColor: layerBg,
-                            borderRadius: 10,
-                        }}
-                    >
-                        <ThemedText style={TEXT_STYLES.heading3}>
-                            No sensors available
-                        </ThemedText>
-                    </View>
-                )}
-            </View>
-        </ThemedView>
+                </Box>
+            ) : (
+                <Card variant="elevated">
+                    <Text variant="body">No sensors available</Text>
+                </Card>
+            )}
+        </Card>
     );
 }
 

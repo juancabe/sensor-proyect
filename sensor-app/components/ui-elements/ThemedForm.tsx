@@ -3,6 +3,7 @@ import React from 'react';
 import { StyleSheet, View, type TextInputProps } from 'react-native';
 import { TextInput } from 'react-native';
 import ErrorBox from './ErrorBox';
+import { Box } from '@/ui/theme';
 
 export type FieldConfig = {
     placeholder: string;
@@ -16,19 +17,19 @@ export type FieldConfig = {
     error?: string;
 };
 
-export type ThemedFormProps = {
+export type FormProps = {
     fields: FieldConfig[];
     style?: object;
 };
 
-export default function ThemedForm({ fields, style }: ThemedFormProps) {
+export default function Form({ fields, style }: FormProps) {
     const theme = useTheme();
     const { colors } = theme;
 
     return (
-        <View style={[styles.container, style]}>
+        <Box style={[style]}>
             {fields.map((f, idx) => (
-                <View key={idx}>
+                <Box key={idx}>
                     <TextInput
                         style={[
                             styles.input,
@@ -57,9 +58,9 @@ export default function ThemedForm({ fields, style }: ThemedFormProps) {
                             }}
                         />
                     ) : null}
-                </View>
+                </Box>
             ))}
-        </View>
+        </Box>
     );
 }
 

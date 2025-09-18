@@ -1,33 +1,29 @@
+// app/index.tsx
+import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
+import { Redirect } from 'expo-router';
 import LoadingScreen from '@/components/LoadingScreen';
 import { SessionData } from '@/persistence/SessionData';
-import { useEffect, useState } from 'react';
-import Login from './login';
-import Home from './home';
-import { Platform } from 'react-native';
 
 export default function Index() {
-    const [sessionData, setSessionData] = useState<SessionData | undefined>(undefined);
-    useEffect(() => {
-        const loadSession = async () => {
-            const sd = await SessionData.create();
-            console.debug('SessionData created: ', sd);
-            setSessionData(sd);
-        };
+    const [sessionData, setSessionData] = useState<SessionData | null>(null);
+    const [ready, setReady] = useState(false);
 
-        loadSession();
+    useEffect(() => {
+        const load = async () => {
+            const sd = await SessionData.create();
+            setSessionData(sd);
+            setReady(true);
+        };
+        load();
     }, []);
 
-    if (sessionData === undefined) {
-        return <LoadingScreen />;
-    }
+    if (!ready) return <LoadingScreen />;
 
     if (Platform.OS === 'web') {
-        return <Home></Home>; // Web doesn't need persisted sessionData to have a session (JWT in headers)
+        // On web you rely on headers/cookies; go straight to home
+        return <Redirect href="/home" />;
     }
 
-    if (sessionData.all_set()) {
-        return <Home></Home>;
-    } else {
-        return <Login></Login>;
-    }
+    return <Redirect href={sessionData?.all_set() ? '/home' : '/login'} />;
 }

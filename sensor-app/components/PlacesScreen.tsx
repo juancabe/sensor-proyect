@@ -1,113 +1,89 @@
-import { StyleSheet } from 'react-native';
-import { ThemedView } from './ui-elements/ThemedView';
-import ThemedHeader from './ThemedHeader';
-import ThemedButton from './ui-elements/ThemedButton';
 import { HousePlus, ListRestart } from 'lucide-react-native';
 import LoadingScreen from './LoadingScreen';
-import { ThemedScrollView } from './ui-elements/ThemedScrollView';
-import ErrorBox from './ui-elements/ErrorBox';
-import useLayerColor from '@/hooks/useLayerColor';
-import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import useApi from '@/hooks/useApi';
-import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
-import useRedirect from '@/hooks/useRedirect';
 import PlaceCard from './PlaceCard';
+import { Box, Text } from '@/ui/theme';
+import { Card } from '@/ui/components/Card';
+import { ScrollView } from 'react-native';
+import { Button } from '@/ui/components/Button';
+import { BoxV } from '@/ui/components/BoxV';
+import { useRouter } from 'expo-router';
+import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
 
-export default function PlacesScreen() {
+export interface PlacesScreenProps {
+    reloadPlaces: () => void;
+    isLoading: boolean;
+    places?: ApiUserPlace[];
+}
+
+export default function PlacesScreen({
+    reloadPlaces: reload,
+    isLoading,
+    places,
+}: PlacesScreenProps) {
     const router = useRouter();
-    const [method, setMethod] = useState<'GET' | undefined>('GET');
-    const queryParams = useMemo<[string, string][]>(() => [['kind', 'UserPlaces']], []);
-    const placeApi = useApi<undefined, ApiUserPlace[], undefined>(
-        '/place',
-        method,
-        false,
-        undefined,
-        queryParams,
-    );
-    const redirectInvalidSession = useRedirect().redirectToLogin;
-
-    useEffect(() => {
-        if (placeApi.error?.error && placeApi.error?.error.status === 401) {
-            redirectInvalidSession();
-        } else {
-            console.log('error changed: ', placeApi.error);
-        }
-    }, [placeApi.error, redirectInvalidSession]);
-
-    const layerColor = useLayerColor();
-
-    const reloadApi = () => {
-        setMethod(undefined);
-        setTimeout(() => {
-            // Using setTimeout so that it runs in next React cycle
-            setMethod('GET');
-        }, 0);
-    };
-
-    const isLoading = placeApi.loading || (!placeApi.response && !placeApi.error);
 
     return (
-        <ThemedView style={[styles.placesContainer, { backgroundColor: layerColor }]}>
-            <ThemedView style={styles.headerContainer}>
-                <ThemedHeader>Places</ThemedHeader>
-                <ThemedView style={[styles.buttonsContainer]} noBackground={true}>
-                    <ThemedButton
+        <BoxV variant="field" padding="m" margin="m" gap="s" flex={1}>
+            <Card variant="elevated" flexDirection="row" justifyContent="space-between">
+                <Card variant="subtle">
+                    <Text variant="heading">Places</Text>
+                </Card>
+                <BoxV variant="field" flexDirection="row" gap="l">
+                    <Button
+                        variant="positive"
                         icon={HousePlus}
                         onPress={() => {
-                            router.navigate('/AddPlaceScreen');
+                            router.push('/AddPlaceScreen');
                         }}
-                    ></ThemedButton>
-                    <ThemedButton
+                    ></Button>
+                    <Button
+                        variant="warning"
                         icon={ListRestart}
-                        onPress={reloadApi}
+                        onPress={reload}
                         disabled={isLoading}
-                    ></ThemedButton>
-                </ThemedView>
-            </ThemedView>
+                    ></Button>
+                </BoxV>
+            </Card>
 
             {isLoading ? (
                 <LoadingScreen />
             ) : (
-                <ThemedScrollView
-                    style={{
-                        backgroundColor: 'transparent',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 20,
-                    }}
-                >
-                    {placeApi.response &&
-                        placeApi.response.map((place) => (
-                            <ThemedView key={place.name} noBackground={true}>
-                                <PlaceCard place={place} />
-                            </ThemedView>
-                        ))}
-                    <ErrorBox error={placeApi.formattedError} />
-                </ThemedScrollView>
+                <ScrollView style={{ flex: 1 }}>
+                    <Card variant="subtle" flex={1}>
+                        <Box
+                            gap="l"
+                            style={{
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                flexDirection: 'row',
+                                alignContent: 'center',
+                                justifyContent: 'space-evenly',
+                            }}
+                        >
+                            {places &&
+                                places.map((place) => (
+                                    <PlaceCard place={place} key={place.name} />
+                                ))}
+                        </Box>
+                    </Card>
+                </ScrollView>
             )}
-        </ThemedView>
+        </BoxV>
     );
 }
 
-const styles = StyleSheet.create({
-    headerContainer: {
-        display: 'flex',
-        flexDirection: 'row',
-        marginRight: 10,
-        marginLeft: 10,
-    },
-    placesContainer: {
-        flex: 1,
-        margin: 10,
-        borderRadius: 10,
-        padding: 10,
-    },
-    buttonsContainer: {
-        flex: 1,
-        flexDirection: 'row',
-        justifyContent: 'flex-end',
-        alignItems: 'center',
-        gap: 20,
-    },
-});
+// const styles = StyleSheet.create({
+//     headerContainer: {
+//         display: 'flex',
+//         flexDirection: 'row',
+//         marginRight: 10,
+//         marginLeft: 10,
+//     },
+//     buttonsContainer: {
+//         flex: 1,
+//         flexDirection: 'row',
+//         justifyContent: 'flex-end',
+//         alignItems: 'center',
+//         gap: 20,
+//     },
+// });

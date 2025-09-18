@@ -11,9 +11,9 @@ import { SensorDataLoader } from '@/helpers/sensorDataLoader';
 import { hex6WithAlpha } from '@/helpers/withAlpha';
 import useApi from '@/hooks/useApi';
 import useLayerColor from '@/hooks/useLayerColor';
-import useRedirect from '@/hooks/useRedirect';
 import { DataShape, ShapedDatumArray } from '@/model/ShapedData';
 import { useTheme } from '@react-navigation/native';
+import { Redirect } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
@@ -109,7 +109,7 @@ export default function SensorDetail() {
 
     const apiParams = useMemo(() => computeParams(apiBody), [apiBody]);
 
-    const [apiMethod, setApiMethod] = useState<'GET' | undefined>('GET');
+    const [apiMethod, setApiMethod] = useState<'GET' | undefined>('GET'); // TODO: periodically update data
     const api = useApi('/sensor_data', apiMethod, false, undefined, apiParams);
 
     // work with received data
@@ -163,7 +163,6 @@ export default function SensorDetail() {
     // }, []);
     //
 
-    const redirect = useRedirect();
     const layerColor = useLayerColor();
     const theme = useTheme();
 
@@ -173,7 +172,7 @@ export default function SensorDetail() {
     }
 
     if (!sensor) {
-        return redirect.redirectToIndex();
+        return <Redirect href={'/'} />;
     }
 
     const keyData = data.filter((d) => d.key === selectedKey).at(0);
@@ -184,7 +183,7 @@ export default function SensorDetail() {
     console.log('secondaryColor', secondaryColor);
 
     return (
-        <BackgroundView secondaryColor={secondaryColor}>
+        <BackgroundView>
             <ThemedView style={styles.headerContainer}>
                 <ThemedText style={TEXT_STYLES.heading2}>Data for sensor</ThemedText>
                 <ThemedText style={TEXT_STYLES.heading1}>
