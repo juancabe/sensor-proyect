@@ -1,11 +1,17 @@
 import { ApiSensorData } from '@/bindings/api/endpoints/sensor_data/ApiSensorData';
-import { DataShape, ShapedData, TimestampedData } from '@/model/ShapedData';
+import {
+    DataShape,
+    ShapedData,
+    TimestampedData,
+    UNIXTimestampSeconds,
+} from '@/model/ShapedData';
 
 export class SensorDataLoader {
     private _data: TimestampedData;
     private _numerical_keys: string[];
     private _data_shape: DataShape;
     private _shaped_data: ShapedData;
+    private _last_data: [object, UNIXTimestampSeconds] | undefined;
 
     private constructor(
         data: TimestampedData,
@@ -18,10 +24,15 @@ export class SensorDataLoader {
         if (this._numerical_keys)
             this._shaped_data = ShapedData.load(data_shape, data, numerical_keys);
         else this._shaped_data = ShapedData.default();
+        this._last_data = data.at(data.length - 1);
     }
 
     getData(): ShapedData {
         return this._shaped_data;
+    }
+
+    getLastData(): [object, UNIXTimestampSeconds] | undefined {
+        return this._last_data;
     }
 
     getKeys(): string[] {

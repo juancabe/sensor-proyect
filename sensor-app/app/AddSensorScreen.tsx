@@ -2,11 +2,9 @@ import BindedColorPicker from '@/components/BindedColorPicker';
 import Form, { FieldConfig } from '@/components/ui-elements/ThemedForm';
 import { useAppContext } from '@/components/AppProvider';
 import BackgroundView from '@/components/ui-elements/BackgroundView';
-import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
-import { ThemedView } from '@/components/ui-elements/ThemedView';
 import useBLE from '@/hooks/useBLE';
 import React, { useEffect, useState } from 'react';
-import { Button, StyleSheet } from 'react-native';
+import { ScrollView } from 'react-native';
 import { Device } from 'react-native-ble-plx';
 
 import ErrorBox from '@/components/ui-elements/ErrorBox';
@@ -14,17 +12,18 @@ import { useApiEntityName } from '@/hooks/api/useApiEntityName';
 import { useApiDescription } from '@/hooks/api/useApiDescription';
 import { useApiColor } from '@/hooks/api/useApiColor';
 import useApi from '@/hooks/useApi';
-import { ThemedScrollView } from '@/components/ui-elements/ThemedScrollView';
 import { PostSensor } from '@/bindings/api/endpoints/sensor/PostSensor';
 import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
 import SensorsModal from '@/components/FeedbackModal';
-import { Redirect } from 'expo-router';
-
-const secondaryColor = '#58a4b0';
+import { Redirect, useRouter } from 'expo-router';
+import { Card } from '@/ui/components/Card';
+import { Box, Text } from '@/ui/theme';
+import { Button } from '@/ui/components/Button';
 
 export default function AddSensorScreen() {
     const ble = useBLE();
     const ctx = useAppContext();
+    const router = useRouter();
 
     const sensorName = useApiEntityName();
     const sensorDescription = useApiDescription();
@@ -93,6 +92,7 @@ export default function AddSensorScreen() {
     );
 
     const [selectedDevice, setSelectedDevice] = useState<Device | undefined>(undefined);
+    const [configuring, setConfiguring] = useState<boolean>(false);
 
     const api = useApi<PostSensor | undefined, ApiUserSensor, unknown>(
         '/sensor',
@@ -103,11 +103,13 @@ export default function AddSensorScreen() {
 
     const handleConnect = async (dev: Device) => {
         setSelectedDevice(dev);
+        setConfiguring(true);
         let device_info;
         try {
             device_info = await ble.connectToDevice(dev);
         } catch (e) {
-            // TODO: Good error
+            setError("Couldn't connect to the device");
+            setConfiguring(false);
             console.error('connect error: ', e);
         }
 
@@ -138,6 +140,7 @@ export default function AddSensorScreen() {
                 await ble.configureSensor(dev, wifiSsid!, wifiPass!);
                 setModalVisible(true);
             } catch (e) {
+                setConfiguring(false);
                 setError('An error occured while configuring the sensor via BLE');
                 console.error('Error on configure sensor: ', e);
             }
@@ -153,29 +156,34 @@ export default function AddSensorScreen() {
         }
 
         if (api.error) {
+            setConfiguring(false);
             console.error('api error: ', api.error);
         }
     }, [api, selectedDevice, wifiSsid, wifiPass, ble]);
 
+    const requestPermissions = ble.requestPermissions;
+    const scanForPeripherals = ble.scanForPeripherals;
+    const stopScanForPeripherals = ble.stopScanForPeripherals;
+
     useEffect(() => {
         const init_ble = async () => {
             try {
-                if (!ble.stopScanForPeripherals) {
+                if (!stopScanForPeripherals) {
                     throw 'No ble device';
                 }
-                await ble.stopScanForPeripherals();
+                await stopScanForPeripherals();
             } catch (e) {
                 console.log('Error while trying to stop scan: ', e);
             }
-            await ble.requestPermissions();
-            await ble.scanForPeripherals();
+            await requestPermissions();
+            await scanForPeripherals();
         };
         init_ble();
-    }, []);
+    }, [requestPermissions, scanForPeripherals, stopScanForPeripherals]);
 
     if (!ctx.activePlace) {
         console.error('No active place set when on addSensorScreen');
-        return <ThemedView></ThemedView>;
+        return <Redirect href={'/home'}></Redirect>;
     }
 
     const formFields: FieldConfig[] = [
@@ -208,98 +216,55 @@ export default function AddSensorScreen() {
     return (
         <BackgroundView>
             <SensorsModal visible={modalVisible}>
-                <ThemedView style={[styles.feedbackContainer]}>
-                    <ThemedText>Sensor correctly configured</ThemedText>
-                    <ThemedView style={[styles.feedbackButtonsContainer]}>
-                        <Button
-                            title="Go back to places"
-                            onPress={() => <Redirect href={'/'}></Redirect>}
-                        ></Button>
-                    </ThemedView>
-                </ThemedView>
+                <Card variant="subtle" gap="l">
+                    <Text variant="heading">Sensor correctly configured</Text>
+                    <Button
+                        label="Go back to home"
+                        onPress={() => router.push('/home')}
+                    ></Button>
+                </Card>
             </SensorsModal>
-            <ThemedView style={[styles.mainContainer]}>
-                <ThemedText style={TEXT_STYLES.heading1}>
-                    Add sensor to {ctx.activePlace.name}
-                </ThemedText>
-                <ThemedText style={[TEXT_STYLES.body, styles.screenDescription]}>
-                    Fill the form and select the sensor from the sensors discovered via
-                    Bluethooth
-                </ThemedText>
-                <Form fields={formFields}></Form>
-                <BindedColorPicker
-                    colorValues={color.API_COLORS}
-                    selectedColor={color.color}
-                    onColorChange={(color_new) => {
-                        console.log('Setting color to: ', color_new);
-                        color.setColor(color_new);
-                    }}
-                ></BindedColorPicker>
-                {api.formattedError ? (
-                    <ErrorBox error={api.formattedError}></ErrorBox>
-                ) : null}
-                {error ? <ErrorBox error={error}></ErrorBox> : null}
-                <ThemedScrollView>
-                    {ble.allDevices.map((dev) => {
-                        return (
-                            <ThemedView style={[styles.deviceContainer]} key={dev.id}>
-                                <ThemedText>{dev.id}</ThemedText>
-                                <Button
-                                    disabled={!allSet}
-                                    title="Configure"
-                                    onPress={() => handleConnect(dev)}
-                                />
-                            </ThemedView>
-                        );
-                    })}
-                </ThemedScrollView>
-            </ThemedView>
+            <Card variant="subtle" flex={1}>
+                <ScrollView>
+                    <Box gap="m" alignItems="center">
+                        <Box flexDirection="row" alignItems="flex-end" gap="s">
+                            <Text variant="heading">Add sensor to</Text>
+                            <Text variant="subTitle">{ctx.activePlace.name}</Text>
+                        </Box>
+                        <Text variant="body">
+                            Fill the form and select the sensor from the sensors
+                            discovered via Bluethooth
+                        </Text>
+                        <Box width={'100%'}>
+                            <Form fields={formFields}></Form>
+                        </Box>
+                        <BindedColorPicker
+                            colorValues={color.API_COLORS}
+                            selectedColor={color.color}
+                            onColorChange={(color_new) => {
+                                console.log('Setting color to: ', color_new);
+                                color.setColor(color_new);
+                            }}
+                        ></BindedColorPicker>
+                        {api.formattedError ? (
+                            <ErrorBox error={api.formattedError}></ErrorBox>
+                        ) : null}
+                        {error ? <ErrorBox error={error}></ErrorBox> : null}
+                        {ble.allDevices.map((dev) => {
+                            return (
+                                <Card variant="elevated" key={dev.id}>
+                                    <Text variant="heading">{dev.id}</Text>
+                                    <Button
+                                        disabled={!allSet || configuring}
+                                        label="Configure"
+                                        onPress={() => handleConnect(dev)}
+                                    />
+                                </Card>
+                            );
+                        })}
+                    </Box>
+                </ScrollView>
+            </Card>
         </BackgroundView>
     );
 }
-
-const styles = StyleSheet.create({
-    feedbackContainer: {
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderRadius: 10,
-        borderWidth: 3,
-        padding: 20,
-        gap: 20,
-        borderColor: secondaryColor,
-    },
-    feedbackButtonsContainer: {
-        display: 'flex',
-        flexDirection: 'row',
-        padding: 10,
-        gap: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    screenDescription: {
-        backgroundColor: '#3883',
-        padding: 5,
-        borderRadius: 5,
-    },
-    deviceContainer: {
-        padding: 10,
-        backgroundColor: '#d2ac00ff',
-        borderRadius: 10,
-        margin: 10,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 20,
-    },
-    mainContainer: {
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderRadius: 10,
-        borderWidth: 3,
-        borderColor: secondaryColor,
-        padding: 20,
-        gap: 10,
-    },
-});

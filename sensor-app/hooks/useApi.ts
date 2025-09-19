@@ -4,11 +4,11 @@ import { useAppContext } from '@/components/AppProvider';
 import { SessionData } from '@/persistence/SessionData';
 import { FetchRequestInit } from 'expo/fetch';
 import { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
 
 // const BASE_API_URL = 'https://192.168.1.130:3000/api/v0';
-const BASE_API_URL = 'https://localhost:3000/api/v0';
+// const BASE_API_URL = 'https://localhost:3000/api/v0';
 // const BASE_API_URL = 'http://172.28.234.97:3000/api/v0';
+const BASE_API_URL = 'https://sensor-server.juancb.ftp.sh:3000/api/v0';
 
 export interface ReturnedError<E> {
     status: number;

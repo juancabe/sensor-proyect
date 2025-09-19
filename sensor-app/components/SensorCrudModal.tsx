@@ -1,12 +1,6 @@
-import { StyleSheet, View } from 'react-native';
 import SensorsModal from './FeedbackModal';
-import { ThemedView } from './ui-elements/ThemedView';
-import { TEXT_STYLES, ThemedText } from './ui-elements/ThemedText';
 import CloseButton from './CloseButton';
-import ThemedButton from './ui-elements/ThemedButton';
 import Form, { FieldConfig } from './ui-elements/ThemedForm';
-import useLayerColor from '@/hooks/useLayerColor';
-import useInvertedLayerColor from '@/hooks/useInvertedLayerColor';
 import { useEffect, useState } from 'react';
 import useApi from '@/hooks/useApi';
 import { DeleteSensor } from '@/bindings/api/endpoints/sensor/DeleteSensor';
@@ -14,19 +8,25 @@ import { PutSensor } from '@/bindings/api/endpoints/sensor/PutSensor';
 import { useApiEntityName } from '@/hooks/api/useApiEntityName';
 import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
 import ErrorBox from './ui-elements/ErrorBox';
+import { Card } from '@/ui/components/Card';
+import { Text } from '@/ui/theme';
+import { Button } from '@/ui/components/Button';
+import { safeGet } from '@/helpers/objectWork';
 
 export interface SensorCrudModalProps {
-    reloadSensorSource: () => void;
+    gotoSensorSource: () => void;
     sensor: ApiUserSensor;
     displayed: boolean;
     setDisplayed: (value: boolean) => void;
+    setSensor: (sensor: ApiUserSensor) => void;
 }
 
 export default function SensorCrudModal({
-    reloadSensorSource,
+    gotoSensorSource: gotoSensorSource,
     sensor,
     displayed,
     setDisplayed,
+    setSensor,
 }: SensorCrudModalProps) {
     const [apiMethod, setApiMethod] = useState<undefined | 'DELETE' | 'PUT'>(undefined);
     const [apiBody, setApiBody] = useState<undefined | DeleteSensor | PutSensor>();
@@ -34,9 +34,22 @@ export default function SensorCrudModal({
 
     useEffect(() => {
         if (api.response && api.returnedOk) {
-            reloadSensorSource();
+            if (apiMethod === 'DELETE') {
+                gotoSensorSource();
+            } else {
+                const sensor = api.response as ApiUserSensor;
+                if (sensor && safeGet(sensor, 'device_id')) setSensor(sensor);
+                setDisplayed(false);
+            }
         }
-    }, [api.response, api.returnedOk, reloadSensorSource]);
+    }, [
+        api.response,
+        api.returnedOk,
+        gotoSensorSource,
+        apiMethod,
+        setSensor,
+        setDisplayed,
+    ]);
 
     const apiName = useApiEntityName(sensor.name);
     const crudModalFormFields: FieldConfig[] = [
@@ -50,10 +63,6 @@ export default function SensorCrudModal({
         },
     ];
 
-    const layerColor = useLayerColor();
-    const invertedLayerColor = useInvertedLayerColor();
-    const invertedLayerColor_2 = useInvertedLayerColor(2);
-
     const [deletePressed, setDeletePressed] = useState<number>(0);
 
     const handleClose = () => {
@@ -63,51 +72,24 @@ export default function SensorCrudModal({
 
     return (
         <SensorsModal visible={displayed}>
-            <ThemedView style={styles.crudModal}>
-                <View
-                    style={{
-                        display: 'flex',
-                        flexDirection: 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        paddingLeft: 8,
-                    }}
+            <Card variant="elevated" gap="m">
+                <Card
+                    variant="subtle"
+                    flexDirection="row"
+                    justifyContent="space-between"
+                    alignItems="center"
                 >
-                    <ThemedText
-                        style={[
-                            TEXT_STYLES.heading2,
-                            {
-                                backgroundColor: invertedLayerColor,
-                                padding: 5,
-                                borderRadius: 5,
-                            },
-                        ]}
-                    >
-                        {sensor.name}
-                    </ThemedText>
+                    <Text variant="heading">{sensor.name}</Text>
                     <CloseButton onPress={() => handleClose()}></CloseButton>
-                </View>
+                </Card>
                 {deletePressed === 0 ? (
-                    <View
-                        style={[
-                            styles.modalLayer,
-                            { backgroundColor: invertedLayerColor },
-                        ]}
-                    >
-                        <View
-                            style={{
-                                backgroundColor: layerColor,
-                                borderRadius: 5,
-                                padding: 5,
-                            }}
-                        >
-                            <ThemedText style={[TEXT_STYLES.body, { paddingLeft: 5 }]}>
-                                Edit sensor name
-                            </ThemedText>
+                    <Card variant="subtle" gap="m">
+                        <Card variant="elevated" gap="s">
+                            <Text variant="body">Edit sensor name</Text>
                             <Form fields={crudModalFormFields}></Form>
-                        </View>
-                        <ThemedButton
-                            title="Confirm edit"
+                        </Card>
+                        <Button
+                            label="Confirm edit"
                             onPress={() => {
                                 const body: PutSensor = {
                                     device_id: sensor.device_id,
@@ -117,32 +99,22 @@ export default function SensorCrudModal({
                                 setApiMethod('PUT');
                             }}
                             disabled={!apiName.isValid}
-                        ></ThemedButton>
-                    </View>
+                        ></Button>
+                    </Card>
                 ) : null}
 
-                <View style={[styles.modalLayer, { backgroundColor: layerColor }]}>
+                <Card variant="subtle">
                     {deletePressed > 0 ? (
-                        <ThemedText
-                            style={[
-                                TEXT_STYLES.body,
-                                {
-                                    color: 'red',
-                                    opacity: 1,
-                                    backgroundColor: invertedLayerColor_2,
-                                    padding: 5,
-                                    borderRadius: 5,
-                                },
-                            ]}
-                        >
+                        <Text variant="body" color="warning">
                             Deleting a sensor involves deleting all sensor data collected
                             until now, you may want to save a copy before the operation is
                             done. Once done, the operation cannot be reverted.
-                        </ThemedText>
+                        </Text>
                     ) : null}
 
-                    <ThemedButton
-                        title="Delete sensor"
+                    <Button
+                        variant="negative"
+                        label="Delete sensor"
                         onPress={() => {
                             if (deletePressed === 0) {
                                 setDeletePressed(1);
@@ -154,29 +126,10 @@ export default function SensorCrudModal({
                             setApiBody(body);
                             setApiMethod('DELETE');
                         }}
-                        style={{ backgroundColor: 'red' }}
-                    ></ThemedButton>
-                </View>
+                    ></Button>
+                </Card>
                 {api.formattedError && <ErrorBox error={api.formattedError}></ErrorBox>}
-            </ThemedView>
+            </Card>
         </SensorsModal>
     );
 }
-
-const styles = StyleSheet.create({
-    modalLayer: {
-        padding: 10,
-        margin: 5,
-        borderRadius: 10,
-        gap: 10,
-    },
-    crudModal: {
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        gap: 20,
-        borderRadius: 10,
-        padding: 15,
-        width: '80%',
-    },
-});

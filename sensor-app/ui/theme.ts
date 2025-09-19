@@ -198,7 +198,8 @@ const _makeRestyleTheme = (cs: 'dark' | 'light') => {
                 backgroundColor: 'disabled',
                 borderRadius: 'm',
                 paddingVertical: 's',
-                marginHorizontal: 'l',
+                marginHorizontal: 'm',
+                paddingHorizontal: 'm',
             },
         },
 

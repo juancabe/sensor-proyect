@@ -5,8 +5,9 @@ import {
     VariantProps,
     useTheme,
 } from '@shopify/restyle';
-import { Text, type Theme } from '../theme';
+import { Box, Text, type Theme } from '../theme';
 import type { LucideIcon } from 'lucide-react-native';
+import { useEffect, useMemo, useState } from 'react';
 
 // Base (buttonVariants must exist in your theme)
 const ButtonBase = createRestyleComponent<
@@ -18,7 +19,7 @@ const ButtonBase = createRestyleComponent<
 type ButtonProps = React.ComponentProps<typeof ButtonBase> & {
     label?: string;
     icon?: LucideIcon;
-    iconPosition?: 'left' | 'right';
+    iconPosition?: 'left' | 'right' | 'up' | 'down';
     iconSize?: number;
     iconColor?: string; // override if needed
     variant?: keyof Theme['buttonVariants'];
@@ -28,12 +29,14 @@ type ButtonProps = React.ComponentProps<typeof ButtonBase> & {
 function mergePressableStyle(
     variantStyle: StyleProp<ViewStyle> | undefined,
     userStyle?: PressableProps['style'],
+    opacity?: number,
 ): PressableProps['style'] {
     // Layout we want on buttons
     const rowCenter: ViewStyle = {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
+        opacity: opacity,
     };
 
     if (typeof userStyle === 'function') {
@@ -58,11 +61,17 @@ export function Button({
     const labelColorToken = variant === 'ghost' ? 'clickable' : 'mainBackground';
     const resolvedIconColor = iconColor ?? theme.colors[labelColorToken];
 
-    const finalStyle = mergePressableStyle(undefined, style);
-
     const hasLabel = !!label;
-    const showLeftIcon = !!IconCmp && iconPosition === 'left';
-    const showRightIcon = !!IconCmp && iconPosition === 'right';
+    const showLeftIcon = !!IconCmp && (iconPosition === 'left' || iconPosition === 'up');
+    const showRightIcon =
+        !!IconCmp && (iconPosition === 'right' || iconPosition === 'down');
+    const vertical = iconPosition === 'up' || iconPosition === 'down';
+
+    const [opacity, setOpacity] = useState<number | undefined>(undefined);
+
+    const finalStyle = useMemo(() => {
+        return mergePressableStyle(undefined, style, opacity);
+    }, [opacity, style]);
 
     return (
         <ButtonBase
@@ -71,21 +80,30 @@ export function Button({
             accessibilityLabel={hasLabel ? label : accessibilityLabel}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             style={finalStyle}
+            onHoverIn={() => setOpacity(0.8)}
+            onHoverOut={() => setOpacity(undefined)}
+            onPressIn={() => setOpacity(0.6)}
+            onPressOut={() => setOpacity(undefined)}
             {...rest}
         >
-            {showLeftIcon ? <IconCmp size={iconSize} color={resolvedIconColor} /> : null}
-            {hasLabel ? (
-                <Text
-                    variant="body"
-                    color={labelColorToken}
-                    fontWeight="600"
-                    marginLeft={showLeftIcon ? 's' : undefined}
-                    marginRight={showRightIcon ? 's' : undefined}
-                >
-                    {label}
-                </Text>
-            ) : null}
-            {showRightIcon ? <IconCmp size={iconSize} color={resolvedIconColor} /> : null}
+            <Box
+                flexDirection={vertical ? 'column' : 'row'}
+                alignItems="center"
+                justifyContent="space-between"
+                gap="s"
+            >
+                {showLeftIcon ? (
+                    <IconCmp size={iconSize} color={resolvedIconColor} />
+                ) : null}
+                {hasLabel ? (
+                    <Text variant="body" color={labelColorToken} fontWeight="600">
+                        {label}
+                    </Text>
+                ) : null}
+                {showRightIcon ? (
+                    <IconCmp size={iconSize} color={resolvedIconColor} />
+                ) : null}
+            </Box>
         </ButtonBase>
     );
 }

@@ -1,6 +1,7 @@
+import { Card } from '@/ui/components/Card';
+import { Theme } from '@/ui/theme';
+import { useTheme } from '@shopify/restyle';
 import { StyleSheet, TouchableOpacity } from 'react-native';
-import { ThemedView } from './ui-elements/ThemedView';
-import { useTheme } from '@react-navigation/native';
 
 interface BindedColorPickerProps {
     selectedColor: string | undefined;
@@ -13,16 +14,20 @@ export default function BindedColorPicker({
     onColorChange,
     colorValues,
 }: BindedColorPickerProps) {
-    const theme = useTheme();
-    const bgColor = theme.colors.background;
+    const theme = useTheme<Theme>();
     const textColor = theme.colors.text;
+    const bgColor = theme.colors.mainBackground;
 
     return (
-        <ThemedView
-            style={[
-                styles.container,
-                { backgroundColor: bgColor, borderColor: selectedColor },
-            ]}
+        <Card
+            variant="elevated"
+            flexWrap="wrap"
+            flexDirection="row"
+            alignContent="center"
+            justifyContent="space-between"
+            width={290}
+            style={{ backgroundColor: bgColor }}
+            gap="m"
         >
             {colorValues.map((color) => {
                 const isSelected = selectedColor === color;
@@ -43,7 +48,7 @@ export default function BindedColorPicker({
                     />
                 );
             })}
-        </ThemedView>
+        </Card>
     );
 }
 

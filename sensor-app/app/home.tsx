@@ -27,8 +27,10 @@ export default function Home() {
 
     const isLoading = placeApi.loading || (!placeApi.response && !placeApi.error);
 
-    if (placeApi.error?.error && placeApi.error?.error.status === 401) {
+    if (placeApi.error?.error?.status === 401) {
         return <Redirect href={'/login'} />;
+    } else {
+        console.log('not 401', placeApi.error?.error?.status);
     }
 
     return (

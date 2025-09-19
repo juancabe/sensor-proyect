@@ -14,9 +14,7 @@ import { Card } from '@/ui/components/Card';
 import { Box, Text } from '@/ui/theme';
 import { Button } from '@/ui/components/Button';
 import BackgroundView from '@/components/ui-elements/BackgroundView';
-import { ApiRawPassword } from '@/bindings/api/types/ApiRawPassword';
-import { ApiUsername } from '@/bindings/api/types/ApiUsername';
-import { Redirect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 
 export default function Login() {
     const ctx = useAppContext();
@@ -70,10 +68,8 @@ export default function Login() {
                 );
                 await ctx.sessionData?.setSession(username.username, password.password);
                 router.replace('/');
-                return;
-            } else if (api.returnedOk === false) {
-                setMethod(undefined);
             }
+            setMethod(undefined);
         };
         fn();
     }, [api.returnedOk, username.username, password.password, ctx.sessionData, router]);
@@ -143,6 +139,7 @@ export default function Login() {
         setHoleFormError(null);
         api.clearError();
         Keyboard.dismiss();
+        console.log('setting method to POST');
         setMethod('POST');
     };
 
@@ -199,7 +196,7 @@ export default function Login() {
                     flexDirection="column"
                     style={{ marginTop: '7%', marginBottom: '7%' }}
                 >
-                    <Card variant="elevated" style={{ minWidth: 300 }}>
+                    <Card variant="elevated" style={{ minWidth: 300 }} gap="l">
                         <Form fields={type === 'Login' ? loginFields : registerFields} />
                         <Button
                             variant="positive"

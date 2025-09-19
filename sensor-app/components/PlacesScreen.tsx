@@ -22,6 +22,58 @@ export default function PlacesScreen({
 }: PlacesScreenProps) {
     const router = useRouter();
 
+    const addPlaceButton = (
+        <Button
+            variant="positive"
+            icon={HousePlus}
+            onPress={() => {
+                router.push('/AddPlaceScreen');
+            }}
+        ></Button>
+    );
+
+    let contents;
+
+    if (!places || isLoading) {
+        contents = <LoadingScreen></LoadingScreen>;
+    } else if (places.length < 1) {
+        contents = (
+            <Box
+                flexDirection="column"
+                justifyContent="center"
+                alignItems="center"
+                flex={1}
+            >
+                <Card variant="subtle" flexDirection="column" alignItems="center" gap="l">
+                    <Text variant="heading">No places available, add one!</Text>
+                    {addPlaceButton}
+                </Card>
+            </Box>
+        );
+    } else {
+        contents = (
+            <ScrollView style={{ flex: 1 }}>
+                <Card variant="subtle" flex={1}>
+                    <Box
+                        gap="l"
+                        style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            flexDirection: 'row',
+                            alignContent: 'center',
+                            justifyContent: 'space-evenly',
+                        }}
+                    >
+                        {places &&
+                            places.map((place) => (
+                                <PlaceCard place={place} key={place.name} />
+                            ))}
+                    </Box>
+                </Card>
+            </ScrollView>
+        );
+    }
+
     return (
         <BoxV variant="field" padding="m" margin="m" gap="s" flex={1}>
             <Card variant="elevated" flexDirection="row" justifyContent="space-between">
@@ -29,13 +81,7 @@ export default function PlacesScreen({
                     <Text variant="heading">Places</Text>
                 </Card>
                 <BoxV variant="field" flexDirection="row" gap="l">
-                    <Button
-                        variant="positive"
-                        icon={HousePlus}
-                        onPress={() => {
-                            router.push('/AddPlaceScreen');
-                        }}
-                    ></Button>
+                    {addPlaceButton}
                     <Button
                         variant="warning"
                         icon={ListRestart}
@@ -44,30 +90,7 @@ export default function PlacesScreen({
                     ></Button>
                 </BoxV>
             </Card>
-
-            {isLoading ? (
-                <LoadingScreen />
-            ) : (
-                <ScrollView style={{ flex: 1 }}>
-                    <Card variant="subtle" flex={1}>
-                        <Box
-                            gap="l"
-                            style={{
-                                display: 'flex',
-                                flexWrap: 'wrap',
-                                flexDirection: 'row',
-                                alignContent: 'center',
-                                justifyContent: 'space-evenly',
-                            }}
-                        >
-                            {places &&
-                                places.map((place) => (
-                                    <PlaceCard place={place} key={place.name} />
-                                ))}
-                        </Box>
-                    </Card>
-                </ScrollView>
-            )}
+            {contents}
         </BoxV>
     );
 }

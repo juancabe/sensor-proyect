@@ -1,49 +1,16 @@
-import { ApiUserSensor } from '@/bindings/api/endpoints/sensor/ApiUserSensor';
-import { ApiSensorData } from '@/bindings/api/endpoints/sensor_data/ApiSensorData';
-import { GetSensorData } from '@/bindings/api/endpoints/sensor_data/GetSensorData';
 import { useAppContext } from '@/components/AppProvider';
 import CheckboxesSelector from '@/components/CheckboxesSelector';
+import DataChart, { calculateParams } from '@/components/DataChart';
 import LoadingScreen from '@/components/LoadingScreen';
 import BackgroundView from '@/components/ui-elements/BackgroundView';
-import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
-import { ThemedView } from '@/components/ui-elements/ThemedView';
-import { SensorDataLoader } from '@/helpers/sensorDataLoader';
 import { hex6WithAlpha } from '@/helpers/withAlpha';
-import useApi from '@/hooks/useApi';
-import useLayerColor from '@/hooks/useLayerColor';
-import { DataShape, ShapedDatumArray } from '@/model/ShapedData';
-import { useTheme } from '@react-navigation/native';
+import useSensorDataApi from '@/hooks/useSensorDataApi';
+import { Card } from '@/ui/components/Card';
+import { Box, Text } from '@/ui/theme';
 import { Redirect } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { LineChart } from 'react-native-gifted-charts';
-import { Rect, useSafeAreaFrame } from 'react-native-safe-area-context';
-
-interface ChartParams {
-    maxValue: number;
-    yAxisOffset: number;
-    spacing: number;
-}
-
-function calculateParams(keyData: ShapedDatumArray, frame: Rect): ChartParams {
-    const minVal = keyData?.dataInsights.minValue;
-    const maxVal = keyData?.dataInsights.maxValue;
-
-    const minMaxDiff = maxVal - minVal;
-    const tailSize = minMaxDiff / 4;
-
-    const yAxisOffset = minVal - tailSize;
-    const maxValue = maxVal - yAxisOffset + tailSize;
-
-    const spacing =
-        (frame.width - styles.chartContainer.padding * 12) / keyData.array.length;
-
-    return {
-        maxValue,
-        yAxisOffset,
-        spacing,
-    };
-}
+import { useSafeAreaFrame } from 'react-native-safe-area-context';
 
 enum TimeInterval {
     HalfHour = '30m',
@@ -55,84 +22,18 @@ enum TimeInterval {
     Month = '1M',
 }
 
-const computeParams = (apiBody: GetSensorData | undefined) => {
-    if (!apiBody) return;
-    let params_arr = [['device_id', apiBody.device_id]];
-    console.log('apiBody.lowest_added_at', apiBody.lowest_added_at);
-    if (apiBody.lowest_added_at) {
-        params_arr.push(['lowest_added_at', '' + apiBody.lowest_added_at]);
-    }
-    if (apiBody.upper_added_at) {
-        params_arr.push(['upper_added_at', '' + apiBody.upper_added_at]);
-    }
-    return params_arr;
-};
-
-function fabGetSensorData(sensor: ApiUserSensor, offsetMillis: number): GetSensorData {
-    return {
-        device_id: sensor.device_id,
-        lowest_added_at: ~~((Date.now() - offsetMillis) / 1000),
-        upper_added_at: null,
-    };
-}
-
 export default function SensorDetail() {
     const ctx = useAppContext();
-    const frame = useSafeAreaFrame();
+    const hookedFrame = useSafeAreaFrame();
     const sensor = ctx.activeSensor;
 
-    // const [errorText, setErrorText] = useState<string | null>(null);
-    const [dataLoader, setDataLoader] = useState<SensorDataLoader | undefined>(undefined);
-    const [availableKeys, setAvailableKeys] = useState<string[] | undefined>(undefined);
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
-
     const [selectedInterval, setSelectedInterval] = useState<string>(
         TimeInterval.HalfHour,
     );
     const [convertedInterval, setConvertedInterval] = useState<number>(30 * 60 * 1000);
 
-    const defaultApiBody: GetSensorData | undefined = sensor
-        ? fabGetSensorData(sensor, convertedInterval)
-        : undefined;
-    const [apiBody, setApiBody] = useState<GetSensorData | undefined>(defaultApiBody);
-    useEffect(() => {
-        if (!sensor) return;
-        setApiBody((prev) =>
-            prev
-                ? {
-                      ...prev,
-                      lowest_added_at: ~~((Date.now() - convertedInterval) / 1000),
-                  }
-                : fabGetSensorData(sensor, convertedInterval),
-        );
-    }, [sensor, convertedInterval]);
-
-    const apiParams = useMemo(() => computeParams(apiBody), [apiBody]);
-
-    const [apiMethod, setApiMethod] = useState<'GET' | undefined>('GET'); // TODO: periodically update data
-    const api = useApi('/sensor_data', apiMethod, false, undefined, apiParams);
-
-    // work with received data
-    useEffect(() => {
-        if (!(api.returnedOk && api.response)) return;
-
-        let cancelled = false;
-        const load = async () => {
-            const data = api.response as ApiSensorData[];
-            const dataShape: DataShape = { maxLabels: 4, maxPoints: 1000 };
-            const loader = await SensorDataLoader.load(data, dataShape);
-            if (!cancelled) {
-                setDataLoader(loader);
-                console.warn('availableKeys: ', loader.getKeys());
-                setAvailableKeys(loader.getKeys());
-            }
-        };
-
-        load();
-        return () => {
-            cancelled = true;
-        };
-    }, [api.response, api.returnedOk]);
+    const { reload, availableKeys, data } = useSensorDataApi(convertedInterval, sensor);
 
     useEffect(() => {
         const msByInterval: Record<string, number> = {
@@ -148,25 +49,6 @@ export default function SensorDetail() {
         setConvertedInterval(diff);
     }, [selectedInterval]);
 
-    // useEffect(() => {
-    //     const id = setInterval(() => {
-    //         setApiMethod((prev) => {
-    //             if (prev) {
-    //                 return undefined;
-    //             } else {
-    //                 return 'GET';
-    //             }
-    //         });
-    //     }, 3000);
-    //
-    //     return () => clearInterval(id);
-    // }, []);
-    //
-
-    const layerColor = useLayerColor();
-    const theme = useTheme();
-
-    const data = dataLoader?.getData().data;
     if (!data) {
         return <LoadingScreen></LoadingScreen>;
     }
@@ -175,8 +57,10 @@ export default function SensorDetail() {
         return <Redirect href={'/'} />;
     }
 
-    const keyData = data.filter((d) => d.key === selectedKey).at(0);
-    const chartParams = keyData ? calculateParams(keyData, frame) : null;
+    const keyData = data.data.filter((d) => d.key === selectedKey).at(0);
+    const chartParams = keyData
+        ? calculateParams(keyData, hookedFrame.width - styles.chartContainer.padding * 12)
+        : null;
 
     console.log('sensor.color', sensor.color);
     const secondaryColor = hex6WithAlpha(sensor.color, 0.33);
@@ -184,14 +68,12 @@ export default function SensorDetail() {
 
     return (
         <BackgroundView>
-            <ThemedView style={styles.headerContainer}>
-                <ThemedText style={TEXT_STYLES.heading2}>Data for sensor</ThemedText>
-                <ThemedText style={TEXT_STYLES.heading1}>
-                    &apos;{sensor!.name}&apos;
-                </ThemedText>
-            </ThemedView>
+            <Card variant="elevated">
+                <Text variant="body">Data for sensor</Text>
+                <Text variant="heading">&apos;{sensor!.name}&apos;</Text>
+            </Card>
 
-            <ThemedView style={[styles.mainContainer, { backgroundColor: layerColor }]}>
+            <Box>
                 {availableKeys && availableKeys.length > 0 ? (
                     <CheckboxesSelector
                         selectedValue={selectedKey}
@@ -203,52 +85,17 @@ export default function SensorDetail() {
                         style={{ margin: 10 }}
                     ></CheckboxesSelector>
                 ) : (
-                    <ThemedText
-                        style={[TEXT_STYLES.heading1, { justifyContent: 'center' }]}
-                    >
+                    <Text variant="heading" color="warning">
                         No keys available!
-                    </ThemedText>
+                    </Text>
                 )}
-                <ThemedView
-                    style={[
-                        styles.chartContainer,
-                        { backgroundColor: theme.colors.background },
-                    ]}
-                >
-                    {chartParams ? (
-                        <LineChart
-                            dataPointsColor={theme.colors.text}
-                            verticalLinesColor={theme.colors.text}
-                            data={keyData?.array}
-                            maxValue={chartParams?.maxValue}
-                            noOfSections={3}
-                            spacing={chartParams?.spacing}
-                            hideRules
-                            color="orange"
-                            yAxisColor={'orange'}
-                            yAxisOffset={chartParams?.yAxisOffset}
-                            showYAxisIndices
-                            yAxisIndicesColor={'orange'}
-                            yAxisIndicesWidth={10}
-                            yAxisTextStyle={{
-                                color: theme.colors.text,
-                            }}
-                            xAxisColor={theme.colors.text}
-                            xAxisIndicesColor={theme.colors.text}
-                            xAxisLabelTextStyle={{
-                                color: theme.colors.text,
-                                width: 80,
-                                marginLeft: -26,
-                            }}
-                            xAxisIndicesHeight={10}
-                            xAxisIndicesWidth={2}
-                        />
+                <Card variant="elevated">
+                    {chartParams && keyData ? (
+                        <DataChart data={keyData} params={chartParams} />
                     ) : (
-                        <ThemedText style={TEXT_STYLES.heading2}>
-                            Select some data key!
-                        </ThemedText>
+                        <Text variant="heading">Select some data key!</Text>
                     )}
-                </ThemedView>
+                </Card>
                 <CheckboxesSelector
                     title="Time interval"
                     selectedValue={selectedInterval}
@@ -258,7 +105,7 @@ export default function SensorDetail() {
                     values={Object.values(TimeInterval) as string[]}
                     style={{ margin: 10 }}
                 />
-            </ThemedView>
+            </Box>
         </BackgroundView>
     );
 }

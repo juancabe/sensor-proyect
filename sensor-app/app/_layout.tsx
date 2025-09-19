@@ -34,12 +34,14 @@ export default function RootLayout() {
                             name="AddSensorScreen"
                             options={{
                                 title: 'Add your sensor',
+                                headerShown: false,
                             }}
                         />
                         <Stack.Screen
                             name="AddPlaceScreen"
                             options={{
                                 title: 'Add a place',
+                                headerShown: false,
                             }}
                         />
                     </Stack>

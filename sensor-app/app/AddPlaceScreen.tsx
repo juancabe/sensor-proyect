@@ -1,8 +1,6 @@
 import BindedColorPicker from '@/components/BindedColorPicker';
 import BackgroundView from '@/components/ui-elements/BackgroundView';
-import { TEXT_STYLES, ThemedText } from '@/components/ui-elements/ThemedText';
-import { ThemedView } from '@/components/ui-elements/ThemedView';
-import { Button, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -14,6 +12,10 @@ import { useApiEntityName } from '@/hooks/api/useApiEntityName';
 import { useApiDescription } from '@/hooks/api/useApiDescription';
 import { useApiColor } from '@/hooks/api/useApiColor';
 import { Redirect } from 'expo-router';
+import { Box, Text } from '@/ui/theme';
+import { Button } from '@/ui/components/Button';
+import { Card } from '@/ui/components/Card';
+import LabelValue from '@/components/ui-elements/LabelValue';
 
 const secondaryColor = '#ffd9009b';
 
@@ -68,25 +70,35 @@ export default function AddPlaceScreen() {
 
     return (
         <BackgroundView>
-            <SafeAreaView>
-                <ThemedView style={[styles.mainContainer]}>
-                    <ThemedText style={TEXT_STYLES.heading1}>Add place</ThemedText>
+            <Box>
+                <Card
+                    variant="elevated"
+                    flexDirection="column"
+                    alignItems="center"
+                    gap="l"
+                >
+                    <Text variant="heading">Add place</Text>
                     <Form fields={formFields}></Form>
-                    <BindedColorPicker
-                        selectedColor={color.color}
-                        onColorChange={(new_color) => {
-                            color.setColor(new_color);
-                        }}
-                        colorValues={color.API_COLORS}
-                    ></BindedColorPicker>
-                    <ErrorBox error={postPlace.formattedError}></ErrorBox>
+                    <LabelValue label="Representative color">
+                        <BindedColorPicker
+                            selectedColor={color.color}
+                            onColorChange={(new_color) => {
+                                color.setColor(new_color);
+                            }}
+                            colorValues={color.API_COLORS}
+                        ></BindedColorPicker>
+                    </LabelValue>
+                    {postPlace.formattedError && (
+                        <ErrorBox error={postPlace.formattedError}></ErrorBox>
+                    )}
                     <Button
-                        title="Add Place"
+                        variant="positive"
+                        label="Add Place"
                         onPress={handleAdd}
                         disabled={!isAddable}
                     ></Button>
-                </ThemedView>
-            </SafeAreaView>
+                </Card>
+            </Box>
         </BackgroundView>
     );
 }

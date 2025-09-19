@@ -1,15 +1,13 @@
-import { Redirect, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Platform, ScrollView, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useMemo } from 'react';
+import { Platform, ScrollView } from 'react-native';
 import { useAppContext } from './AppProvider';
 import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
 import useApi from '@/hooks/useApi';
 import { GetSensor } from '@/bindings/api/endpoints/sensor/GetSensor';
 import { GetSensorResponse } from '@/bindings/api/endpoints/sensor/GetSensorResponse';
 import LabelValue from './ui-elements/LabelValue';
-import ThemedButton from './ui-elements/ThemedButton';
 import { Circle, ListPlus } from 'lucide-react-native';
-import useLayerColor from '@/hooks/useLayerColor';
 import { Card } from '@/ui/components/Card';
 import { Box, Text } from '@/ui/theme';
 import { Button } from '@/ui/components/Button';
@@ -32,8 +30,7 @@ export default function PlaceCard({ place }: PlaceCardProps) {
         () => [['FromPlaceName', getSensor.FromPlaceName]],
         [getSensor.FromPlaceName],
     );
-    const [apiMethod, setApiMethod] = useState<undefined | 'GET'>('GET');
-    const api = useApi('/sensor', apiMethod, false, undefined, apiParams);
+    const api = useApi('/sensor', 'GET', false, undefined, apiParams);
 
     useEffect(() => {
         if (api.response) {
@@ -45,18 +42,10 @@ export default function PlaceCard({ place }: PlaceCardProps) {
         }
     }, [api.response]);
 
-    const reloadApi = () => {
-        setApiMethod(undefined);
-        setTimeout(() => {
-            // Using setTimeout so that it runs in next React cycle
-            setApiMethod('GET');
-        }, 0);
-    };
-
     return (
         <Card
             variant="elevated"
-            gap="s"
+            gap="l"
             style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -64,70 +53,53 @@ export default function PlaceCard({ place }: PlaceCardProps) {
                 borderWidth: 2,
             }}
         >
-            <Box flexDirection="row">
+            <Box flexDirection="column" gap="m">
                 <LabelValue label="Name" horizontal={true}>
                     <Text variant="heading">{place.name}</Text>
                 </LabelValue>
                 {Platform.OS !== 'web' && (
-                    <ThemedButton
+                    <Button
                         icon={ListPlus}
-                        title="Add Sensor"
+                        label="Add Sensor"
                         onPress={handleAddSensorPress}
                     />
                 )}
+                {place.description ? (
+                    <Text variant="caption">{place.description}</Text>
+                ) : null}
             </Box>
-            {place.description ? (
-                <Text variant="caption">{place.description}</Text>
-            ) : null}
 
-            <Text variant="body">Sensors</Text>
-            {api.response && (api.response as any).length ? (
-                <Box flexDirection="column">
-                    <ScrollView style={{}}>
-                        {(api.response as GetSensorResponse[]).map(
-                            ({ sensor, last_data }) => (
-                                <Button
-                                    variant="primary"
-                                    key={sensor.device_id}
-                                    label={sensor.name}
-                                    icon={Circle}
-                                    iconColor={sensor.color}
-                                    onPress={() => {
-                                        ctx.setActiveSensor({ sensor, data: last_data });
-                                        router.push('/sensor_detail');
-                                    }}
-                                ></Button>
-                            ),
-                        )}
-                    </ScrollView>
-                </Box>
-            ) : (
-                <Card variant="elevated">
-                    <Text variant="body">No sensors available</Text>
-                </Card>
-            )}
+            <Box gap="m">
+                <Text variant="body">Sensors</Text>
+                {api.response && (api.response as any).length ? (
+                    <Box flexDirection="column">
+                        <ScrollView style={{}}>
+                            {(api.response as GetSensorResponse[]).map(
+                                ({ sensor, last_data }) => (
+                                    <Button
+                                        variant="primary"
+                                        key={sensor.device_id}
+                                        label={sensor.name}
+                                        icon={Circle}
+                                        iconColor={sensor.color}
+                                        onPress={() => {
+                                            ctx.setActiveSensor(sensor);
+                                            ctx.setActiveSensorData(last_data);
+                                            router.push('/sensor_detail');
+                                        }}
+                                    ></Button>
+                                ),
+                            )}
+                        </ScrollView>
+                    </Box>
+                ) : (
+                    <Card variant="elevated">
+                        <Text variant="body" color="warning">
+                            No sensors added
+                        </Text>
+                    </Card>
+                )}
+            </Box>
         </Card>
     );
 }
-
-const styles = StyleSheet.create({
-    layer: {
-        padding: 0,
-        borderRadius: 10,
-    },
-    headerContainer: {
-        flex: 1,
-        flexDirection: 'row',
-        gap: 20,
-        justifyContent: 'space-between',
-    },
-    container: {
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderRadius: 10,
-        padding: 10,
-        gap: 10,
-        marginBottom: 20,
-    },
-});
