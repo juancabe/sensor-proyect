@@ -3,17 +3,12 @@
 # Exit immediately if any command fails
 set -e
 
-# Define the project directory (change if needed)
-PROJECT_DIR="/Users/juan/Documents/temp/sensor-proyect/sensor-app"
-
-cd "$PROJECT_DIR"
-
 echo "🚀 Starting EAS local Android build..."
 eas build --platform android --local
 
 echo "✅ Build finished. Searching for the latest generated AAB..."
 # Get the most recent .aab file by modification time
-AAB_FILE=$(ls -t "$PROJECT_DIR"/*.aab 2>/dev/null | head -n 1)
+AAB_FILE=$(ls -t ./*.aab 2>/dev/null | head -n 1)
 
 if [ -z "$AAB_FILE" ]; then
     echo "❌ No .aab file found. Build may have failed."
