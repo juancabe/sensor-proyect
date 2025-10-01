@@ -16,7 +16,8 @@ use http::StatusCode;
 
 use crate::helpers::get_random_buf;
 
-const BASE_URL: &str = "http://192.168.1.130:3000/api/v0";
+// const BASE_URL: &str = "http://192.168.1.130:3000/api/v0";
+const BASE_URL: &str = "https://sensor-server.juancb.ftp.sh:3000/api/v0";
 
 const SESSION_POST_RESPONSE_SIZE: usize = 2_000;
 const POST_DATA_RESPONSE_SIZE: usize = 2_000;

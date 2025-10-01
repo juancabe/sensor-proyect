@@ -50,6 +50,24 @@ fn main() {
     let device_id = get_device_id();
     log::info!("device_id: {device_id:?}");
 
+    let i2c_config = esp_idf_svc::hal::i2c::I2cConfig::new().baudrate(100.kHz().into());
+    let i2c = I2cDriver::new(p.i2c0, p.pins.gpio4, p.pins.gpio3, &i2c_config)
+        .expect("Should be able to create I2CDriver");
+    let mut sensors = match Sensors::new(
+        i2c,
+        Some(()),
+        Some(Scd41InitData::new(Scd41WorkingMode::LowPower)),
+        false,
+    ) {
+        Ok(s) => s,
+        Err((_i2c, scd41, aht10)) => {
+            panic!(
+                "Unable to create sensor driver\nscd41: {:?}\naht10: {:?}\n\n",
+                scd41, aht10
+            );
+        }
+    };
+
     // --- Fetch persisted data
     let wifi_buf = &mut [0u8; persistence::Keys::WifiConfigSerialized.min_recv_buffer_size()];
     let wifi = if persistence
@@ -108,24 +126,6 @@ fn main() {
         _ => panic!("Unexpected state: {state:?}", state = state.get_state()),
     };
     // ---
-
-    let i2c_config = esp_idf_svc::hal::i2c::I2cConfig::new().baudrate(100.kHz().into());
-    let i2c = I2cDriver::new(p.i2c0, p.pins.gpio4, p.pins.gpio3, &i2c_config)
-        .expect("Should be able to create I2CDriver");
-    let mut sensors = match Sensors::new(
-        i2c,
-        Some(()),
-        Some(Scd41InitData::new(Scd41WorkingMode::LowPower)),
-        false,
-    ) {
-        Ok(s) => s,
-        Err((_i2c, scd41, aht10)) => {
-            panic!(
-                "Unable to create sensor driver\nscd41: {:?}\naht10: {:?}\n\n",
-                scd41, aht10
-            );
-        }
-    };
 
     let mut communicator = None;
     for _ in 0..GENERATE_COMMUNICATOR_RETRIES {
