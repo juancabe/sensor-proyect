@@ -27,7 +27,11 @@ const computeParams = (apiBody: GetSensorData | undefined) => {
     return params_arr;
 };
 
-export default function useSensorDataApi(offsetMillis: number, sensor?: ApiUserSensor) {
+export default function useSensorDataApi(
+    offsetMillis: number,
+    sensor?: ApiUserSensor,
+    maxLabels: number = 4,
+) {
     const [dataLoader, setDataLoader] = useState<SensorDataLoader | undefined>(undefined);
     const data = useMemo(() => {
         return dataLoader?.getData();
@@ -72,7 +76,7 @@ export default function useSensorDataApi(offsetMillis: number, sensor?: ApiUserS
         let cancelled = false;
         const load = async () => {
             const data = api.response as ApiSensorData[];
-            const dataShape: DataShape = { maxLabels: 4, maxPoints: 1000 };
+            const dataShape: DataShape = { maxLabels, maxPoints: 1000 };
             const loader = await SensorDataLoader.load(data, dataShape);
             if (!cancelled) {
                 setDataLoader(loader);
@@ -84,7 +88,7 @@ export default function useSensorDataApi(offsetMillis: number, sensor?: ApiUserS
         return () => {
             cancelled = true;
         };
-    }, [api.response, api.returnedOk]);
+    }, [api.response, api.returnedOk, maxLabels]);
 
     return { reload, availableKeys, data, lastData };
 }

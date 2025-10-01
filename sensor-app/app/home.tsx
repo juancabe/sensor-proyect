@@ -29,8 +29,6 @@ export default function Home() {
 
     if (placeApi.error?.error?.status === 401) {
         return <Redirect href={'/login'} />;
-    } else {
-        console.log('not 401', placeApi.error?.error?.status);
     }
 
     return (

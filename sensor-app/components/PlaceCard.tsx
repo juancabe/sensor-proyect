@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Platform, ScrollView } from 'react-native';
 import { useAppContext } from './AppProvider';
 import { ApiUserPlace } from '@/bindings/api/endpoints/place/ApiUserPlace';
@@ -32,16 +32,6 @@ export default function PlaceCard({ place }: PlaceCardProps) {
     );
     const api = useApi('/sensor', 'GET', false, undefined, apiParams);
 
-    useEffect(() => {
-        if (api.response) {
-            let res = api.response as GetSensorResponse[];
-            for (const { sensor, last_data } of res) {
-                console.log('sensor: ', sensor);
-                console.log('last_data: ', last_data);
-            }
-        }
-    }, [api.response]);
-
     return (
         <Card
             variant="elevated"
@@ -73,21 +63,22 @@ export default function PlaceCard({ place }: PlaceCardProps) {
                 <Text variant="body">Sensors</Text>
                 {api.response && (api.response as any).length ? (
                     <Box flexDirection="column">
-                        <ScrollView style={{}}>
+                        <ScrollView>
                             {(api.response as GetSensorResponse[]).map(
                                 ({ sensor, last_data }) => (
-                                    <Button
-                                        variant="primary"
-                                        key={sensor.device_id}
-                                        label={sensor.name}
-                                        icon={Circle}
-                                        iconColor={sensor.color}
-                                        onPress={() => {
-                                            ctx.setActiveSensor(sensor);
-                                            ctx.setActiveSensorData(last_data);
-                                            router.push('/sensor_detail');
-                                        }}
-                                    ></Button>
+                                    <Box key={sensor.device_id} margin="xs">
+                                        <Button
+                                            variant="primary"
+                                            label={sensor.name}
+                                            icon={Circle}
+                                            iconColor={sensor.color}
+                                            onPress={() => {
+                                                ctx.setActiveSensor(sensor);
+                                                ctx.setActiveSensorData(last_data);
+                                                router.push('/sensor_detail');
+                                            }}
+                                        ></Button>
+                                    </Box>
                                 ),
                             )}
                         </ScrollView>

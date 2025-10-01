@@ -9,12 +9,7 @@ import { ThemeProvider } from '@shopify/restyle';
 export default function RootLayout() {
     const cs = useColorScheme();
 
-    console.warn('cs: ', cs);
-
     const theme = useMemo(() => makeRestyleTheme(cs ? cs : 'dark'), [cs]) as Theme;
-
-    console.log('theme.colos.mainBackground', theme.colors.mainBackground);
-
     return (
         <AppProvider>
             <SafeAreaProvider>

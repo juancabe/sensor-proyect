@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { timeDisplay } from '@/helpers/timeDisplay';
 import { objectNumberKeysToArray } from '@/helpers/objectWork';
 import { Card } from '@/ui/components/Card';
-import { Box, Text } from '@/ui/theme';
+import { Box, Text, Theme } from '@/ui/theme';
 import { useAppContext } from '@/components/AppProvider';
 import SensorCrudModal from '@/components/SensorCrudModal';
 import LabelValue from '@/components/ui-elements/LabelValue';
@@ -15,19 +15,31 @@ import DataChart, { calculateParams, DataChartProps } from '@/components/DataCha
 import useSensorDataApi from '@/hooks/useSensorDataApi';
 import { ScrollView } from 'react-native';
 import LoadingScreen from '@/components/LoadingScreen';
+import { useTheme } from '@shopify/restyle';
 
-export default function SensorCard() {
+export default function SensorDetail() {
     const ctx = useAppContext();
     const sensor = ctx.activeSensor;
     const globalData = ctx.activeSensorData;
     const frame = useSafeAreaFrame();
+    const router = useRouter();
+    const theme = useTheme<Theme>();
+
+    // Chart derived params
+    const chartPadding = theme.spacing.l * 6;
+    const chartWidth = frame.width - chartPadding * 2;
+    const spaceBetweenLabels = 80;
 
     const MIN30 = 30 * 60 * 1000;
     const {
         reload,
         data,
         lastData: hookedLastData,
-    } = useSensorDataApi(MIN30, globalData ? sensor : undefined);
+    } = useSensorDataApi(
+        MIN30,
+        globalData ? sensor : undefined,
+        chartWidth / spaceBetweenLabels,
+    );
     const chartProps: { chartProps: DataChartProps; key: string }[] | undefined =
         useMemo(() => {
             if (!data) {
@@ -35,18 +47,19 @@ export default function SensorCard() {
             }
             const chartProps: { chartProps: DataChartProps; key: string }[] = [];
             for (const datum of data.data) {
-                const params = calculateParams(datum, frame.width * 0.67);
+                const params = calculateParams(datum, chartWidth, 5, 5);
 
                 chartProps.push({
                     key: datum.key,
                     chartProps: {
                         data: datum,
                         params,
+                        padding: chartPadding / 2.5,
                     },
                 });
             }
             return chartProps;
-        }, [data, frame.width]);
+        }, [data, chartWidth, chartPadding]);
 
     const lastData = useMemo(() => {
         if (hookedLastData) {
@@ -68,7 +81,6 @@ export default function SensorCard() {
         }
     }, [globalData, hookedLastData]);
 
-    // const backgroundColor = props.sensor.color.replace('HEX_', '#') + '99';
     const [crudModalDisplayed, setCrudModalDisplayed] = useState<boolean>(false);
 
     if (!sensor) {
@@ -80,7 +92,7 @@ export default function SensorCard() {
             {crudModalDisplayed && (
                 <SensorCrudModal
                     gotoSensorSource={() => {
-                        console.warn('TODO: reload x place when needed, ctx export');
+                        router.push('/home');
                     }}
                     sensor={sensor}
                     displayed={crudModalDisplayed}
@@ -191,6 +203,7 @@ export default function SensorCard() {
                                             <DataChart
                                                 data={chartProps.data}
                                                 params={chartProps.params}
+                                                padding={chartProps.padding}
                                             />
                                         </Card>
                                     );

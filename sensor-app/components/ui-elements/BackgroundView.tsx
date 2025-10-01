@@ -5,8 +5,7 @@ import { BlurView } from 'expo-blur';
 import Svg, { Defs, RadialGradient, Stop, Circle, CircleProps } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@shopify/restyle';
-import { palette, Theme } from '@/ui/theme';
-import { hex6WithAlpha } from '@/helpers/withAlpha';
+import { Theme } from '@/ui/theme';
 
 type BackgroundViewProps = {
     children: React.ReactNode;
@@ -17,9 +16,7 @@ export default function BackgroundView({ children, style }: BackgroundViewProps)
     const theme = useTheme<Theme>();
 
     const bg = theme.colors.mainBackground;
-    console.warn('bg: ', bg);
     const accent = bg;
-    console.warn('accent: ', accent);
 
     const { width, height } = useWindowDimensions();
 

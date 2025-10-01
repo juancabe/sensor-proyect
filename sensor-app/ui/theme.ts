@@ -24,6 +24,10 @@ export interface ThemeColors {
     bad: string;
     warning: string;
     disabled: string;
+
+    // Extra
+    detail: string;
+    info: string;
 }
 
 export const palette = {
@@ -81,6 +85,10 @@ export const lightColors: ThemeColors = {
     bad: palette.brandRustReddish, // errors/destructive; reserve for true faults
     warning: palette.brandRust, // warnings/attention without full error
     disabled: palette.grayLight,
+
+    // Extra
+    detail: palette.brandRust,
+    info: palette.brandRustDark,
 };
 
 export const darkColors: ThemeColors = {
@@ -107,6 +115,10 @@ export const darkColors: ThemeColors = {
     bad: palette.brandRustReddish, // destructive/error accents
     warning: palette.brandRust, // warnings/attention without harsh red
     disabled: palette.grayLight,
+
+    // Extra
+    detail: palette.brandRust,
+    info: palette.brandRustLight,
 };
 
 const _makeRestyleTheme = (cs: 'dark' | 'light') => {

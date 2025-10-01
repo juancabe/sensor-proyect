@@ -22,7 +22,6 @@ export enum Error {
     InvalidLocalSession,
 }
 
-// const doFetch = Platform.OS === 'web' ? globalThis.fetch.bind(globalThis) : fetch;
 const doFetch = fetch;
 
 export interface ErrorState<E> {
@@ -56,12 +55,10 @@ type Rerun = boolean;
 
 // Throws Error slice
 async function _fetchApi<R>(props: InternalFetchProps): Promise<[R, boolean] | Rerun> {
-    console.log('_fetchApi called with props: ', props);
     let { endpoint_path, init, sessionData } = props;
 
     let res;
     try {
-        console.log('doFetch:', doFetch);
         res = await doFetch(BASE_API_URL + endpoint_path, init);
     } catch (networkError) {
         console.log('networkError on first fetch: ', networkError);
